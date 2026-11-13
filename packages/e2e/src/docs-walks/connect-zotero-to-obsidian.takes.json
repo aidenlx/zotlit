@@ -1,23 +1,474 @@
 {
-  "step-2": {
-    "recordedAt": "2026-11-12T17:16:56.715714111Z",
-    "step": "Lesson 1: Connect Zotero to Obsidian and write your first literature note > step 2: look at the first line of the tab, then close the setup section with its × button; Connect to Zotero has a green check and your item count, and then your papers fill the tab",
+  "step-1": {
+    "recordedAt": "2026-11-13T02:27:56.302003906Z",
+    "step": "Lesson 1: Connect Zotero to Obsidian and write your first literature note > step 1, as the reader installs it: Settings, Community plugins, Exit Restricted mode, Browse, search ZotLit, Install, Enable; a tab named Zotero library opens",
     "recipe": {
       "build": "pnpm exec turbo run build:dev --filter=@zotlit/obsidian --filter=@zotlit/zotero",
-      "record": "DOCS_WALK_RECORD=1 DOCS_WALK_ONLY=step-2 pnpm --filter @zotlit/e2e docs-walk src/docs-walks/connect-zotero-to-obsidian.walk.ts",
-      "recut": "node packages/e2e/src/docs-walks/clip-encode.ts .scratch/docs-walks/connect-zotero-to-obsidian/step-2.frames apps/docs/public/img/learn/connect-zotero-to-obsidian/step-2"
+      "record": "DOCS_WALK_NATIVE=1 DOCS_WALK_RECORD=1 DOCS_WALK_ONLY=step-1 pnpm --filter @zotlit/e2e docs-walk src/docs-walks/connect-zotero-to-obsidian.walk.ts",
+      "recut": "node packages/e2e/src/docs-walks/clip-encode.ts .scratch/docs-walks/connect-zotero-to-obsidian/step-1.frames apps/docs/public/img/learn/connect-zotero-to-obsidian/step-1"
     },
     "env": {
+      "DOCS_WALK_ONLY": "step-1,step-2,step-3",
+      "DOCS_WALK_NATIVE": "1",
+      "DOCS_WALK_CAPTURE": "1",
       "DOCS_WALK_RECORD": "1"
     },
-    "versionGateBypass": true,
+    "versionGateBypass": false,
     "recorder": {
       "commit": "9bf4c443b8a6844ba050fd2b6458934e27a37f2c",
-      "edited": false
+      "edited": true
     },
     "apps": {
       "obsidian": "1.15.1 (installer 1.15.1)",
-      "obsidianPin": "1.14.5 (installer 1.14.5)",
+      "obsidianPin": "1.15.1 (installer 1.15.1)",
+      "zotero": "10.0"
+    },
+    "vaultCase": "docs",
+    "window": {
+      "width": 1440,
+      "height": 860
+    },
+    "source": "obsidian-screencast",
+    "frames": ".scratch/docs-walks/connect-zotero-to-obsidian/step-1.frames",
+    "settings": {
+      "camera": true,
+      "zoom": 2,
+      "openHold": 0.7,
+      "lead": 0.15,
+      "ease": 0.6,
+      "minEase": 0.35,
+      "central": 0.6,
+      "padding": 32,
+      "opening": 1,
+      "rest": 1.5,
+      "glide": 0.6,
+      "typing": 1,
+      "width": 1440,
+      "fps": 30,
+      "posterQuality": 82,
+      "vp9Crf": 42,
+      "h264Crf": 32
+    },
+    "duration": 20.667,
+    "outputs": {
+      "apps/docs/public/img/learn/connect-zotero-to-obsidian/step-1.webm": 1281586,
+      "apps/docs/public/img/learn/connect-zotero-to-obsidian/step-1.mp4": 1118517,
+      "apps/docs/public/img/learn/connect-zotero-to-obsidian/step-1.poster.webp": 47736
+    },
+    "camera": {
+      "track": "planned",
+      "viewport": {
+        "width": 1440,
+        "height": 860
+      },
+      "events": [
+        {
+          "kind": "point",
+          "t": 1.6044080257415771,
+          "x": 322,
+          "y": 840,
+          "rect": {
+            "x": 308,
+            "y": 827.546875,
+            "w": 28,
+            "h": 24
+          }
+        },
+        {
+          "kind": "look",
+          "t": 1.7646079063415527,
+          "rect": {
+            "x": 170,
+            "y": 64.5,
+            "w": 1100,
+            "h": 731
+          }
+        },
+        {
+          "kind": "point",
+          "t": 2.967507839202881,
+          "x": 296,
+          "y": 379,
+          "rect": {
+            "x": 183,
+            "y": 366.28125,
+            "w": 225,
+            "h": 24.8984375
+          }
+        },
+        {
+          "kind": "point",
+          "t": 3.7241079807281494,
+          "x": 1100,
+          "y": 373,
+          "rect": {
+            "x": 1025.5078125,
+            "y": 357.890625,
+            "w": 149.4921875,
+            "h": 30
+          }
+        },
+        {
+          "kind": "point",
+          "t": 5.102408170700073,
+          "x": 1141,
+          "y": 225,
+          "rect": {
+            "x": 1106.6171875,
+            "y": 209.9921875,
+            "w": 68.3828125,
+            "h": 30
+          }
+        },
+        {
+          "kind": "point",
+          "t": 7.83900785446167,
+          "x": 243,
+          "y": 93,
+          "rect": {
+            "x": 183,
+            "y": 77.5,
+            "w": 432,
+            "h": 30
+          }
+        },
+        {
+          "kind": "type",
+          "t": 7.990108013153076,
+          "end": 8.655507802963257,
+          "rect": {
+            "x": 183,
+            "y": 77.5,
+            "w": 432,
+            "h": 30
+          }
+        },
+        {
+          "kind": "point",
+          "t": 9.257107973098755,
+          "x": 303,
+          "y": 288,
+          "rect": {
+            "x": 183,
+            "y": 189.3984375,
+            "w": 259.5,
+            "h": 196.7734375
+          }
+        },
+        {
+          "kind": "look",
+          "t": 9.72790813446045,
+          "rect": {
+            "x": 491,
+            "y": 105.5,
+            "w": 738,
+            "h": 281.8515625
+          }
+        },
+        {
+          "kind": "point",
+          "t": 10.930507898330688,
+          "x": 546,
+          "y": 356,
+          "rect": {
+            "x": 516,
+            "y": 341.3515625,
+            "w": 59.75,
+            "h": 30
+          }
+        },
+        {
+          "kind": "point",
+          "t": 15.934808015823364,
+          "x": 548,
+          "y": 356,
+          "rect": {
+            "x": 516,
+            "y": 341.3515625,
+            "w": 64.75,
+            "h": 30
+          }
+        },
+        {
+          "kind": "point",
+          "t": 17.4896080493927,
+          "x": 1251,
+          "y": 84,
+          "rect": {
+            "x": 1239,
+            "y": 71.5,
+            "w": 24,
+            "h": 24
+          }
+        },
+        {
+          "kind": "park",
+          "t": 18.544408082962036,
+          "x": 1040,
+          "y": 504.171875
+        },
+        {
+          "kind": "look",
+          "t": 18.544408082962036,
+          "rect": {
+            "x": 344,
+            "y": 78.1875,
+            "w": 756,
+            "h": 449.984375
+          }
+        }
+      ],
+      "keyframes": [
+        {
+          "t": 0,
+          "view": {
+            "x": 0,
+            "y": 0,
+            "w": 1440,
+            "h": 860
+          }
+        },
+        {
+          "t": 0.8544080257415773,
+          "view": {
+            "x": 0,
+            "y": 0,
+            "w": 1440,
+            "h": 860
+          }
+        },
+        {
+          "t": 1.4544080257415772,
+          "view": {
+            "x": 0,
+            "y": 430,
+            "w": 720,
+            "h": 430
+          }
+        },
+        {
+          "t": 1.7646079063415527,
+          "view": {
+            "x": 0,
+            "y": 430,
+            "w": 720,
+            "h": 430
+          }
+        },
+        {
+          "t": 2.364607906341553,
+          "view": {
+            "x": 54.41860465116281,
+            "y": 32.5,
+            "w": 1331.1627906976744,
+            "h": 795
+          }
+        },
+        {
+          "t": 2.364607906341553,
+          "view": {
+            "x": 54.41860465116281,
+            "y": 32.5,
+            "w": 1331.1627906976744,
+            "h": 795
+          }
+        },
+        {
+          "t": 2.817507839202881,
+          "view": {
+            "x": 0,
+            "y": 164,
+            "w": 720,
+            "h": 430
+          }
+        },
+        {
+          "t": 2.817507839202881,
+          "view": {
+            "x": 0,
+            "y": 164,
+            "w": 720,
+            "h": 430
+          }
+        },
+        {
+          "t": 3.1958079099655152,
+          "view": {
+            "x": 0,
+            "y": 0,
+            "w": 1440,
+            "h": 860
+          }
+        },
+        {
+          "t": 3.5741079807281495,
+          "view": {
+            "x": 720,
+            "y": 158,
+            "w": 720,
+            "h": 430
+          }
+        },
+        {
+          "t": 4.352408170700073,
+          "view": {
+            "x": 720,
+            "y": 158,
+            "w": 720,
+            "h": 430
+          }
+        },
+        {
+          "t": 4.952408170700073,
+          "view": {
+            "x": 720,
+            "y": 10,
+            "w": 720,
+            "h": 430
+          }
+        },
+        {
+          "t": 7.08900785446167,
+          "view": {
+            "x": 720,
+            "y": 10,
+            "w": 720,
+            "h": 430
+          }
+        },
+        {
+          "t": 7.68900785446167,
+          "view": {
+            "x": 39,
+            "y": 0,
+            "w": 720,
+            "h": 430
+          }
+        },
+        {
+          "t": 8.507107973098755,
+          "view": {
+            "x": 39,
+            "y": 0,
+            "w": 720,
+            "h": 430
+          }
+        },
+        {
+          "t": 9.107107973098755,
+          "view": {
+            "x": 0,
+            "y": 72.78515625,
+            "w": 720,
+            "h": 430
+          }
+        },
+        {
+          "t": 9.72790813446045,
+          "view": {
+            "x": 0,
+            "y": 72.78515625,
+            "w": 720,
+            "h": 430
+          }
+        },
+        {
+          "t": 10.327908134460449,
+          "view": {
+            "x": 459,
+            "y": 6.939670138888886,
+            "w": 802,
+            "h": 478.97222222222223
+          }
+        },
+        {
+          "t": 10.327908134460449,
+          "view": {
+            "x": 459,
+            "y": 6.939670138888886,
+            "w": 802,
+            "h": 478.97222222222223
+          }
+        },
+        {
+          "t": 10.780507898330688,
+          "view": {
+            "x": 185.875,
+            "y": 141,
+            "w": 720,
+            "h": 430
+          }
+        },
+        {
+          "t": 16.7396080493927,
+          "view": {
+            "x": 185.875,
+            "y": 141,
+            "w": 720,
+            "h": 430
+          }
+        },
+        {
+          "t": 17.3396080493927,
+          "view": {
+            "x": 720,
+            "y": 0,
+            "w": 720,
+            "h": 430
+          }
+        },
+        {
+          "t": 18.544408082962036,
+          "view": {
+            "x": 720,
+            "y": 0,
+            "w": 720,
+            "h": 430
+          }
+        },
+        {
+          "t": 19.144408082962038,
+          "view": {
+            "x": 291.6875,
+            "y": 46.1875,
+            "w": 860.625,
+            "h": 513.984375
+          }
+        },
+        {
+          "t": 20.666107892990112,
+          "view": {
+            "x": 291.6875,
+            "y": 46.1875,
+            "w": 860.625,
+            "h": 513.984375
+          }
+        }
+      ]
+    }
+  },
+  "step-2": {
+    "recordedAt": "2026-11-13T02:28:20.947386963Z",
+    "step": "Lesson 1: Connect Zotero to Obsidian and write your first literature note > step 2: look at the first line of the tab; Connect to Zotero has a green check and your item count",
+    "recipe": {
+      "build": "pnpm exec turbo run build:dev --filter=@zotlit/obsidian --filter=@zotlit/zotero",
+      "record": "DOCS_WALK_NATIVE=1 DOCS_WALK_RECORD=1 DOCS_WALK_ONLY=step-2 pnpm --filter @zotlit/e2e docs-walk src/docs-walks/connect-zotero-to-obsidian.walk.ts",
+      "recut": "node packages/e2e/src/docs-walks/clip-encode.ts .scratch/docs-walks/connect-zotero-to-obsidian/step-2.frames apps/docs/public/img/learn/connect-zotero-to-obsidian/step-2"
+    },
+    "env": {
+      "DOCS_WALK_ONLY": "step-1,step-2,step-3",
+      "DOCS_WALK_NATIVE": "1",
+      "DOCS_WALK_CAPTURE": "1",
+      "DOCS_WALK_RECORD": "1"
+    },
+    "versionGateBypass": false,
+    "recorder": {
+      "commit": "9bf4c443b8a6844ba050fd2b6458934e27a37f2c",
+      "edited": true
+    },
+    "apps": {
+      "obsidian": "1.15.1 (installer 1.15.1)",
+      "obsidianPin": "1.15.1 (installer 1.15.1)",
       "zotero": "10.0"
     },
     "vaultCase": "docs",
@@ -46,11 +497,11 @@
       "vp9Crf": 42,
       "h264Crf": 32
     },
-    "duration": 6.3,
+    "duration": 3.733,
     "outputs": {
-      "apps/docs/public/img/learn/connect-zotero-to-obsidian/step-2.webm": 359013,
-      "apps/docs/public/img/learn/connect-zotero-to-obsidian/step-2.mp4": 350462,
-      "apps/docs/public/img/learn/connect-zotero-to-obsidian/step-2.poster.webp": 57622
+      "apps/docs/public/img/learn/connect-zotero-to-obsidian/step-2.webm": 214375,
+      "apps/docs/public/img/learn/connect-zotero-to-obsidian/step-2.mp4": 170431,
+      "apps/docs/public/img/learn/connect-zotero-to-obsidian/step-2.poster.webp": 38944
     },
     "camera": {
       "track": "planned",
@@ -61,40 +512,18 @@
       "events": [
         {
           "kind": "park",
-          "t": 1.6038200855255127,
-          "x": 1029,
-          "y": 198.1875
+          "t": 1.6053459644317627,
+          "x": 661.8359375,
+          "y": 155.890625
         },
         {
           "kind": "look",
-          "t": 1.6039202213287354,
+          "t": 1.6056461334228516,
           "rect": {
-            "x": 355,
-            "y": 130.1875,
-            "w": 734,
-            "h": 44
-          }
-        },
-        {
-          "kind": "point",
-          "t": 3.712120294570923,
-          "x": 1068,
-          "y": 106,
-          "rect": {
-            "x": 1054,
-            "y": 94.1875,
-            "w": 28,
-            "h": 24
-          }
-        },
-        {
-          "kind": "look",
-          "t": 4.190120220184326,
-          "rect": {
-            "x": 572,
-            "y": 177.5859375,
-            "w": 516,
-            "h": 226.4609375
+            "x": 368,
+            "y": 142.1875,
+            "w": 265.8359375,
+            "h": 20
           }
         }
       ],
@@ -109,7 +538,7 @@
           }
         },
         {
-          "t": 1.6039202213287354,
+          "t": 1.6056461334228516,
           "view": {
             "x": 0,
             "y": 0,
@@ -118,55 +547,19 @@
           }
         },
         {
-          "t": 2.2039202213287354,
+          "t": 2.2056461334228517,
           "view": {
-            "x": 323,
-            "y": 0,
-            "w": 798,
-            "h": 476.5833333333333
-          }
-        },
-        {
-          "t": 2.962120294570923,
-          "view": {
-            "x": 323,
-            "y": 0,
-            "w": 798,
-            "h": 476.5833333333333
-          }
-        },
-        {
-          "t": 3.562120294570923,
-          "view": {
-            "x": 708,
+            "x": 140.91796875,
             "y": 0,
             "w": 720,
             "h": 430
           }
         },
         {
-          "t": 4.190120220184326,
+          "t": 3.7276461124420166,
           "view": {
-            "x": 708,
+            "x": 140.91796875,
             "y": 0,
-            "w": 720,
-            "h": 430
-          }
-        },
-        {
-          "t": 4.790120220184326,
-          "view": {
-            "x": 470,
-            "y": 75.81640625,
-            "w": 720,
-            "h": 430
-          }
-        },
-        {
-          "t": 6.310020208358765,
-          "view": {
-            "x": 470,
-            "y": 75.81640625,
             "w": 720,
             "h": 430
           }
@@ -175,12 +568,625 @@
     }
   },
   "step-3": {
-    "recordedAt": "2026-11-12T17:17:08.788320068Z",
-    "step": "Lesson 1: Connect Zotero to Obsidian and write your first literature note > step 3: type a few words of a title into Search papers and select the paper; a card under the list with the authors, the journal, and the buttons Open PDF and Write literature note",
+    "recordedAt": "2026-11-13T03:17:40.280326904Z",
+    "step": "Lesson 1: Connect Zotero to Obsidian and write your first literature note > step 3: install ZotLit Companion from its installation guide, then close the setup section with its × button; Install ZotLit Companion reads Installed, and then your papers fill the tab",
     "recipe": {
       "build": "pnpm exec turbo run build:dev --filter=@zotlit/obsidian --filter=@zotlit/zotero",
-      "record": "DOCS_WALK_RECORD=1 DOCS_WALK_ONLY=step-3 pnpm --filter @zotlit/e2e docs-walk src/docs-walks/connect-zotero-to-obsidian.walk.ts",
+      "record": "DOCS_WALK_NATIVE=1 DOCS_WALK_RECORD=1 DOCS_WALK_ONLY=step-3 pnpm --filter @zotlit/e2e docs-walk src/docs-walks/connect-zotero-to-obsidian.walk.ts",
       "recut": "node packages/e2e/src/docs-walks/clip-encode.ts .scratch/docs-walks/connect-zotero-to-obsidian/step-3.frames apps/docs/public/img/learn/connect-zotero-to-obsidian/step-3"
+    },
+    "env": {
+      "DOCS_WALK_ONLY": "step-3",
+      "DOCS_WALK_NATIVE": "1",
+      "DOCS_WALK_CAPTURE": "1",
+      "DOCS_WALK_RECORD": "1"
+    },
+    "versionGateBypass": false,
+    "recorder": {
+      "commit": "9bf4c443b8a6844ba050fd2b6458934e27a37f2c",
+      "edited": true
+    },
+    "apps": {
+      "obsidian": "1.15.1 (installer 1.15.1)",
+      "obsidianPin": "1.15.1 (installer 1.15.1)",
+      "zotero": "10.0"
+    },
+    "vaultCase": "docs",
+    "window": {
+      "width": 1440,
+      "height": 860
+    },
+    "source": "sequence",
+    "frames": ".scratch/docs-walks/connect-zotero-to-obsidian/step-3.frames",
+    "settings": {
+      "camera": true,
+      "zoom": 2,
+      "openHold": 0.7,
+      "lead": 0.15,
+      "ease": 0.6,
+      "minEase": 0.35,
+      "central": 0.6,
+      "padding": 32,
+      "opening": 1,
+      "rest": 1.5,
+      "glide": 0.6,
+      "typing": 1,
+      "width": 1440,
+      "fps": 30,
+      "posterQuality": 82,
+      "vp9Crf": 42,
+      "h264Crf": 32
+    },
+    "duration": 41.433,
+    "outputs": {
+      "apps/docs/public/img/learn/connect-zotero-to-obsidian/step-3.webm": 1647666,
+      "apps/docs/public/img/learn/connect-zotero-to-obsidian/step-3.mp4": 1515868,
+      "apps/docs/public/img/learn/connect-zotero-to-obsidian/step-3.poster.webp": 57550
+    },
+    "shots": [
+      {
+        "dir": "01-obsidian",
+        "viewport": {
+          "width": 1440,
+          "height": 860
+        },
+        "events": [
+          {
+            "kind": "look",
+            "t": 1.0001070499420166,
+            "rect": {
+              "x": 355,
+              "y": 287.0859375,
+              "w": 734,
+              "h": 44
+            }
+          },
+          {
+            "kind": "point",
+            "t": 2.2031071186065674,
+            "x": 983,
+            "y": 309,
+            "rect": {
+              "x": 890.9453125,
+              "y": 294.0859375,
+              "w": 185.0546875,
+              "h": 30
+            }
+          }
+        ],
+        "keyframes": [
+          {
+            "t": 0,
+            "view": {
+              "x": 0,
+              "y": 0,
+              "w": 1440,
+              "h": 860
+            }
+          },
+          {
+            "t": 1.0001070499420166,
+            "view": {
+              "x": 0,
+              "y": 0,
+              "w": 1440,
+              "h": 860
+            }
+          },
+          {
+            "t": 1.6001070499420167,
+            "view": {
+              "x": 323,
+              "y": 70.79427083333334,
+              "w": 798,
+              "h": 476.5833333333333
+            }
+          },
+          {
+            "t": 1.6001070499420167,
+            "view": {
+              "x": 323,
+              "y": 70.79427083333334,
+              "w": 798,
+              "h": 476.5833333333333
+            }
+          },
+          {
+            "t": 2.0531071186065675,
+            "view": {
+              "x": 623.47265625,
+              "y": 94,
+              "w": 720,
+              "h": 430
+            }
+          },
+          {
+            "t": 4.270507097244263,
+            "view": {
+              "x": 623.47265625,
+              "y": 94,
+              "w": 720,
+              "h": 430
+            }
+          }
+        ]
+      },
+      {
+        "dir": "02-browser",
+        "viewport": {
+          "width": 1440,
+          "height": 860
+        },
+        "events": [
+          {
+            "kind": "look",
+            "t": 1.0038988590240479,
+            "rect": {
+              "x": 302,
+              "y": 128,
+              "w": 836,
+              "h": 41.75
+            }
+          },
+          {
+            "kind": "look",
+            "t": 3.2079989910125732,
+            "rect": {
+              "x": 364,
+              "y": 112.109375,
+              "w": 757,
+              "h": 131.03125
+            }
+          },
+          {
+            "kind": "point",
+            "t": 4.411898851394653,
+            "x": 469,
+            "y": 222,
+            "rect": {
+              "x": 364,
+              "y": 201.140625,
+              "w": 209.140625,
+              "h": 42
+            }
+          }
+        ],
+        "keyframes": [
+          {
+            "t": 0,
+            "view": {
+              "x": 0,
+              "y": 0,
+              "w": 1440,
+              "h": 860
+            }
+          },
+          {
+            "t": 1.0038988590240479,
+            "view": {
+              "x": 0,
+              "y": 0,
+              "w": 1440,
+              "h": 860
+            }
+          },
+          {
+            "t": 1.603898859024048,
+            "view": {
+              "x": 270,
+              "y": 0,
+              "w": 900,
+              "h": 537.5
+            }
+          },
+          {
+            "t": 3.2079989910125732,
+            "view": {
+              "x": 270,
+              "y": 0,
+              "w": 900,
+              "h": 537.5
+            }
+          },
+          {
+            "t": 3.8079989910125733,
+            "view": {
+              "x": 332,
+              "y": 0,
+              "w": 821,
+              "h": 490.31944444444446
+            }
+          },
+          {
+            "t": 3.8079989910125733,
+            "view": {
+              "x": 332,
+              "y": 0,
+              "w": 821,
+              "h": 490.31944444444446
+            }
+          },
+          {
+            "t": 4.261898851394653,
+            "view": {
+              "x": 108.5703125,
+              "y": 7.140625,
+              "w": 720,
+              "h": 430
+            }
+          },
+          {
+            "t": 7.375598907470703,
+            "view": {
+              "x": 108.5703125,
+              "y": 7.140625,
+              "w": 720,
+              "h": 430
+            }
+          }
+        ]
+      },
+      {
+        "dir": "03-desktop",
+        "viewport": {
+          "width": 1456,
+          "height": 870
+        },
+        "events": [
+          {
+            "kind": "point",
+            "t": 3.6500000953674316,
+            "x": 266,
+            "y": 16.5
+          },
+          {
+            "kind": "point",
+            "t": 6.03600001335144,
+            "x": 348.5,
+            "y": 110
+          },
+          {
+            "kind": "point",
+            "t": 10.417999982833862,
+            "x": 1212,
+            "y": 180
+          },
+          {
+            "kind": "point",
+            "t": 12.59000015258789,
+            "x": 1096.066635131836,
+            "y": 276
+          }
+        ],
+        "keyframes": [
+          {
+            "t": 0,
+            "view": {
+              "x": 0,
+              "y": 33,
+              "w": 1401,
+              "h": 837
+            }
+          },
+          {
+            "t": 1.4660000801086426,
+            "view": {
+              "x": 0,
+              "y": 33,
+              "w": 1401,
+              "h": 837
+            }
+          },
+          {
+            "t": 2.0660000801086427,
+            "view": {
+              "x": 0,
+              "y": 33,
+              "w": 600,
+              "h": 358.5164835164835
+            }
+          },
+          {
+            "t": 2.1670000553131104,
+            "view": {
+              "x": 0,
+              "y": 33,
+              "w": 600,
+              "h": 358.5164835164835
+            }
+          },
+          {
+            "t": 2.7670000553131104,
+            "view": {
+              "x": 0,
+              "y": 0,
+              "w": 600,
+              "h": 358.5164835164835
+            }
+          },
+          {
+            "t": 7.118000030517578,
+            "view": {
+              "x": 0,
+              "y": 0,
+              "w": 600,
+              "h": 358.5164835164835
+            }
+          },
+          {
+            "t": 7.718000030517578,
+            "view": {
+              "x": 0,
+              "y": 33,
+              "w": 600,
+              "h": 358.5164835164835
+            }
+          },
+          {
+            "t": 7.7190001010894775,
+            "view": {
+              "x": 0,
+              "y": 33,
+              "w": 600,
+              "h": 358.5164835164835
+            }
+          },
+          {
+            "t": 8.319000101089477,
+            "view": {
+              "x": 0,
+              "y": 32.864010989011035,
+              "w": 1401,
+              "h": 837.135989010989
+            }
+          },
+          {
+            "t": 8.919000148773193,
+            "view": {
+              "x": 0,
+              "y": 32.864010989011035,
+              "w": 1401,
+              "h": 837.135989010989
+            }
+          },
+          {
+            "t": 9.519000148773193,
+            "view": {
+              "x": 673,
+              "y": 52.5,
+              "w": 728,
+              "h": 435
+            }
+          },
+          {
+            "t": 12.728000164031982,
+            "view": {
+              "x": 673,
+              "y": 52.5,
+              "w": 728,
+              "h": 435
+            }
+          }
+        ]
+      },
+      {
+        "dir": "04-desktop",
+        "viewport": {
+          "width": 1456,
+          "height": 870
+        },
+        "events": [
+          {
+            "kind": "point",
+            "t": 3.498999834060669,
+            "x": 535,
+            "y": 260
+          },
+          {
+            "kind": "point",
+            "t": 5.665999889373779,
+            "x": 1136,
+            "y": 556
+          }
+        ],
+        "keyframes": [
+          {
+            "t": 0,
+            "view": {
+              "x": 478,
+              "y": 158.97527472527474,
+              "w": 718,
+              "h": 429.02472527472526
+            }
+          },
+          {
+            "t": 5.794999837875366,
+            "view": {
+              "x": 478,
+              "y": 158.97527472527474,
+              "w": 718,
+              "h": 429.02472527472526
+            }
+          }
+        ]
+      },
+      {
+        "dir": "05-desktop",
+        "viewport": {
+          "width": 1456,
+          "height": 870
+        },
+        "events": [
+          {
+            "kind": "park",
+            "t": 2.3259999752044678,
+            "x": 1088,
+            "y": 474.6000061035156
+          }
+        ],
+        "keyframes": [
+          {
+            "t": 0,
+            "view": {
+              "x": 0,
+              "y": 32.864010989011035,
+              "w": 1401,
+              "h": 837.135989010989
+            }
+          },
+          {
+            "t": 1.4620001316070557,
+            "view": {
+              "x": 0,
+              "y": 32.864010989011035,
+              "w": 1401,
+              "h": 837.135989010989
+            }
+          },
+          {
+            "t": 2.0620001316070558,
+            "view": {
+              "x": 441,
+              "y": 86.22500610351562,
+              "w": 910,
+              "h": 543.75
+            }
+          },
+          {
+            "t": 5.5340001583099365,
+            "view": {
+              "x": 441,
+              "y": 86.22500610351562,
+              "w": 910,
+              "h": 543.75
+            }
+          }
+        ]
+      },
+      {
+        "dir": "06-obsidian",
+        "viewport": {
+          "width": 1440,
+          "height": 860
+        },
+        "events": [
+          {
+            "kind": "look",
+            "t": 1.0244758129119873,
+            "rect": {
+              "x": 355,
+              "y": 287.0859375,
+              "w": 734,
+              "h": 42
+            }
+          },
+          {
+            "kind": "point",
+            "t": 3.128376007080078,
+            "x": 1068,
+            "y": 106,
+            "rect": {
+              "x": 1054,
+              "y": 94.1875,
+              "w": 28,
+              "h": 24
+            }
+          },
+          {
+            "kind": "look",
+            "t": 3.6071760654449463,
+            "rect": {
+              "x": 572,
+              "y": 177.5859375,
+              "w": 516,
+              "h": 226.4609375
+            }
+          }
+        ],
+        "keyframes": [
+          {
+            "t": 0,
+            "view": {
+              "x": 0,
+              "y": 0,
+              "w": 1440,
+              "h": 860
+            }
+          },
+          {
+            "t": 1.0244758129119873,
+            "view": {
+              "x": 0,
+              "y": 0,
+              "w": 1440,
+              "h": 860
+            }
+          },
+          {
+            "t": 1.6244758129119874,
+            "view": {
+              "x": 323,
+              "y": 69.79427083333334,
+              "w": 798,
+              "h": 476.5833333333333
+            }
+          },
+          {
+            "t": 2.378376007080078,
+            "view": {
+              "x": 323,
+              "y": 69.79427083333334,
+              "w": 798,
+              "h": 476.5833333333333
+            }
+          },
+          {
+            "t": 2.978376007080078,
+            "view": {
+              "x": 708,
+              "y": 0,
+              "w": 720,
+              "h": 430
+            }
+          },
+          {
+            "t": 3.607176065444946,
+            "view": {
+              "x": 708,
+              "y": 0,
+              "w": 720,
+              "h": 430
+            }
+          },
+          {
+            "t": 4.207176065444946,
+            "view": {
+              "x": 470,
+              "y": 75.81640625,
+              "w": 720,
+              "h": 430
+            }
+          },
+          {
+            "t": 5.728176116943359,
+            "view": {
+              "x": 470,
+              "y": 75.81640625,
+              "w": 720,
+              "h": 430
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "step-4": {
+    "recordedAt": "2026-11-12T17:17:08.788320068Z",
+    "step": "Lesson 1: Connect Zotero to Obsidian and write your first literature note > step 4: type a few words of a title into Search papers and select the paper; a card under the list with the authors, the journal, and the buttons Open PDF and Write literature note",
+    "recipe": {
+      "build": "pnpm exec turbo run build:dev --filter=@zotlit/obsidian --filter=@zotlit/zotero",
+      "record": "DOCS_WALK_RECORD=1 DOCS_WALK_ONLY=step-4 pnpm --filter @zotlit/e2e docs-walk src/docs-walks/connect-zotero-to-obsidian.walk.ts",
+      "recut": "node packages/e2e/src/docs-walks/clip-encode.ts .scratch/docs-walks/connect-zotero-to-obsidian/step-4.frames apps/docs/public/img/learn/connect-zotero-to-obsidian/step-4"
     },
     "env": {
       "DOCS_WALK_RECORD": "1"
@@ -201,7 +1207,7 @@
       "height": 860
     },
     "source": "obsidian-screencast",
-    "frames": ".scratch/docs-walks/connect-zotero-to-obsidian/step-3.frames",
+    "frames": ".scratch/docs-walks/connect-zotero-to-obsidian/step-4.frames",
     "settings": {
       "camera": true,
       "zoom": 2,
@@ -223,9 +1229,9 @@
     },
     "duration": 7.467,
     "outputs": {
-      "apps/docs/public/img/learn/connect-zotero-to-obsidian/step-3.webm": 377409,
-      "apps/docs/public/img/learn/connect-zotero-to-obsidian/step-3.mp4": 349850,
-      "apps/docs/public/img/learn/connect-zotero-to-obsidian/step-3.poster.webp": 40812
+      "apps/docs/public/img/learn/connect-zotero-to-obsidian/step-4.webm": 377409,
+      "apps/docs/public/img/learn/connect-zotero-to-obsidian/step-4.mp4": 349850,
+      "apps/docs/public/img/learn/connect-zotero-to-obsidian/step-4.poster.webp": 40812
     },
     "camera": {
       "track": "planned",
@@ -356,13 +1362,13 @@
       ]
     }
   },
-  "step-4": {
+  "step-5": {
     "recordedAt": "2026-11-12T17:17:15.984878906Z",
-    "step": "Lesson 1: Connect Zotero to Obsidian and write your first literature note > step 4: select Open PDF; the PDF in a new tab, with your highlights in their original colours",
+    "step": "Lesson 1: Connect Zotero to Obsidian and write your first literature note > step 5: select Open PDF; the PDF in a new tab, with your highlights in their original colours",
     "recipe": {
       "build": "pnpm exec turbo run build:dev --filter=@zotlit/obsidian --filter=@zotlit/zotero",
-      "record": "DOCS_WALK_RECORD=1 DOCS_WALK_ONLY=step-4 pnpm --filter @zotlit/e2e docs-walk src/docs-walks/connect-zotero-to-obsidian.walk.ts",
-      "recut": "node packages/e2e/src/docs-walks/clip-encode.ts .scratch/docs-walks/connect-zotero-to-obsidian/step-4.frames apps/docs/public/img/learn/connect-zotero-to-obsidian/step-4"
+      "record": "DOCS_WALK_RECORD=1 DOCS_WALK_ONLY=step-5 pnpm --filter @zotlit/e2e docs-walk src/docs-walks/connect-zotero-to-obsidian.walk.ts",
+      "recut": "node packages/e2e/src/docs-walks/clip-encode.ts .scratch/docs-walks/connect-zotero-to-obsidian/step-5.frames apps/docs/public/img/learn/connect-zotero-to-obsidian/step-5"
     },
     "env": {
       "DOCS_WALK_RECORD": "1"
@@ -383,7 +1389,7 @@
       "height": 860
     },
     "source": "obsidian-screencast",
-    "frames": ".scratch/docs-walks/connect-zotero-to-obsidian/step-4.frames",
+    "frames": ".scratch/docs-walks/connect-zotero-to-obsidian/step-5.frames",
     "settings": {
       "camera": true,
       "zoom": 2,
@@ -405,9 +1411,9 @@
     },
     "duration": 4.133,
     "outputs": {
-      "apps/docs/public/img/learn/connect-zotero-to-obsidian/step-4.webm": 930521,
-      "apps/docs/public/img/learn/connect-zotero-to-obsidian/step-4.mp4": 786089,
-      "apps/docs/public/img/learn/connect-zotero-to-obsidian/step-4.poster.webp": 178836
+      "apps/docs/public/img/learn/connect-zotero-to-obsidian/step-5.webm": 930521,
+      "apps/docs/public/img/learn/connect-zotero-to-obsidian/step-5.mp4": 786089,
+      "apps/docs/public/img/learn/connect-zotero-to-obsidian/step-5.poster.webp": 178836
     },
     "camera": {
       "track": "planned",
@@ -497,13 +1503,13 @@
       ]
     }
   },
-  "step-5": {
+  "step-6": {
     "recordedAt": "2026-11-12T17:17:24.020948975Z",
-    "step": "Lesson 1: Connect Zotero to Obsidian and write your first literature note > step 5: go back to the Zotero library tab and select Write literature note; the notice Literature note created. and the note in a new tab",
+    "step": "Lesson 1: Connect Zotero to Obsidian and write your first literature note > step 6: go back to the Zotero library tab and select Write literature note; the notice Literature note created. and the note in a new tab",
     "recipe": {
       "build": "pnpm exec turbo run build:dev --filter=@zotlit/obsidian --filter=@zotlit/zotero",
-      "record": "DOCS_WALK_RECORD=1 DOCS_WALK_ONLY=step-5 pnpm --filter @zotlit/e2e docs-walk src/docs-walks/connect-zotero-to-obsidian.walk.ts",
-      "recut": "node packages/e2e/src/docs-walks/clip-encode.ts .scratch/docs-walks/connect-zotero-to-obsidian/step-5.frames apps/docs/public/img/learn/connect-zotero-to-obsidian/step-5"
+      "record": "DOCS_WALK_RECORD=1 DOCS_WALK_ONLY=step-6 pnpm --filter @zotlit/e2e docs-walk src/docs-walks/connect-zotero-to-obsidian.walk.ts",
+      "recut": "node packages/e2e/src/docs-walks/clip-encode.ts .scratch/docs-walks/connect-zotero-to-obsidian/step-6.frames apps/docs/public/img/learn/connect-zotero-to-obsidian/step-6"
     },
     "env": {
       "DOCS_WALK_RECORD": "1"
@@ -524,7 +1530,7 @@
       "height": 860
     },
     "source": "obsidian-screencast",
-    "frames": ".scratch/docs-walks/connect-zotero-to-obsidian/step-5.frames",
+    "frames": ".scratch/docs-walks/connect-zotero-to-obsidian/step-6.frames",
     "settings": {
       "camera": true,
       "zoom": 2,
@@ -546,9 +1552,9 @@
     },
     "duration": 4.767,
     "outputs": {
-      "apps/docs/public/img/learn/connect-zotero-to-obsidian/step-5.webm": 1001887,
-      "apps/docs/public/img/learn/connect-zotero-to-obsidian/step-5.mp4": 684278,
-      "apps/docs/public/img/learn/connect-zotero-to-obsidian/step-5.poster.webp": 71484
+      "apps/docs/public/img/learn/connect-zotero-to-obsidian/step-6.webm": 1001887,
+      "apps/docs/public/img/learn/connect-zotero-to-obsidian/step-6.mp4": 684278,
+      "apps/docs/public/img/learn/connect-zotero-to-obsidian/step-6.poster.webp": 71484
     },
     "camera": {
       "track": "planned",
@@ -668,13 +1674,13 @@
       ]
     }
   },
-  "step-6": {
+  "step-7": {
     "recordedAt": "2026-11-12T17:17:38.169441895Z",
-    "step": "Lesson 1: Connect Zotero to Obsidian and write your first literature note > step 6: under the line with the Zotero and PDF links, type a heading and your own thoughts; your text above the Annotations section",
+    "step": "Lesson 1: Connect Zotero to Obsidian and write your first literature note > step 7: under the line with the Zotero and PDF links, type a heading and your own thoughts; your text above the Annotations section",
     "recipe": {
       "build": "pnpm exec turbo run build:dev --filter=@zotlit/obsidian --filter=@zotlit/zotero",
-      "record": "DOCS_WALK_RECORD=1 DOCS_WALK_ONLY=step-6 pnpm --filter @zotlit/e2e docs-walk src/docs-walks/connect-zotero-to-obsidian.walk.ts",
-      "recut": "node packages/e2e/src/docs-walks/clip-encode.ts .scratch/docs-walks/connect-zotero-to-obsidian/step-6.frames apps/docs/public/img/learn/connect-zotero-to-obsidian/step-6"
+      "record": "DOCS_WALK_RECORD=1 DOCS_WALK_ONLY=step-7 pnpm --filter @zotlit/e2e docs-walk src/docs-walks/connect-zotero-to-obsidian.walk.ts",
+      "recut": "node packages/e2e/src/docs-walks/clip-encode.ts .scratch/docs-walks/connect-zotero-to-obsidian/step-7.frames apps/docs/public/img/learn/connect-zotero-to-obsidian/step-7"
     },
     "env": {
       "DOCS_WALK_RECORD": "1"
@@ -695,7 +1701,7 @@
       "height": 860
     },
     "source": "obsidian-screencast",
-    "frames": ".scratch/docs-walks/connect-zotero-to-obsidian/step-6.frames",
+    "frames": ".scratch/docs-walks/connect-zotero-to-obsidian/step-7.frames",
     "settings": {
       "camera": true,
       "zoom": 2,
@@ -717,9 +1723,9 @@
     },
     "duration": 9.3,
     "outputs": {
-      "apps/docs/public/img/learn/connect-zotero-to-obsidian/step-6.webm": 557162,
-      "apps/docs/public/img/learn/connect-zotero-to-obsidian/step-6.mp4": 430917,
-      "apps/docs/public/img/learn/connect-zotero-to-obsidian/step-6.poster.webp": 47130
+      "apps/docs/public/img/learn/connect-zotero-to-obsidian/step-7.webm": 557162,
+      "apps/docs/public/img/learn/connect-zotero-to-obsidian/step-7.mp4": 430917,
+      "apps/docs/public/img/learn/connect-zotero-to-obsidian/step-7.poster.webp": 47130
     },
     "camera": {
       "track": "planned",

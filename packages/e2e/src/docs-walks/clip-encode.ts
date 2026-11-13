@@ -39,6 +39,75 @@ export interface CameraLog {
   events: CameraEvent[];
   /** The settings the clip was recorded with. */
   settings?: ClipSettings;
+  /**
+   * Parts of the frame to blur in all of the shot's frames, in the
+   * viewport's units: a desktop shot's private parts, such as the menu
+   * bar's status area.
+   */
+  blur?: BlurRegion[];
+}
+
+/** A part of a shot's frames that the encoder blurs. */
+export interface BlurRegion {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
+/**
+ * Blur `regions` (source px) of the raw RGB image `image` in place, so
+ * strongly that no text or icon in them stays legible.
+ */
+async function blurRegions(
+  image: Buffer,
+  size: { width: number; height: number },
+  regions: { left: number; top: number; width: number; height: number }[],
+): Promise<void> {
+  const raw = { width: size.width, height: size.height, channels: 3 as const };
+  for (const r of regions) {
+    const left = Math.max(0, Math.round(r.left));
+    const top = Math.max(0, Math.round(r.top));
+    const width = Math.min(size.width - left, Math.round(r.width));
+    const height = Math.min(size.height - top, Math.round(r.height));
+    if (width <= 0 || height <= 0) continue;
+    const blurred = await sharp(image, { raw })
+      .extract({ left, top, width, height })
+      .blur(40)
+      .raw()
+      .toBuffer();
+    for (let y = 0; y < height; y++)
+      blurred.copy(
+        image,
+        ((top + y) * size.width + left) * 3,
+        y * width * 3,
+        (y + 1) * width * 3,
+      );
+  }
+}
+
+/**
+ * A clip made of several shots, `sequence.json` in a clip's frames folder:
+ * each shot is a folder of frames beside it, with its own camera log, cut
+ * one after the other into one clip. A shot names `track.json` (a file in
+ * its folder) to keep the track it was recorded with, or `whole`.
+ */
+export interface ClipSequence {
+  shots: { dir: string; track?: string }[];
+}
+
+/** One shot's frames, log and duration, from its folder. */
+async function readShot(dir: string) {
+  const frames = JSON.parse(
+    await readFile(join(dir, "frames.json"), "utf8"),
+  ) as RecordedFrame[];
+  const shown = frames.filter((f) => f.file);
+  if (shown.length === 0) throw new Error(`no frames recorded in ${dir}`);
+  const log = JSON.parse(
+    await readFile(join(dir, "camera.json"), "utf8"),
+  ) as CameraLog;
+  const start = shown[0]!.t;
+  return { shown, log, start, duration: frames.at(-1)!.t - start };
 }
 
 /**
@@ -49,6 +118,8 @@ export interface CameraLog {
  * those the clip was recorded with, under this run's overrides; with the
  * camera off, the clip keeps the whole window and has no poster. The track
  * used is written to `dir/track.json` and answered with the clip's log.
+ * A `dir` with a `sequence.json` is a clip of several shots
+ * ({@link ClipSequence}); it answers the track and log of its last shot.
  */
 export async function encodeClip(
   dir: string,
@@ -58,38 +129,128 @@ export async function encodeClip(
     settings,
   }: { track?: CameraTrack | "whole"; settings?: ClipSettings } = {},
 ): Promise<{ track: CameraTrack; log: CameraLog; settings: ClipSettings }> {
-  const frames = JSON.parse(
-    await readFile(join(dir, "frames.json"), "utf8"),
-  ) as RecordedFrame[];
-  const shown = frames.filter((f) => f.file);
-  if (shown.length === 0) throw new Error(`no frames recorded in ${dir}`);
-  const log = JSON.parse(
-    await readFile(join(dir, "camera.json"), "utf8"),
-  ) as CameraLog;
-  const start = shown[0]!.t;
-  const duration = frames.at(-1)!.t - start;
-  const { width: W, height: H } = log.viewport;
-  const s = settings ?? clipSettings(log.settings);
-  const used =
-    track === "whole" || !s.camera
-      ? { keyframes: [{ t: 0, view: { x: 0, y: 0, w: W, h: H } }] }
-      : (track ??
-        planCamera(
-          { viewport: log.viewport, duration, events: log.events },
-          s,
-        ));
-  await writeFile(
-    join(dir, "track.json"),
-    `${JSON.stringify(used, null, 2)}\n`,
+  const sequence = await readFile(join(dir, "sequence.json"), "utf8").then(
+    (text) => JSON.parse(text) as ClipSequence,
+    () => undefined,
   );
+  const shots = sequence
+    ? await Promise.all(
+        sequence.shots.map(async (shot) => ({
+          dir: join(dir, shot.dir),
+          track:
+            shot.track === "whole"
+              ? ("whole" as const)
+              : shot.track
+                ? await readTrack(join(dir, shot.dir, shot.track))
+                : undefined,
+        })),
+      )
+    : [{ dir, track }];
 
+  const baked = join(dir, "baked");
+  await rm(baked, { recursive: true, force: true });
+  await mkdir(baked, { recursive: true });
+  let size: { outW: number; outH: number } | undefined;
+  let tick = 0;
+  let image = 0;
+  let last: Awaited<ReturnType<typeof bakeShot>> | undefined;
+  let s: ClipSettings | undefined;
+  for (const shot of shots) {
+    const read = await readShot(shot.dir);
+    s ??= settings ?? clipSettings(read.log.settings);
+    const { width: W, height: H } = read.log.viewport;
+    // The clip is `width` px wide at most, at the first shot's ratio, in
+    // even px.
+    if (!size) {
+      const first = await sharp(join(shot.dir, read.shown[0]!.file)).metadata();
+      const outW = Math.min(s.width, first.width);
+      size = { outW, outH: 2 * Math.round((outW * H) / W / 2) };
+    }
+    const used =
+      shot.track === "whole" || !s.camera
+        ? { keyframes: [{ t: 0, view: { x: 0, y: 0, w: W, h: H } }] }
+        : (shot.track ??
+          planCamera(
+            {
+              viewport: read.log.viewport,
+              duration: read.duration,
+              events: read.log.events,
+            },
+            s,
+          ));
+    await writeFile(
+      join(shot.dir, "track.json"),
+      `${JSON.stringify(used, null, 2)}\n`,
+    );
+    last = await bakeShot({
+      dir: shot.dir,
+      read,
+      used,
+      s,
+      size,
+      baked,
+      from: { tick, image },
+    });
+    tick = last.tick;
+    image = last.image;
+  }
+  await encodeBoth(
+    {
+      input: [
+        "-y",
+        "-framerate",
+        String(s!.fps),
+        "-i",
+        join(baked, "t%05d.png"),
+      ],
+      filter: "format=yuv420p",
+    },
+    out,
+    s!,
+  );
+  if (s!.camera)
+    await sharp(join(baked, last!.lastFile))
+      .webp({ quality: s!.posterQuality })
+      .toFile(`${out}.poster.webp`);
+  return { track: last!.track, log: last!.log, settings: s! };
+}
+
+/**
+ * Bake one shot into `baked`: one image per tick from `tick` on, each the
+ * screencast frame shown at that time, cropped to the camera's view and
+ * scaled to the clip's size.
+ */
+async function bakeShot({
+  dir,
+  read,
+  used,
+  s,
+  size: { outW, outH },
+  baked,
+  from,
+}: {
+  dir: string;
+  read: Awaited<ReturnType<typeof readShot>>;
+  used: CameraTrack;
+  s: ClipSettings;
+  size: { outW: number; outH: number };
+  baked: string;
+  /** The first tick and image number of the shot. */
+  from: { tick: number; image: number };
+}): Promise<{
+  tick: number;
+  image: number;
+  lastFile: string;
+  track: CameraTrack;
+  log: CameraLog;
+}> {
+  const { shown, log, start, duration } = read;
+  let { tick, image } = from;
+  const { width: W, height: H } = log.viewport;
   const first = await sharp(join(dir, shown[0]!.file)).metadata();
   const scale = first.width / W;
   const sourceW = first.width;
   const sourceH = first.height;
-  // The clip is `width` px wide at most, at the window's ratio, in even px.
-  const outW = Math.min(s.width, sourceW);
-  const outH = 2 * Math.round((outW * H) / W / 2);
 
   // One output frame per tick; a run of ticks with the same source frame
   // and crop becomes one image held for the run.
@@ -130,16 +291,13 @@ export async function encodeClip(
     else shots.push({ frame: at, left, top, width, height, ticks: 1 });
   }
 
-  const baked = join(dir, "baked");
-  await rm(baked, { recursive: true, force: true });
-  await mkdir(baked, { recursive: true });
   let source: { frame: number; image: Buffer } | undefined;
   // Each tick is one file, a hard link to its shot's image, so ffmpeg reads
   // the clip at exactly `fps`: a concat list rounds its times to 1/25 s and
   // makes a camera move judder.
-  let tick = 0;
-  for (const [i, shot] of shots.entries()) {
-    if (source?.frame !== shot.frame)
+  let lastFile = "";
+  for (const shot of shots) {
+    if (source?.frame !== shot.frame) {
       source = {
         frame: shot.frame,
         image: await sharp(join(dir, shown[shot.frame]!.file))
@@ -147,7 +305,21 @@ export async function encodeClip(
           .raw()
           .toBuffer(),
       };
-    const file = `b${String(i).padStart(5, "0")}.png`;
+      // The private parts this frame shows, blurred before the crop.
+      const regions = (log.blur ?? []).map((b) => ({
+        left: b.x * scale,
+        top: b.y * scale,
+        width: b.w * scale,
+        height: b.h * scale,
+      }));
+      if (regions.length > 0)
+        await blurRegions(
+          source.image,
+          { width: sourceW, height: sourceH },
+          regions,
+        );
+    }
+    lastFile = `b${String(image++).padStart(5, "0")}.png`;
     await sharp(source.image, {
       raw: { width: sourceW, height: sourceH, channels: 3 },
     })
@@ -159,33 +331,14 @@ export async function encodeClip(
       })
       .resize(outW, outH, { kernel: "lanczos3", fit: "fill" })
       .png({ compressionLevel: 1 })
-      .toFile(join(baked, file));
+      .toFile(join(baked, lastFile));
     for (let n = 0; n < shot.ticks; n++)
       await link(
-        join(baked, file),
+        join(baked, lastFile),
         join(baked, `t${String(tick++).padStart(5, "0")}.png`),
       );
   }
-  const lastFile = `b${String(shots.length - 1).padStart(5, "0")}.png`;
-  await encodeBoth(
-    {
-      input: [
-        "-y",
-        "-framerate",
-        String(s.fps),
-        "-i",
-        join(baked, "t%05d.png"),
-      ],
-      filter: "format=yuv420p",
-    },
-    out,
-    s,
-  );
-  if (s.camera)
-    await sharp(join(baked, lastFile))
-      .webp({ quality: s.posterQuality })
-      .toFile(`${out}.poster.webp`);
-  return { track: used, log, settings: s };
+  return { tick, image, lastFile, track: used, log };
 }
 
 /**

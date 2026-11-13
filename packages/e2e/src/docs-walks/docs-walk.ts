@@ -9,9 +9,19 @@ import {
   encodeMovie,
   readTrack,
 } from "@e2e/docs-walks/clip-encode.ts";
-import type { CameraLog, RecordedFrame } from "@e2e/docs-walks/clip-encode.ts";
+import type {
+  CameraLog,
+  ClipSequence,
+  RecordedFrame,
+} from "@e2e/docs-walks/clip-encode.ts";
 import { clipSettings } from "@e2e/docs-walks/clip-settings.ts";
 import type { ClipSettings } from "@e2e/docs-walks/clip-settings.ts";
+import type {
+  DocsBrowser,
+  DocsBrowserPage,
+} from "@e2e/docs-walks/docs-browser.ts";
+import { recordDesktop } from "@e2e/docs-walks/macos-desktop.ts";
+import type { DesktopShot } from "@e2e/docs-walks/macos-desktop.ts";
 import {
   outputSizes,
   takeRecipe,
@@ -217,6 +227,17 @@ export interface DocsWalk extends AsyncDisposable {
     options?: { notices?: boolean },
   ): Promise<T>;
   /**
+   * Record the clip `name` from several shots in a row, one app each: `run`
+   * records each shot through {@link ClipShots}, and the shots are cut into
+   * one clip beside the step's image, with its poster and its take, as
+   * {@link record} does. It always records: the walk calls it only when
+   * {@link recordRequested} names the clip.
+   */
+  recordClip<T>(
+    name: string,
+    run: (shots: ClipShots) => Promise<T>,
+  ): Promise<T>;
+  /**
    * Run `actions` in Zotero and record the Paired Zotero window whose title
    * matches `title` with macOS window capture, as {@link record} does for
    * Obsidian. Zotero comes to the front for the clip. `pointAt` draws a
@@ -232,6 +253,29 @@ export interface DocsWalk extends AsyncDisposable {
       stop: () => Promise<void>,
     ) => Promise<T>,
   ): Promise<T>;
+}
+
+/** The shots of a clip that {@link DocsWalk.recordClip} records, in order. */
+export interface ClipShots {
+  /** A screencast of the walk's Obsidian window, with the drawn pointer. */
+  obsidian<T>(actions: () => Promise<T>): Promise<T>;
+  /** The page content of the clean browser, with its drawn pointer. */
+  browser<T>(
+    browser: DocsBrowser,
+    actions: (page: DocsBrowserPage) => Promise<T>,
+  ): Promise<T>;
+  /**
+   * A screen region, with the real pointer and keys sent to the app of
+   * `pid` (macos-desktop.ts), framed by the views `actions` choose.
+   */
+  desktop<T>(
+    options: { pid: number; region: Rect; start: Rect; blur?: Rect[] },
+    actions: (shot: DesktopShot) => Promise<T>,
+  ): Promise<T>;
+  /** How many shots the clip has so far, for {@link ClipShots.rollback}. */
+  mark(): number;
+  /** Drop the shots after `mark` from the clip and the disk, to take them again. */
+  rollback(mark: number): Promise<void>;
 }
 
 interface Layout {
@@ -431,28 +475,7 @@ export async function openDocsWalk(
         }
         await new Promise((r) => setTimeout(r, settings.rest * 1000));
       } finally {
-        const recorded = await obRun(vaultId, async ({ page }) => {
-          const stop = page.scratch.docsWalkStopRecording;
-          delete page.scratch.docsWalkStopRecording;
-          delete page.scratch.docsWalkPointer;
-          for (const el of document.querySelectorAll(
-            "[data-docs-walk-pointer]",
-          ))
-            el.remove();
-          const done = stop ? await stop() : undefined;
-          page.scratch.docsWalkReleaseNotices?.();
-          delete page.scratch.docsWalkReleaseNotices;
-          return done;
-        });
-        await writeFile(
-          join(frames, "frames.json"),
-          JSON.stringify(recorded?.frames ?? [], null, 2),
-        );
-        if (recorded)
-          await writeFile(
-            join(frames, "camera.json"),
-            JSON.stringify({ ...recorded.camera, settings }, null, 2),
-          );
+        await stopRecording(vaultId, frames, settings);
       }
       await mkdir(images, { recursive: true });
       const out = join(images, name);
@@ -476,6 +499,77 @@ export async function openDocsWalk(
           events: cut.log.events,
           keyframes: cut.track.keyframes,
         },
+      });
+      return result;
+    },
+    async recordClip(name, run) {
+      const frames = join(captures, `${name}.frames`);
+      await rm(frames, { recursive: true, force: true });
+      await mkdir(frames, { recursive: true });
+      const sequence: ClipSequence = { shots: [] };
+      const shot = (kind: string, track?: string) => {
+        const dir = `${String(sequence.shots.length + 1).padStart(2, "0")}-${kind}`;
+        sequence.shots.push({ dir, ...(track && { track }) });
+        return join(frames, dir);
+      };
+      const result = await run({
+        async obsidian(actions) {
+          const dir = shot("obsidian");
+          await mkdir(dir, { recursive: true });
+          await startRecording(vaultId, dir, settings);
+          try {
+            const value = await actions();
+            await new Promise((r) => setTimeout(r, settings.rest * 1000));
+            return value;
+          } finally {
+            await stopRecording(vaultId, dir, settings);
+          }
+        },
+        browser: (browser, actions) =>
+          browser.record(shot("browser"), settings, actions),
+        desktop: (options, actions) =>
+          recordDesktop(
+            shot("desktop", "track.json"),
+            { ...options, settings },
+            actions,
+          ),
+        mark: () => sequence.shots.length,
+        async rollback(mark) {
+          for (const { dir } of sequence.shots.splice(mark))
+            await rm(join(frames, dir), { recursive: true, force: true });
+        },
+      });
+      await writeFile(
+        join(frames, "sequence.json"),
+        `${JSON.stringify(sequence, null, 2)}\n`,
+      );
+      await mkdir(images, { recursive: true });
+      const out = join(images, name);
+      await encodeClip(frames, out, { settings });
+      await writeTake(takes, name, {
+        recordedAt: Temporal.Now.instant().toString(),
+        step: expect.getState().currentTestName ?? "",
+        recipe: takeRecipe(root, { slug: options.slug, name, out, frames }),
+        ...(await runFacts()),
+        source: "sequence",
+        frames: relative(root, frames),
+        settings,
+        duration: await videoLength(`${out}.mp4`),
+        outputs: await outputSizes(root, out),
+        shots: await Promise.all(
+          sequence.shots.map(async ({ dir }) => {
+            const log = JSON.parse(
+              await readFile(join(frames, dir, "camera.json"), "utf8"),
+            ) as CameraLog;
+            const track = (await readTrack(join(frames, dir, "track.json")))!;
+            return {
+              dir,
+              viewport: log.viewport,
+              events: log.events,
+              keyframes: track.keyframes,
+            };
+          }),
+        ),
       });
       return result;
     },
@@ -547,6 +641,37 @@ export async function openDocsWalk(
     },
     [Symbol.asyncDispose]: () => owned.disposeAsync(),
   };
+}
+
+/**
+ * End the screencast {@link startRecording} started and write its frames
+ * and camera log into `dir`.
+ */
+async function stopRecording(
+  vaultId: string,
+  dir: string,
+  settings: ClipSettings,
+): Promise<void> {
+  const recorded = await obRun(vaultId, async ({ page }) => {
+    const stop = page.scratch.docsWalkStopRecording;
+    delete page.scratch.docsWalkStopRecording;
+    delete page.scratch.docsWalkPointer;
+    for (const el of document.querySelectorAll("[data-docs-walk-pointer]"))
+      el.remove();
+    const done = stop ? await stop() : undefined;
+    page.scratch.docsWalkReleaseNotices?.();
+    delete page.scratch.docsWalkReleaseNotices;
+    return done;
+  });
+  await writeFile(
+    join(dir, "frames.json"),
+    JSON.stringify(recorded?.frames ?? [], null, 2),
+  );
+  if (recorded)
+    await writeFile(
+      join(dir, "camera.json"),
+      JSON.stringify({ ...recorded.camera, settings }, null, 2),
+    );
 }
 
 /**

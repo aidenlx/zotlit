@@ -1,0 +1,10 @@
+{
+  "margin": 0.1,
+  "layers": [
+    {
+      "src": "step-2.png",
+      "lights": false,
+      "crop": { "left": 700, "top": 170, "width": 1500, "height": 516 }
+    }
+  ]
+}
