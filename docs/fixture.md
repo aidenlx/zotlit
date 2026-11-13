@@ -50,6 +50,8 @@ The Fixture Vault contains generated Literature Notes, imported-note mirrors, co
 
 `pandoc-export.md` checks **Export note with citations**. Rebuild with `pnpm fixture`, open the page in the Fixture Vault, and follow **Check the export**. Install the Pandoc engine first if the command asks for it. Export as HTML with the default citation style: the progress notice ends with the file and style, and the file preserves bold text and the callout body while removing the Obsidian callout marker. The page's separator lines stay separators: the text between them, including text that looks like a Property, stays in the body, and only the opening block is read as Properties. Run the command again and dismiss its dialog: no new output is written. The focused desktop check is `pnpm e2e --project=desktop src/walkthrough.e2e.ts -t 'exports a draft as HTML'`; it stages this committed page in the demo vault and reads the HTML after the completion notice.
 
+`help-links.md` checks where the Welcome "Getting started" tile and Settings → Resources → **Browse docs** open. Use the page's steps and expected outcomes; each case needs no Zotero data.
+
 `excerpt-display.md` checks live excerpt display, refresh, reopening, saved-edit replacement, cache clear, and unload. Use the `all` Scope Case and follow its action and expected-result table; the saved-edit cases require a Paired Run.
 
 `citekey-smoke-test.md` checks both citation pickers in its **Citation search and insertion** section: cited-item priority, main and alternate insertion, a changed destination, unload, the 150 ms index wait, and closing a pending picker. Use the `all` Scope Case and follow the action and expected-outcome table.

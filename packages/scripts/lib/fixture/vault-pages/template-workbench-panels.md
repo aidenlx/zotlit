@@ -947,7 +947,7 @@ selected call.
 
 Expected: in step 3 the Annotation tab opens with the cursor at the start of
 the annotation format. Above the format, the tab's one-line description and
-its **Annotation tutorial** link start at the same left edge and line height
+its **Annotation guide** link start at the same left edge and line height
 as the Note tab's description, and the editor does not move when you switch
 between the two tabs. The Preview stays under the editor in both steps, and
 **Show preview** stays pressed. No Fields popover is open after either step.

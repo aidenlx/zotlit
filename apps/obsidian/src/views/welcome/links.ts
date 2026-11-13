@@ -2,6 +2,7 @@
 
 import { DOCS_SITE_URL } from "@/lib/constants";
 
+export const DOCS_HOME = `${DOCS_SITE_URL}/docs`;
 export const DOCS_GETTING_STARTED = `${DOCS_SITE_URL}/learn`;
 export const DOCS_TEMPLATES = `${DOCS_SITE_URL}/docs/reference/templates`;
 export const DOCS_CITATIONS = `${DOCS_SITE_URL}/docs/how-to/insert-citations`;
