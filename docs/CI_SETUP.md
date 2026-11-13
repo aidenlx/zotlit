@@ -37,12 +37,7 @@ publish job grants itself the write permissions it needs.
 ## Docs deployment
 
 `.github/workflows/docs-deploy.yml` deploys Stable Docs from `main` and
-Pre-release Docs from `next`. A push to `next` starts it directly. Stable Docs
-starts when the Release workflow on `main` completes, and deploys only when
-Release succeeded: a failed `verify` job leaves the version unpublished, and the
-production site waits with it. That run checks out and builds the commit
-Release checked, and always deploys, because docs held back by an earlier
-failed release can sit in commits before it. Manual dispatch always deploys. For a push, the
+Pre-release Docs from `next`. Manual dispatch always deploys. For a push, the
 gate job asks Turbo whether the push changed `@zotlit/docs` or its dependency
 closure. An unavailable base commit, a force push, a change to the deploy
 workflow or to the setup action, or a failed Turbo query deploys instead of

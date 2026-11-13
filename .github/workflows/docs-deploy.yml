@@ -8,22 +8,12 @@ name: Docs Deploy
 # Pre-release Docs — the `beta` wrangler environment, `zotlit-docs-beta`, on
 # zotlit-beta.aidenlx.site. See ADR 0021.
 #
-# A push to `next` starts this workflow directly. The production line waits for
-# the Release workflow on `main`: a release that fails its `verify` job leaves
-# the version unpublished, so the production site must not announce it yet. A
-# push to `main` with nothing to release skips `verify`, and Release still
-# succeeds, so docs-only fixes on `main` deploy too.
-#
-# Every run enters the gate job, which asks Turbo whether the push touched
-# `@zotlit/docs` or anything in its dependency closure. An unaffected push
-# stops at the gate; an affected push runs the deploy job.
+# Every push on the two branches enters the gate job, which asks Turbo whether
+# the push touched `@zotlit/docs` or anything in its dependency closure. An
+# unaffected push stops at the gate; an affected push runs the deploy job.
 on:
   push:
-    branches: [next]
-  workflow_run:
-    workflows: [Release]
-    types: [completed]
-    branches: [main]
+    branches: [main, next]
   workflow_dispatch:
 
 permissions:
@@ -37,18 +27,13 @@ concurrency:
 
 jobs:
   gate:
-    # A failed Release run on `main` stops the production deploy here.
-    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
     outputs:
       deploy: ${{ steps.check.outputs.deploy }}
     steps:
       # The gate compares the push base against HEAD, so it needs full history.
-      # A workflow_run event carries the default branch's latest commit as its
-      # own; the commit Release checked is the one to gate and build.
       - uses: actions/checkout@v7
         with:
-          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
           fetch-depth: 0
 
       # The gate needs the pinned pnpm and Turbo versions, but an unaffected
@@ -70,11 +55,6 @@ jobs:
 
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             deploy "manual dispatch"
-          fi
-          # A run after a failed Release can carry docs from earlier commits
-          # that never deployed, so a successful Release always deploys.
-          if [ "${{ github.event_name }}" = "workflow_run" ]; then
-            deploy "Release succeeded on main"
           fi
           if [ -z "$BEFORE" ] || ! git cat-file -e "$BEFORE" 2>/dev/null; then
             deploy "base commit unavailable"
@@ -115,7 +95,6 @@ jobs:
       # each image's bytes from Git LFS, so both must be present before Vite.
       - uses: actions/checkout@v7
         with:
-          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
           fetch-depth: 0
           lfs: true
 
@@ -136,13 +115,8 @@ jobs:
       # `CLOUDFLARE_ENV` picks the Cloudflare environment at build time, so the
       # beta build has to be its own; a build made without it carries the
       # production line's variables whatever `wrangler deploy --env` says.
-      # On a workflow_run event `GITHUB_SHA` names the default branch's latest
-      # commit, which can be newer than the checkout; the build pins its
-      # archive URLs to `GITHUB_SHA`, so it takes the checked-out commit.
       - name: Build
         run: |
-          GITHUB_SHA="$(git rev-parse HEAD)"
-          export GITHUB_SHA
           if [ -n "$WRANGLER_ENV" ]; then
             export CLOUDFLARE_ENV="$WRANGLER_ENV"
           fi
