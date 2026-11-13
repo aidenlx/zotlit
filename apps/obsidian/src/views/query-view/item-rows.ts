@@ -4,7 +4,7 @@
 // without gestures leaves the rows as they are.
 //
 // @see apps/obsidian/docs/adr/0074-library-view-rows-act-as-quick-switcher-results.md
-import { useSyncExternalStore } from "react";
+import { useLayoutEffect, useMemo, useSyncExternalStore } from "react";
 import type { DragEvent, FocusEvent, HTMLAttributes, MouseEvent } from "react";
 
 type ItemSelection = { readonly key: string | null };
@@ -53,6 +53,26 @@ export interface ItemRowGestures {
   menu(key: string, event: globalThis.MouseEvent): void;
   /** The researcher starts to drag the row. */
   drag(key: string, event: DragEvent<HTMLElement>): void;
+  /**
+   * The Item rows as the layout shows them, each time they change: a long
+   * list mounts only the rows near the screen, so the host steps through
+   * these keys, not through the rows it finds, and scrolls through the list.
+   */
+  shown(rows: ShownRows): void;
+}
+
+/** The rows of no layout. */
+export const NO_ROWS: ShownRows = { keys: [], scrollTo: () => false };
+
+/** The Item rows of a layout, for its host. */
+export interface ShownRows {
+  /** The Indexed Keys of the Item rows, in the order the layout shows them. */
+  readonly keys: readonly string[];
+  /**
+   * Scroll the row of `key` into view, where the layout mounts its rows as
+   * they scroll in; `false` where the row's element scrolls itself.
+   */
+  scrollTo(key: string): boolean;
 }
 
 /** The attribute that holds an Item row's Indexed Key, for the host's keys. */
@@ -110,4 +130,48 @@ export function useItemRow(
     },
     onDragStart: (event: DragEvent<HTMLElement>) => gestures.drag(key, event),
   } as HTMLAttributes<HTMLElement>;
+}
+
+/** The Item rows that stay mounted in a long list: the selected and the first. */
+export function usePinnedRows(
+  gestures: ItemRowGestures | undefined,
+): readonly string[] {
+  const selected = useSyncExternalStore(
+    (listener) => gestures?.selection.subscribe(listener) ?? (() => {}),
+    () => gestures?.selection.getState().key ?? null,
+  );
+  const first = gestures?.first() ?? null;
+  return useMemo(
+    () => [selected, first].filter((key) => key !== null),
+    [selected, first],
+  );
+}
+
+/**
+ * Tell the host the Item rows `keys` lists, in its order, and how to scroll
+ * to one: `scrollTo` takes the place among the layout's entries.
+ */
+export function useShownRows(
+  gestures: ItemRowGestures | undefined,
+  {
+    keys,
+    placeOf,
+    scrollTo,
+  }: {
+    keys: readonly string[];
+    placeOf: (key: string) => number;
+    scrollTo: (index: number) => boolean;
+  },
+): void {
+  useLayoutEffect(() => {
+    gestures?.shown({
+      keys,
+      scrollTo: (key) => {
+        const index = placeOf(key);
+        return index !== -1 && scrollTo(index);
+      },
+    });
+    // A layout that goes shows no rows.
+    return () => gestures?.shown(NO_ROWS);
+  }, [gestures, keys, placeOf, scrollTo]);
 }

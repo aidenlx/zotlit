@@ -7,7 +7,13 @@
 // of the Reading State.
 //
 // @see apps/obsidian/docs/adr/0075-the-papers-layout-is-a-query-view-layout-the-library-view-offers-with-the-table.md
-import { Fragment, useSyncExternalStore } from "react";
+import {
+  Fragment,
+  useCallback,
+  useMemo,
+  useState,
+  useSyncExternalStore,
+} from "react";
 import type { CSSProperties, ReactNode } from "react";
 
 import { resolveVenue } from "@zotlit/db";
@@ -21,11 +27,16 @@ import type { TargetOpenGesture } from "@/services/attachment-open/actions";
 import type { OpenTarget } from "@/services/attachment-open/open-target";
 import type { QueryViewValue } from "@/services/item-query/query-view";
 
-import { useItemRow } from "./item-rows";
+import { useItemRow, usePinnedRows, useShownRows } from "./item-rows";
 import type { ItemRowGestures } from "./item-rows";
 import type { QueryLayout } from "./layouts";
 import { useQueryTask } from "./model";
-import { RecordGroupHeading, useRecordGroups } from "./record-rows";
+import {
+  HEADING_ESTIMATE,
+  RecordGroupHeading,
+  groupEntries,
+  useRecordGroups,
+} from "./record-rows";
 import {
   Expander,
   ExpanderSpace,
@@ -39,6 +50,8 @@ import {
 import type { ChildState, TableRecord } from "./table-layout";
 import type { LiteratureNotes } from "./table-notes";
 import type { QueryView } from "./view";
+import { useVirtualRows } from "./virtual-rows";
+import { ListSpacer } from "./virtual-spacers";
 
 export const PAPERS_LAYOUT: QueryLayout = {
   type: "papers",
@@ -172,44 +185,112 @@ function useNotePath(notes: LiteratureNotes, itemKey: string): string | null {
   );
 }
 
+/** The height of a Papers row of two lines, before it is measured. */
+const ROW_ESTIMATE = 46;
+
 /** The rows of the shown view as a reading list, under their group headings. */
 export function PapersLayout({ view }: { view: QueryView }) {
   const { groups } = useRecordGroups(view);
   const { literatureNotes, readers } = view.tableDeps;
   const { children: expanded, toggle } = useChildren(view);
+  const gestures = view.rows;
+  const [own, setOwn] = useState<HTMLDivElement | null>(null);
+  const entries = useMemo(() => groupEntries(groups), [groups]);
+  const order = useMemo(
+    () =>
+      entries.flatMap((entry) =>
+        entry.kind === "row" ? [entry.record.row.indexedKey] : [],
+      ),
+    [entries],
+  );
+  const placeOf = useCallback(
+    (key: string) =>
+      entries.findIndex(
+        (entry) => entry.kind === "row" && entry.record.row.indexedKey === key,
+      ),
+    [entries],
+  );
+  const pinnedKeys = usePinnedRows(gestures);
+  const pinned = useMemo(() => pinnedKeys.map(placeOf), [placeOf, pinnedKeys]);
+  const rows = useVirtualRows({
+    count: entries.length,
+    own,
+    estimate: useCallback(
+      (index: number) =>
+        entries[index]!.kind === "heading" ? HEADING_ESTIMATE : ROW_ESTIMATE,
+      [entries],
+    ),
+    kindOf: useCallback(
+      (index: number) => {
+        const entry = entries[index]!;
+        if (entry.kind === "heading") return "heading";
+        const { row } = entry.record;
+        if (expanded.has(id({ kind: "item", key: row.indexedKey })))
+          return null;
+        // A row with no second line is one line high.
+        return metaText(row.values) !== "" || view.reason(row) !== null
+          ? "row"
+          : "line";
+      },
+      [entries, expanded, view],
+    ),
+    keyOf: useCallback((index: number) => entries[index]!.key, [entries]),
+    pinned,
+    all: view.printing,
+  });
+  useShownRows(gestures, {
+    keys: order,
+    placeOf,
+    scrollTo: rows.scrollTo,
+  });
   return (
     <div
-      className="zt:min-h-0 zt:flex-1 zt:overflow-auto zt:px-1 zt:pb-11 zt:not-in-[.zt-query-note]:scroll-gutter zt:in-[.zt-query-note]:pb-2"
+      ref={setOwn}
+      className="zt:min-h-0 zt:flex-1 zt:overflow-auto zt:px-1 zt:pb-11 zt:[overflow-anchor:none] zt:not-in-[.zt-query-note]:scroll-gutter zt:in-[.zt-query-note]:pb-2"
       data-query-layout="papers"
     >
-      {groups.map((group, groupIndex) => (
-        <section key={`${groupIndex}\n${group.key ?? ""}`}>
-          <RecordGroupHeading group={group} />
-          {!group.collapsed && (
-            <ul className="zt:m-0 zt:list-none zt:p-0">
-              {group.rows.map(({ row }, index) => {
-                const item: TableRecord = {
-                  kind: "item",
-                  key: row.indexedKey,
-                  values: row.values,
-                };
-                return (
-                  <PaperRow
-                    key={`${row.indexedKey}\n${index}`}
-                    item={item}
-                    reason={view.reason(row)}
-                    notes={literatureNotes}
-                    readers={readers}
-                    expanded={expanded}
-                    toggle={toggle}
-                    gestures={view.rows}
-                  />
-                );
-              })}
-            </ul>
-          )}
-        </section>
-      ))}
+      <ul
+        ref={rows.list}
+        className="zt:m-0 zt:list-none zt:p-0"
+        onFocus={rows.onFocus}
+      >
+        {rows.entries.map(({ index, before }) => {
+          const entry = entries[index]!;
+          return (
+            <Fragment key={entry.key}>
+              {before > 0 && <ListSpacer height={before} />}
+              {entry.kind === "heading" ? (
+                // The heading drops its own top margin as the first child
+                // here; the entry keeps it after a row.
+                <li
+                  ref={rows.measure}
+                  data-index={index}
+                  className={cn(index > 0 && "zt:pt-2")}
+                >
+                  <RecordGroupHeading group={entry.group} />
+                </li>
+              ) : (
+                <PaperRow
+                  index={index}
+                  measure={rows.measure}
+                  item={{
+                    kind: "item",
+                    key: entry.record.row.indexedKey,
+                    values: entry.record.row.values,
+                  }}
+                  reason={view.reason(entry.record.row)}
+                  notes={literatureNotes}
+                  readers={readers}
+                  expanded={expanded}
+                  toggle={toggle}
+                  gestures={gestures}
+                />
+              )}
+            </Fragment>
+          );
+        })}
+        {rows.after > 0 && <ListSpacer height={rows.after} />}
+      </ul>
     </div>
   );
 }
@@ -221,6 +302,8 @@ interface Expansion {
 }
 
 function PaperRow({
+  index,
+  measure,
   item,
   notes,
   readers,
@@ -229,6 +312,9 @@ function PaperRow({
   reason,
   gestures,
 }: Expansion & {
+  /** The row's place among the list's entries. */
+  index: number;
+  measure: (el: Element | null) => void;
   item: TableRecord;
   notes: LiteratureNotes;
   /** Why the row is in the list, last on its second line. */
@@ -246,12 +332,10 @@ function PaperRow({
   const kind = mainAttachmentKind(values);
   const typeIcon = itemTypeIcon(text(values.itemType) || null);
   return (
-    // `content-visibility: auto` lets the browser skip layout of the rows
-    // out of view: a sidebar collapse or a resize lays out the visible rows
-    // instead of the whole list. The size until a row is first laid out is
-    // that of a row of two lines.
     <li
-      className="zt:border-b-(length:--border-width) zt:border-border zt:[contain-intrinsic-size:auto_2.875rem] zt:[content-visibility:auto]"
+      ref={measure}
+      data-index={index}
+      className="zt:border-b-(length:--border-width) zt:border-border"
       data-query-papers-row={item.key}
     >
       {/* A row the host lets take focus is a group named by its title: an

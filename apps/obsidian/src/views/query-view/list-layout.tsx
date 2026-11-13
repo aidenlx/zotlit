@@ -2,7 +2,7 @@
 // properties in the view's order, as the List layout of Bases draws a note.
 // Its options are those of Bases 1.14.4: `markers`, `indentProperties` and
 // `separator`.
-import { Fragment } from "react";
+import { Fragment, useCallback, useMemo, useState } from "react";
 
 import { useUniqueId } from "@zotlit/ui";
 
@@ -15,8 +15,16 @@ import { cn } from "@/lib/utils";
 import type { QueryLayout } from "./layouts";
 import { useQueryViewState } from "./model";
 import type { QueryFileView } from "./query-file";
-import { RecordCell, RecordGroupHeading, useRecordGroups } from "./record-rows";
+import {
+  HEADING_ESTIMATE,
+  RecordCell,
+  RecordGroupHeading,
+  groupEntries,
+  useRecordGroups,
+} from "./record-rows";
 import type { QueryView } from "./view";
+import { useVirtualRows } from "./virtual-rows";
+import { ListSpacer } from "./virtual-spacers";
 
 export const LIST_LAYOUT: QueryLayout = {
   type: "list",
@@ -130,87 +138,138 @@ export function ListLayoutFields({
   );
 }
 
-/** The rows of the shown view, one line each, under their group headings. */
+/** The height of a List row of one line, before it is measured. */
+const ROW_ESTIMATE = 28;
+
+/**
+ * The rows of the shown view, one line each, under their group headings.
+ * The groups share one list: numbers count each group's rows from one.
+ */
 export function ListLayout({ view }: { view: QueryView }) {
   const { properties, groups } = useRecordGroups(view);
   const options = listLayoutOptions(useQueryViewState(view, (s) => s.view));
+  const [own, setOwn] = useState<HTMLDivElement | null>(null);
+  const entries = useMemo(() => groupEntries(groups), [groups]);
+  const rows = useVirtualRows({
+    count: entries.length,
+    own,
+    estimate: useCallback(
+      (index: number) =>
+        entries[index]!.kind === "heading" ? HEADING_ESTIMATE : ROW_ESTIMATE,
+      [entries],
+    ),
+    kindOf: useCallback(
+      (index: number) =>
+        entries[index]!.kind === "heading" ? "heading" : "row",
+      [entries],
+    ),
+    keyOf: useCallback((index: number) => entries[index]!.key, [entries]),
+    pinned: NONE,
+    // A row's lines follow the options and the properties it shows.
+    shape: JSON.stringify([options, properties.map(({ path }) => path)]),
+    all: view.printing,
+  });
   // Numbers count the rows of a list; bullets and none mark no order.
   const List = options.markers === "number" ? "ol" : "ul";
   return (
     <div
-      className="zt:min-h-0 zt:flex-1 zt:overflow-auto zt:px-3 zt:pt-2 zt:pb-11 zt:in-[.zt-query-note]:pb-2"
+      ref={setOwn}
+      className="zt:min-h-0 zt:flex-1 zt:overflow-auto zt:px-3 zt:pt-2 zt:pb-11 zt:[overflow-anchor:none] zt:in-[.zt-query-note]:pb-2"
       data-query-layout="list"
     >
-      {groups.map((group, groupIndex) => (
-        <section key={`${groupIndex}\n${group.key ?? ""}`}>
-          <RecordGroupHeading group={group} />
-          {!group.collapsed && (
-            <List
-              className={cn(
-                "zt:my-0 zt:py-1 zt:text-(length:--font-smaller) zt:marker:text-(--list-marker-color)",
-                options.markers === "bullet" &&
-                  "zt:list-disc zt:pl-(--list-indent)",
-                options.markers === "number" &&
-                  "zt:list-decimal zt:pl-(--list-indent)",
-                options.markers === "none" && "zt:list-none zt:pl-0",
-              )}
-              data-query-markers={options.markers}
-            >
-              {group.rows.map((record, index) => {
-                const { row, cells, vault } = record;
-                // An empty property takes no place on the line; an Item with
-                // no note to read a vault property from shows that it has none.
-                const filled = cells.flatMap((text, at) =>
-                  text === "" && vault[at]?.note !== false
-                    ? []
-                    : [
-                        <RecordCell
-                          key={properties[at]!.path}
-                          record={record}
-                          properties={properties}
-                          at={at}
-                        />,
-                      ],
-                );
-                const [first = "", ...rest] = filled;
-                return (
-                  <li
-                    key={`${row.indexedKey}\n${index}`}
-                    className="zt:py-(--list-spacing)"
-                    data-query-row={row.indexedKey}
-                  >
-                    {options.indentProperties ? (
-                      <>
-                        <span>{first}</span>
-                        {rest.length > 0 && (
-                          <span className="zt:block zt:pl-(--list-indent) zt:text-muted-foreground">
-                            {rest.map((content, at) => (
-                              <span key={at} className="zt:block">
-                                {content}
-                              </span>
-                            ))}
+      <List
+        ref={rows.list}
+        className={cn(
+          "zt:my-0 zt:py-1 zt:text-(length:--font-smaller) zt:marker:text-(--list-marker-color)",
+          options.markers === "bullet" && "zt:list-disc zt:pl-(--list-indent)",
+          options.markers === "number" &&
+            "zt:list-decimal zt:pl-(--list-indent)",
+          options.markers === "none" && "zt:list-none zt:pl-0",
+        )}
+        data-query-markers={options.markers}
+        onFocus={rows.onFocus}
+      >
+        {rows.entries.map(({ index, before }) => {
+          const entry = entries[index]!;
+          if (entry.kind === "heading")
+            return (
+              <Fragment key={entry.key}>
+                {before > 0 && <ListSpacer height={before} />}
+                {/* The heading stands at the list's start edge, out of the
+                    indent the markers take. */}
+                <li
+                  ref={rows.measure}
+                  data-index={index}
+                  className={cn(
+                    "zt:list-none",
+                    options.markers !== "none" && "zt:-ml-(--list-indent)",
+                    index > 0 && "zt:pt-2",
+                  )}
+                >
+                  <RecordGroupHeading group={entry.group} />
+                </li>
+              </Fragment>
+            );
+          const { record, at } = entry;
+          const { row, cells, vault } = record;
+          // An empty property takes no place on the line; an Item with
+          // no note to read a vault property from shows that it has none.
+          const filled = cells.flatMap((text, cell) =>
+            text === "" && vault[cell]?.note !== false
+              ? []
+              : [
+                  <RecordCell
+                    key={properties[cell]!.path}
+                    record={record}
+                    properties={properties}
+                    at={cell}
+                  />,
+                ],
+          );
+          const [first = "", ...rest] = filled;
+          return (
+            <Fragment key={entry.key}>
+              {before > 0 && <ListSpacer height={before} />}
+              <li
+                ref={rows.measure}
+                data-index={index}
+                value={options.markers === "number" ? at + 1 : undefined}
+                className="zt:py-(--list-spacing)"
+                data-query-row={row.indexedKey}
+              >
+                {options.indentProperties ? (
+                  <>
+                    <span>{first}</span>
+                    {rest.length > 0 && (
+                      <span className="zt:block zt:pl-(--list-indent) zt:text-muted-foreground">
+                        {rest.map((content, line) => (
+                          <span key={line} className="zt:block">
+                            {content}
                           </span>
-                        )}
-                      </>
-                    ) : (
-                      filled.map((content, at) => (
-                        <Fragment key={at}>
-                          {at > 0 && (
-                            <span className="zt:text-muted-foreground">
-                              {options.separator}
-                            </span>
-                          )}
-                          {content}
-                        </Fragment>
-                      ))
+                        ))}
+                      </span>
                     )}
-                  </li>
-                );
-              })}
-            </List>
-          )}
-        </section>
-      ))}
+                  </>
+                ) : (
+                  filled.map((content, part) => (
+                    <Fragment key={part}>
+                      {part > 0 && (
+                        <span className="zt:text-muted-foreground">
+                          {options.separator}
+                        </span>
+                      )}
+                      {content}
+                    </Fragment>
+                  ))
+                )}
+              </li>
+            </Fragment>
+          );
+        })}
+        {rows.after > 0 && <ListSpacer height={rows.after} />}
+      </List>
     </div>
   );
 }
+
+const NONE: readonly number[] = [];

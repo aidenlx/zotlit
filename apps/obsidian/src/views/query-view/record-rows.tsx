@@ -2,7 +2,7 @@
 // records of any Query Dataset, under their group headings, each shown by
 // the text of its visible properties. The toolbar search and a collapsed
 // heading act on them as they do on the Annotations layout's cards.
-import { Fragment, useMemo } from "react";
+import { Fragment, useLayoutEffect, useMemo } from "react";
 
 import { errorCell, valueText } from "@zotlit/item-query";
 
@@ -42,6 +42,46 @@ export interface RecordGroup {
   readonly collapsed: boolean;
   /** The rows of the group, each with the text of its visible properties. */
   readonly rows: readonly RecordCells[];
+}
+
+/**
+ * One entry of a grouped list, in the order it shows: the heading of a group
+ * with a name, or a row of a group that is not collapsed. `key` holds across
+ * runs. `at` is the row's place in its group.
+ */
+export type GroupEntry =
+  | {
+      readonly kind: "heading";
+      readonly key: string;
+      readonly group: RecordGroup;
+    }
+  | {
+      readonly kind: "row";
+      readonly key: string;
+      readonly group: RecordGroup;
+      readonly record: RecordCells;
+      readonly at: number;
+    };
+
+/** The entries of `groups`, one after the other, as a long list mounts them. */
+export function groupEntries(groups: readonly RecordGroup[]): GroupEntry[] {
+  const entries: GroupEntry[] = [];
+  groups.forEach((group, groupIndex) => {
+    const prefix = `${groupIndex}\n${group.key ?? ""}`;
+    if (group.key !== null)
+      entries.push({ kind: "heading", key: prefix, group });
+    if (group.collapsed) return;
+    group.rows.forEach((record, at) =>
+      entries.push({
+        kind: "row",
+        key: `${prefix}\n${record.row.indexedKey}\n${at}`,
+        group,
+        record,
+        at,
+      }),
+    );
+  });
+  return entries;
 }
 
 /** One row and its visible properties, each as text and, for a vault property, its value. */
@@ -98,6 +138,8 @@ export function useRecordGroups(view: QueryView): {
     view,
     (s) => (s.results ?? NO_RESULTS).records,
   );
+  // The layout draws these records in the same pass: a print waits for it.
+  useLayoutEffect(() => view.drewRecords(records), [view, records]);
   const query = useAnnotStore((s) => s.filterQuery)
     .trim()
     .toLowerCase();
@@ -134,6 +176,9 @@ export function useRecordGroups(view: QueryView): {
     return { properties, groups };
   }, [columns, records, query, collapsed, notes, view, vaultVersion]);
 }
+
+/** The height of a group heading after a row, before it is measured. */
+export const HEADING_ESTIMATE = 38;
 
 /**
  * A group's heading. Its button collapses the group's rows and expands them

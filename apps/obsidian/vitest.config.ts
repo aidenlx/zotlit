@@ -71,7 +71,11 @@ export default defineConfig({
       deps: {
         // Run through Vite so its `react` import lands on the Preact alias
         // like our own sources; externalized, it would load real React.
-        inline: ["@effect/atom-react", "@uiw/react-codemirror"],
+        inline: [
+          "@effect/atom-react",
+          "@uiw/react-codemirror",
+          "@tanstack/react-virtual",
+        ],
       },
     },
     setupFiles: ["./vitest.setup.js"],

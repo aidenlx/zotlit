@@ -528,6 +528,10 @@ export class QueryView extends Component implements HistorySurface {
   #drawnCards: AnnotState["annotations"] | undefined = undefined;
   /** What waits for the list to draw the cards the store holds now. */
   #drawWaiters: (() => void)[] = [];
+  /** The records an Items layout last drew. */
+  #drawnRecords: ResultSnapshot["records"] | undefined = undefined;
+  /** What waits for an Items layout to draw the records of the last run. */
+  #recordWaiters: (() => void)[] = [];
   #rerunTimer: { id: number; win: Window } | null = null;
   /** The element the view draws into, once it draws. */
   #el: HTMLElement | null = null;
@@ -642,10 +646,33 @@ export class QueryView extends Component implements HistorySurface {
    */
   async shownIn(el: HTMLElement): Promise<void> {
     await this.settled;
-    // A List or Cards layout draws its rows from the state, with no list of
-    // cards to wait for.
-    if (el.closest(".print") !== null && this.#cardsShown)
-      await this.#cardsDrawn();
+    if (el.closest(".print") === null) return;
+    if (this.#cardsShown) await this.#cardsDrawn();
+    else await this.#recordsDrawn();
+  }
+
+  /**
+   * An Items layout (Papers, Table, List, Cards) drew these records. As for
+   * the cards, a hidden print window can draw them later than the run that
+   * read them.
+   */
+  drewRecords(records: ResultSnapshot["records"]): void {
+    this.#drawnRecords = records;
+    if (records !== (this.state.getState().results ?? NO_RESULTS).records)
+      return;
+    const waiters = this.#recordWaiters;
+    this.#recordWaiters = [];
+    for (const resolve of waiters) resolve();
+  }
+
+  #recordsDrawn(): Promise<void> {
+    if (
+      !this.#rendered ||
+      this.#drawnRecords ===
+        (this.state.getState().results ?? NO_RESULTS).records
+    )
+      return Promise.resolve();
+    return new Promise((resolve) => this.#recordWaiters.push(resolve));
   }
 
   /**
@@ -743,9 +770,15 @@ export class QueryView extends Component implements HistorySurface {
     this.#runRequest = null;
     this.#rendered = false;
     this.#el = null;
-    const waiters = this.#drawWaiters;
+    const waiters = [...this.#drawWaiters, ...this.#recordWaiters];
     this.#drawWaiters = [];
+    this.#recordWaiters = [];
     for (const resolve of waiters) resolve();
+  }
+
+  /** Whether the view draws for Export to PDF, which prints every row. */
+  get printing(): boolean {
+    return this.#el?.closest(".print") != null;
   }
 
   /** Draw the toolbar and the cards into `el`. Call it once the view has loaded. */

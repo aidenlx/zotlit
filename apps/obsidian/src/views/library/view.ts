@@ -18,6 +18,7 @@ import { runtime } from "@/lib/i18n/generated/runtime";
 import { getLogger } from "@/lib/log";
 import { showMenuAtButton } from "@/lib/menu";
 import type { ViewRegistryHandle } from "@/lib/view-atoms";
+import { yieldToMain } from "@/lib/yield-to-main";
 import type { QueryViewValue } from "@/services/item-query/query-view";
 import { libraryScopeStateAtom } from "@/services/library-scope/atoms";
 import type { LibraryScope } from "@/services/library-scope/scope";
@@ -29,8 +30,9 @@ import { saveAsQueryFile } from "@/views/annot-view/save-query-file";
 import {
   ITEM_ROW_ATTRIBUTE,
   ITEM_ROW_REVEALED_ATTRIBUTE,
+  NO_ROWS,
 } from "@/views/query-view/item-rows";
-import type { ItemRowGestures } from "@/views/query-view/item-rows";
+import type { ItemRowGestures, ShownRows } from "@/views/query-view/item-rows";
 import { holdsPdf } from "@/views/query-view/papers-layout";
 import { QueryView } from "@/views/query-view/view";
 import type { QueryViewDeps } from "@/views/query-view/view";
@@ -192,6 +194,8 @@ export class LibraryView extends ItemView {
   #treeWidth: PaneWidth | null = null;
   /** The Details button, once the tab has opened. */
   #details: DetailsToggle | null = null;
+  /** The list's Item rows, as its layout last showed them. */
+  #listed: ShownRows = NO_ROWS;
   /** The write of the search text that the box last asked for. */
   #saving: Promise<void> = Promise.resolve();
   /** Keep the search text once typing pauses. */
@@ -270,6 +274,9 @@ export class LibraryView extends ItemView {
         }).showAtMouseEvent(event);
       },
       drag,
+      shown: (rows) => {
+        this.#listed = rows;
+      },
     };
     this.register(() => drag.cancel());
     this.#registerRowKeys();
@@ -813,8 +820,9 @@ export class LibraryView extends ItemView {
       });
     this.#showCard();
     const row = this.#selectedRow();
-    if (on) row?.scrollIntoView({ block: "nearest" });
-    else row?.focus();
+    if (on) {
+      if (row) this.#scrollTo(row);
+    } else row?.focus();
   }
 
   /**
@@ -921,24 +929,54 @@ export class LibraryView extends ItemView {
     );
   }
 
-  /** Move the selection `step` rows on; the first row where none shows. */
+  /**
+   * Move the selection `step` rows on, in the order the list shows them; the
+   * first row where the selected one is not listed.
+   */
   #move(step: -1 | 1): boolean {
-    const rows = this.#rows();
-    if (rows.length === 0) return false;
-    const at = rows.indexOf(this.#selectedRow()!);
+    const { keys } = this.#listed;
+    if (keys.length === 0) return false;
+    const { key } = this.selected;
+    const at = key === null ? -1 : keys.indexOf(key);
     const next =
       at === -1
-        ? rows[0]!
-        : rows[Math.min(Math.max(at + step, 0), rows.length - 1)]!;
-    this.#selectRow({ key: next.getAttribute(ITEM_ROW_ATTRIBUTE) });
-    this.#focus(next);
+        ? keys[0]!
+        : keys[Math.min(Math.max(at + step, 0), keys.length - 1)]!;
+    this.#selectRow({ key: next });
+    const row = this.#rowOf(next);
+    if (row) this.#focus(row);
+    else
+      void this.#shownRow(next).then((shown) => {
+        if (shown && this.selected.key === next) this.#focus(shown);
+      });
     return true;
+  }
+
+  /**
+   * The row of the Item `key`, once the list draws it: a long list mounts
+   * the selected row on its next draw, wherever it stands.
+   */
+  async #shownRow(key: string): Promise<HTMLElement | undefined> {
+    const row = this.#rowOf(key);
+    if (row) return row;
+    await yieldToMain();
+    return this.#rowOf(key);
   }
 
   /** Give `row` the focus, in view. */
   #focus(row: HTMLElement): void {
-    row.focus();
-    row.scrollIntoView({ block: "nearest" });
+    row.focus({ preventScroll: true });
+    this.#scrollTo(row);
+  }
+
+  /**
+   * Bring `row` into view: through its layout, which places it as the rows
+   * around it are measured, in a long list.
+   */
+  #scrollTo(row: HTMLElement): void {
+    const key = row.getAttribute(ITEM_ROW_ATTRIBUTE);
+    if (key === null || !this.#listed.scrollTo(key))
+      row.scrollIntoView({ block: "nearest" });
   }
 
   /**
@@ -988,7 +1026,7 @@ export class LibraryView extends ItemView {
     // Show in Library selects the row, as a click does: the details show it
     // while they are on.
     this.#selectRow({ key: indexedKey });
-    const row = this.#rowOf(indexedKey);
+    const row = await this.#shownRow(indexedKey);
     if (row) {
       this.#focus(row);
       this.#flash(row);
