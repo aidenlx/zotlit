@@ -15,21 +15,23 @@ import { TableDemo } from "./table-demo";
 import { Workflow } from "./workflow";
 
 const TRUST = [
-  m.docs_home_trust_private,
-  m.docs_home_trust_open,
-  m.docs_home_trust_zotero,
+  [m.docs_home_trust_private, m.docs_home_privacy],
+  [m.docs_home_trust_open, m.docs_home_license],
+  [m.docs_home_trust_zotero, m.docs_home_trust_zotero_line],
 ] as const;
 
 function Trust() {
   return (
     <section className="border-t border-fd-border py-16">
       <ul className="mx-auto grid max-w-6xl gap-8 px-4 sm:grid-cols-3 sm:px-8">
-        {TRUST.map((lead) => (
-          <li
-            key={lead()}
-            className="font-serif text-xl font-medium text-balance"
-          >
-            {lead()}
+        {TRUST.map(([lead, line]) => (
+          <li key={lead()}>
+            <p className="font-serif text-xl font-medium text-balance">
+              {lead()}
+            </p>
+            <p className="mt-2 text-base text-pretty text-fd-muted-foreground">
+              {line()}
+            </p>
           </li>
         ))}
       </ul>

@@ -34,6 +34,7 @@ interface Step {
   id: Case;
   title: Text;
   line: Text;
+  points: readonly (readonly [lead: Text, line: Text])[];
   /** A requirement worth knowing before the step. */
   note?: Text;
   alt: Text;
@@ -48,6 +49,10 @@ const STEPS: readonly Step[] = [
     id: "find",
     title: m.docs_home_flow_find,
     line: m.docs_home_flow_find_line,
+    points: [
+      [m.docs_home_flow_find_point1, m.docs_home_flow_find_point1_line],
+      [m.docs_home_flow_find_point2, m.docs_home_flow_find_point2_line],
+    ],
     alt: m.docs_home_flow_find_alt,
     lesson: "connect-zotero-to-obsidian",
     link: m.docs_home_flow_find_link,
@@ -56,6 +61,10 @@ const STEPS: readonly Step[] = [
     id: "read",
     title: m.docs_home_flow_read,
     line: m.docs_home_flow_read_line,
+    points: [
+      [m.docs_home_flow_read_point1, m.docs_home_flow_read_point1_line],
+      [m.docs_home_flow_read_point2, m.docs_home_flow_read_point2_line],
+    ],
     alt: m.docs_home_flow_read_alt,
     lesson: "annotate-zotero-pdfs-in-obsidian",
     link: m.docs_home_flow_read_link,
@@ -64,6 +73,10 @@ const STEPS: readonly Step[] = [
     id: "note",
     title: m.docs_home_flow_note,
     line: m.docs_home_flow_note_line,
+    points: [
+      [m.docs_home_flow_note_point1, m.docs_home_flow_note_point1_line],
+      [m.docs_home_flow_note_point2, m.docs_home_flow_note_point2_line],
+    ],
     alt: m.docs_home_flow_note_alt,
     lesson: "connect-zotero-to-obsidian",
     link: m.docs_home_flow_note_link,
@@ -72,6 +85,10 @@ const STEPS: readonly Step[] = [
     id: "cite",
     title: m.docs_home_flow_cite,
     line: m.docs_home_flow_cite_line,
+    points: [
+      [m.docs_home_flow_cite_point1, m.docs_home_flow_cite_point1_line],
+      [m.docs_home_flow_cite_point2, m.docs_home_flow_cite_point2_line],
+    ],
     note: m.docs_home_flow_cite_note,
     alt: m.docs_home_flow_cite_alt,
     lesson: "cite-in-obsidian-with-zotero",
@@ -81,6 +98,10 @@ const STEPS: readonly Step[] = [
     id: "word",
     title: m.docs_home_flow_word,
     line: m.docs_home_flow_word_line,
+    points: [
+      [m.docs_home_flow_word_point1, m.docs_home_flow_word_point1_line],
+      [m.docs_home_flow_word_point2, m.docs_home_flow_word_point2_line],
+    ],
     alt: m.docs_home_flow_word_alt,
     lesson: "export-obsidian-to-word-with-citations",
     link: m.docs_home_flow_word_link,
@@ -209,6 +230,19 @@ function StepItem({ step, n, flip }: { step: Step; n: number; flip: boolean }) {
         <p className="mt-4 text-lg text-pretty text-fd-muted-foreground">
           {step.line()}
         </p>
+        <ul className="mt-6 grid gap-4">
+          {step.points.map(([lead, line]) => (
+            <li
+              key={lead()}
+              className="border-t border-fd-border pt-4 text-base text-pretty"
+            >
+              <strong className="font-semibold text-fd-foreground">
+                {lead()}
+              </strong>{" "}
+              <span className="text-fd-muted-foreground">{line()}</span>
+            </li>
+          ))}
+        </ul>
         {step.note && (
           <p className="mt-4 rounded-[10px] bg-fd-muted px-4 py-3 text-base text-fd-muted-foreground">
             {step.note()}
@@ -236,6 +270,9 @@ export function Workflow() {
           >
             {m.docs_home_flow_title()}
           </h2>
+          <p className="mt-6 text-lg text-pretty text-fd-muted-foreground">
+            {m.docs_home_flow_lede()}
+          </p>
         </div>
         <div className="relative mt-16 sm:mt-20">
           <span

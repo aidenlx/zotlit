@@ -346,13 +346,15 @@ closing call. Sections run 1152px wide (`max-w-6xl`) with 32px side gutters
   each object in one animation frame. The prerendered page and reduced
   motion show the final state.
 - **Workflow: "From Zotero to finished chapter."** On the surface at 40%.
-  A centred H2. Then five steps — Find a paper, Read and highlight, Write the
-  literature note, Cite as you draft, Export your chapter to Word — in a zig-zag from
-  1024px around a vertical hairline, each numbered on the line by a 36px
-  circle (mono, accent text tone); below 1024px the list order carries the
-  sequence. Each step: the step title (display, 2.25rem from 640px), one
-  outcome line (sans 18px, muted), an optional note on the quiet fill (the
-  Better BibTeX requirement), and a link to the step's lesson that names it
+  A centred head: the H2 and one line. Then five steps — Find a paper, Read
+  and highlight, Write the literature note, Cite as you draft, Export your
+  chapter to Word — in a zig-zag from 1024px around a vertical hairline, each
+  numbered on the line by a 36px circle (mono, accent text tone); below
+  1024px the list order carries the sequence. Each step: the step title
+  (display, 2.25rem from 640px), one outcome line (sans 18px, muted), two
+  points on hairlines (a semibold lead and a muted sentence), an optional
+  note on the quiet fill (the Better BibTeX requirement), and a link to the
+  step's lesson that names it
   ("Open the citation lesson →"); no two lesson links on the page share text.
   Beside it, the step's recording (see Recordings).
 - **Compare your papers.** The H2
@@ -382,14 +384,16 @@ closing call. Sections run 1152px wide (`max-w-6xl`) with 32px side gutters
   the caption trail; pausing rests the demo on its finished frame, and play
   starts it again from the collection. Rows and cells move by FLIP
   (transform and opacity); the tree collapses by width.
-- **Trust row.** Three serif statements (20px) on the ground under the
-  section's hairline, in three columns from 640px: "Private, on your
-  computer.", "Free and open source.", "Works with Zotero 9 and 10.".
+- **Trust row.** Three items on the ground under the section's hairline, in
+  three columns from 640px: a serif lead (20px) and a muted line —
+  "Private, on your computer.", "Free and open source.", "Works with Zotero
+  9 and 10.".
 - **Closing call.** A band on the quiet fill: the H2 "Start your next
   chapter with ZotLit." and the two actions, centred. The requirements line
   appears once on the page, under the hero's actions.
-- **Labels.** The layout explains; a label or description appears only where
-  position and grouping cannot say it.
+- **Labels.** The layout explains, at the text level of obsidian.md: no
+  apparatus labels over headings, each section an H2 with one short line,
+  each item a lead with one or two sentences.
 - **Recordings.** Each workflow step shows a recording of the real app at
   `public/img/landing/<case>` — `find`, `read`, `note`, `cite`, `word` — a
   1600 × 1000 WebP still and, where the case has one, an MP4 and a WebM
