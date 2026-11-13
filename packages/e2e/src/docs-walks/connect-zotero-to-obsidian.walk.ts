@@ -1584,7 +1584,7 @@ describe.skipIf(!reachable)(
       await walk.compose("step-5");
     });
 
-    it("step 6: in the PDF tab's header, select Write literature note; the notice Literature note created. and the note beside the PDF", async () => {
+    it("step 6: at the top right of the PDF tab, select Write literature note; the notice Literature note created. and the note beside the PDF", async () => {
       const written = await walk.record(
         "step-6",
         () =>

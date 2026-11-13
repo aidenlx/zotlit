@@ -6,7 +6,7 @@ minutes: 12
 media: connect-zotero-to-obsidian
 lede: Connect ZotLit to your Zotero library and create your first literature note.
 chore: Connect Zotero once
-instead: Select Write literature note on the paper’s card.
+instead: Select Write literature note at the top right of the PDF.
 note: ZotLit reads your Zotero library on this computer and changes nothing in it.
 needs:
   - item: Obsidian
@@ -148,7 +148,7 @@ On the paper’s card, select <UiLabel name={m.library_view_menu_open_pdf()} />.
 
 <Step n={6}>
 
-At the top right of the PDF tab, select <UiLabel name={m.library_view_menu_write_note()} />.
+At the top right of the PDF tab, select the page icon with a plus sign, <UiLabel name={m.library_view_menu_write_note()} />.
 
 <Check>
   The notice appears: <UiLabel name={m.notice_created_note()} /> The note
@@ -159,7 +159,7 @@ At the top right of the PDF tab, select <UiLabel name={m.library_view_menu_write
 <Fix
   title={
     <>
-      The button reads <UiLabel name={m.library_view_menu_open_note()} />
+      The tooltip reads <UiLabel name={m.library_view_menu_open_note()} />
     </>
   }
 >
