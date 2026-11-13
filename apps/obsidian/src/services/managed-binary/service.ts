@@ -294,13 +294,13 @@ const makeManagedBinary = Effect.fn("ManagedBinary.make")(function* <
   // leaves, until an uninstall invalidates it or the layer closes. An
   // invalidated engine closes when its last borrower leaves: no engine reads
   // the cache after it starts, so the uninstall clears the cache at once.
-  const engines = yield* RcRef.make({
+  const sharedEngine = yield* RcRef.make({
     acquire: lane.withPermit(
       Effect.gen(function* () {
         if ((yield* SubscriptionRef.get(status)).kind !== "installed")
           return yield* notInstalled();
         return yield* acquireEngine;
-      }).pipe(Effect.uninterruptible),
+      }),
     ),
     idleTimeToLive: Duration.infinity,
   });
@@ -311,7 +311,7 @@ const makeManagedBinary = Effect.fn("ManagedBinary.make")(function* <
       return yield* notInstalled();
     // A borrower that leaves while the engine starts would abandon the start,
     // and the next borrower would start the engine again; it waits for it.
-    return yield* Effect.uninterruptible(RcRef.get(engines));
+    return yield* Effect.uninterruptible(RcRef.get(sharedEngine));
   }).pipe(Effect.withSpan("ManagedBinary.getEngine"));
   const fetchBinary = Effect.fn("ManagedBinary.fetchBinary")(function* () {
     const { url, sha256 } = binary.pin;
@@ -372,53 +372,78 @@ const makeManagedBinary = Effect.fn("ManagedBinary.make")(function* <
       binary: location,
     });
   });
+  /**
+   * The install that waits for the lane or runs in it. A call that arrives
+   * meanwhile joins it, so every caller sees the one outcome.
+   */
+  let pendingInstall:
+    | Deferred.Deferred<void, ManagedBinaryError | HashMismatchError>
+    | undefined;
+  /** One install: it waits for the lane, then runs there to the end. */
+  const queuedInstall = (
+    done: Deferred.Deferred<void, ManagedBinaryError | HashMismatchError>,
+  ) =>
+    consent.saveLocalStorage(declinedKey, null).pipe(
+      Effect.andThen(
+        lane.withPermit(
+          Effect.uninterruptible(
+            Effect.gen(function* () {
+              const before = yield* SubscriptionRef.get(status);
+              yield* setStatus({
+                kind: "installing",
+                done,
+                binary: before.kind === "installed" ? before.binary : null,
+              });
+              yield* runInstall();
+            }),
+          ),
+        ),
+      ),
+      Effect.onExit((exit) =>
+        Effect.sync(() => {
+          if (pendingInstall === done) pendingInstall = undefined;
+        }).pipe(Effect.andThen(Deferred.done(done, exit))),
+      ),
+    );
   const install = Effect.gen(function* () {
     if (closed) return;
-    const current = yield* SubscriptionRef.get(status);
-    if (current.kind === "installing")
-      return yield* Deferred.await(current.done);
-    yield* consent.saveLocalStorage(declinedKey, null);
-    // The install names itself in the status as it enters the lane, and
-    // nothing can interrupt it there, so `done` always completes.
-    const fiber = yield* Effect.forkIn(
-      lane.withPermit(
-        Effect.gen(function* () {
-          const before = yield* SubscriptionRef.get(status);
-          const done = yield* Deferred.make<
-            void,
-            ManagedBinaryError | HashMismatchError
-          >();
-          yield* setStatus({
-            kind: "installing",
-            done,
-            binary: before.kind === "installed" ? before.binary : null,
-          });
-          yield* runInstall().pipe(
-            Effect.onExit((exit) => Deferred.done(done, exit)),
-          );
-        }),
-      ),
-      scope,
-      { uninterruptible: true, startImmediately: true },
+    if (pendingInstall) return yield* Deferred.await(pendingInstall);
+    // The slot names the install in the same step that forks it, so `done`
+    // always completes. The install takes its place in the lane as it is
+    // called; its wait for the lane can be interrupted, its work there cannot.
+    const done = yield* Effect.uninterruptible(
+      Effect.suspend(() => {
+        const done = Deferred.makeUnsafe<
+          void,
+          ManagedBinaryError | HashMismatchError
+        >();
+        pendingInstall = done;
+        return Effect.forkIn(queuedInstall(done), scope, {
+          startImmediately: true,
+        }).pipe(Effect.as(done));
+      }),
     );
-    yield* Fiber.join(fiber);
+    yield* Deferred.await(done);
   }).pipe(Effect.withSpan("ManagedBinary.install"));
   const uninstall = Effect.gen(function* () {
     if (closed) return;
     const fiber = yield* Effect.forkIn(
       lane.withPermit(
-        Effect.gen(function* () {
-          yield* RcRef.invalidate(engines);
-          yield* store.clear;
-          yield* consent.saveLocalStorage(declinedKey, null);
-          yield* log("Removed the binary cache", { pin: binary.pin });
-          yield* setStatus({ kind: "absent" });
-        }),
+        Effect.uninterruptible(
+          Effect.gen(function* () {
+            yield* RcRef.invalidate(sharedEngine);
+            yield* store.clear;
+            yield* consent.saveLocalStorage(declinedKey, null);
+            yield* log("Removed the binary cache", { pin: binary.pin });
+            yield* setStatus({ kind: "absent" });
+          }),
+        ),
       ),
       scope,
       // It takes its place in the lane as it is called, so the calls that
-      // follow it run after it.
-      { uninterruptible: true, startImmediately: true },
+      // follow it run after it. Its wait for the lane can be interrupted;
+      // its work in the lane cannot.
+      { startImmediately: true },
     );
     yield* Fiber.join(fiber);
   }).pipe(Effect.withSpan("ManagedBinary.uninstall"));

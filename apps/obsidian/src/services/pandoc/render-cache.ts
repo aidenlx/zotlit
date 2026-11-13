@@ -332,7 +332,6 @@ export const layerBibliographyRender = Layer.effect(
         );
         return { entries, hasEntryMarkers };
       },
-      // The engine stays borrowed until this render ends.
       Effect.scoped,
       Effect.tapError((error) =>
         Effect.logWarning("Cannot format the bibliography").pipe(
@@ -363,7 +362,6 @@ export const layerBibliographyRender = Layer.effect(
         );
         return rendered;
       },
-      // The engine stays borrowed until this render ends.
       Effect.scoped,
       Effect.tapError((error) =>
         Effect.logWarning("Cannot format the citations").pipe(

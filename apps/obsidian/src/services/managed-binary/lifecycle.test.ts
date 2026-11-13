@@ -292,50 +292,27 @@ it.effect(
 it.effect("installs again after an uninstall that an install overlaps", () =>
   Effect.scoped(
     Effect.gen(function* () {
-      const files = new Map<string, Uint8Array<ArrayBuffer>>();
-      const layer = layerManagedBinary(TestBinary, {
-        id: "test-binary",
-        label: "Test binary",
-        logCategory: ["managed-binary"],
-        pin: PIN,
-        createEngine: () => Promise.resolve({ [Symbol.dispose]: () => {} }),
-      }).pipe(
-        Layer.provide(
-          Layer.succeed(ManagedBinaryPlatform, {
-            openStore: () =>
-              Effect.succeed({
-                list: Effect.sync(() => [...files.keys()]),
-                read: (name: string) =>
-                  Effect.sync(() =>
-                    files.has(name) ? new Blob([files.get(name)!]) : undefined,
-                  ),
-                write: (name: string, bytes: Uint8Array<ArrayBuffer>) =>
-                  Effect.sync(() => {
-                    files.set(name, bytes);
-                  }),
-                rename: (from: string, to: string) =>
-                  Effect.sync(() => {
-                    files.set(to, files.get(from)!);
-                    files.delete(from);
-                  }),
-                remove: (name: string) =>
-                  Effect.sync(() => {
-                    files.delete(name);
-                  }),
-                // A slow device: the files go as the clear ends.
-                clear: Effect.sleep("1 second").pipe(
-                  Effect.andThen(Effect.sync(() => files.clear())),
-                ),
-              }),
-            download: () => Effect.succeed(BYTES),
-            consent: {
-              loadLocalStorage: () => Effect.succeed(null),
-              saveLocalStorage: () => Effect.void,
+      const device = memoryDevice();
+      const runPromise = Effect.runPromiseWith(yield* Effect.context<never>());
+      const binary = Context.get(
+        yield* Layer.build(
+          testLayer({
+            ...device,
+            openStore: (directory) => {
+              const store = device.openStore(directory);
+              // A slow device: the files go as the clear ends.
+              return {
+                ...store,
+                clear: async () => {
+                  await runPromise(Effect.sleep("1 second"));
+                  await store.clear();
+                },
+              };
             },
           }),
         ),
+        TestBinary,
       );
-      const binary = Context.get(yield* Layer.build(layer), TestBinary);
       yield* binary.install;
 
       const uninstall = yield* Effect.forkChild(binary.uninstall, {
@@ -349,9 +326,95 @@ it.effect("installs again after an uninstall that an install overlaps", () =>
       yield* Fiber.join(install);
 
       expect((yield* binary.getStatus).kind).toBe("installed");
-      expect([...files.keys()]).toEqual([`${PIN.sha256}.wasm`]);
+      expect(device.names("test-binary")).toEqual([`${PIN.sha256}.wasm`]);
     }),
   ),
+);
+
+it.effect(
+  "shares one install between the installs queued behind an uninstall",
+  () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const device = memoryDevice();
+        const runPromise = Effect.runPromiseWith(
+          yield* Effect.context<never>(),
+        );
+        let downloads = 0;
+        const binary = Context.get(
+          yield* Layer.build(
+            testLayer(
+              {
+                ...device,
+                openStore: (directory) => {
+                  const store = device.openStore(directory);
+                  return {
+                    ...store,
+                    clear: async () => {
+                      await runPromise(Effect.sleep("1 second"));
+                      await store.clear();
+                    },
+                  };
+                },
+              },
+              {},
+              () => {
+                downloads++;
+                return downloads === 1
+                  ? Promise.resolve(BYTES)
+                  : Promise.reject(new Error("offline"));
+              },
+            ),
+          ),
+          TestBinary,
+        );
+        yield* binary.install;
+
+        yield* Effect.forkChild(binary.uninstall, { startImmediately: true });
+        const first = yield* Effect.forkChild(Effect.flip(binary.install), {
+          startImmediately: true,
+        });
+        const second = yield* Effect.forkChild(Effect.flip(binary.install), {
+          startImmediately: true,
+        });
+        yield* TestClock.adjust("1 second");
+        const own = yield* Fiber.join(first);
+
+        expect(yield* Fiber.join(second)).toBe(own);
+        expect(own.message).toBe("offline");
+        expect(downloads).toBe(2);
+      }),
+    ),
+);
+
+it.effect("closes while an install waits behind a stalled cache read", () =>
+  Effect.gen(function* () {
+    const device = memoryDevice();
+    const scope = yield* Scope.make();
+    const building = yield* Effect.forkChild(
+      Layer.build(
+        testLayer({
+          ...device,
+          openStore: (directory) => ({
+            ...device.openStore(directory),
+            // The cache never answers, so discovery holds the lane.
+            list: () => new Promise<string[]>(() => {}),
+          }),
+        }),
+      ).pipe(Effect.provideService(Scope.Scope, scope)),
+      { startImmediately: true },
+    );
+    yield* TestClock.adjust("5 seconds");
+    const binary = Context.get(yield* Fiber.join(building), TestBinary);
+    yield* Effect.forkChild(binary.install, { startImmediately: true });
+
+    const close = yield* Effect.forkChild(Scope.close(scope, Exit.void), {
+      startImmediately: true,
+    });
+    yield* TestClock.adjust("1 second");
+
+    expect(yield* Fiber.join(close)).toBeUndefined();
+  }),
 );
 
 it.effect("keeps a borrowed engine usable until its borrower ends", () =>
@@ -482,6 +545,8 @@ function slowClearDevice() {
 function testLayer(
   device: ReturnType<typeof memoryDevice>,
   overrides: Partial<ManagedBinary<Disposable>> = {},
+  download: () => Promise<Uint8Array<ArrayBuffer>> = () =>
+    Promise.resolve(BYTES),
 ) {
   return layerManagedBinary(TestBinary, {
     id: "test-binary",
@@ -496,7 +561,7 @@ function testLayer(
         ManagedBinaryPlatform,
         managedBinaryPorts({
           ...device,
-          download: () => Promise.resolve(BYTES),
+          download,
         }),
       ),
     ),
