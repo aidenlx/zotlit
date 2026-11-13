@@ -3956,7 +3956,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
             open: run.m.welcome_step_folder_title(),
             // The Help Links show beside the checklist.
             help: [
-              "https://zotlit.aidenlx.site/docs",
+              "https://zotlit.aidenlx.site/learn",
               "https://zotlit.aidenlx.site/community",
               "https://github.com/aidenlx/zotlit",
               "https://zotlit.aidenlx.site/docs/reference/templates",

@@ -416,6 +416,10 @@ describe("QuickSwitchModal Profile creation", () => {
     );
     const leaf = stubService<WorkspaceLeaf>("WorkspaceLeaf", {
       updateHeader: vi.fn(),
+      getViewState: () => ({
+        type: "markdown",
+        state: { file: openFile.path },
+      }),
     });
     Object.defineProperty(leaf, "view", { value: view });
     getLeavesOfType.mockReturnValue([leaf]);

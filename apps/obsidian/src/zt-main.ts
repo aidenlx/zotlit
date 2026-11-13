@@ -55,6 +55,7 @@ import { registerLibraryView, showInLibrary } from "./views/library/register";
 import { showInLibraryFileMenu } from "./views/library/show-in-library-actions";
 import { openTargetCommand } from "./views/open-target";
 import { registerPandocExport } from "./views/pandoc-export/register";
+import { registerPdfNote } from "./views/pdf-note/register";
 import { registerQueryBlock } from "./views/query-view/block";
 import { QueryCardFocus } from "./views/query-view/card-focus";
 import { QueryFileView } from "./views/query-view/file-view";
@@ -380,6 +381,19 @@ export default class ZotLitPlugin extends UnloadAwarePlugin implements CliHost {
       }),
     });
 
+    const pdfNoteFileMenu = registerPdfNote(this, {
+      app: this.app,
+      bridge: services.bridge,
+      sessions: services.pdfAnnotationEditor.sessions,
+      literatureNotes: queryViewDeps.literatureNotes,
+      registry: services.viewRegistry,
+      creation: {
+        app: this.app,
+        createProfile: (options) => createProfileDialog(this.app, options),
+        importProfile: (options) => importProfileDialog(this.app, options),
+      },
+    });
+
     // The Annotation History's own verbs. A bound PDF view and an Annotation
     // View each step the Attachment they show, and a Query View the
     // Attachment of its focused card, so the palette acts on whichever of
@@ -464,6 +478,7 @@ export default class ZotLitPlugin extends UnloadAwarePlugin implements CliHost {
       this,
       [
         attachmentOpenFileMenu(attachmentOpenDeps),
+        pdfNoteFileMenu,
         templateWorkbenchFileMenu(this.app, templateWorkbenchDeps),
         noteFeatureFileMenu(noteFeatureDeps),
         citationPresentationFileMenu(citationPresentationDeps),
