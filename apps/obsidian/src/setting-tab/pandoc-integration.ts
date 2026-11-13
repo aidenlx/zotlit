@@ -34,7 +34,7 @@ export function pandocIntegrationDefinition(
               .setButtonText(m.settings_citation_pandoc_tutorial_open())
               .onClick(() =>
                 window.open(
-                  `${DOCS_SITE_URL}/docs/tutorial/pandoc-citation-workflow`,
+                  `${DOCS_SITE_URL}/docs/how-to/pandoc-citation-workflow`,
                 ),
               ),
           );
