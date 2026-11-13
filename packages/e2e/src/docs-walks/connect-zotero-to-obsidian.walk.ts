@@ -13,7 +13,7 @@ import { isObsidianReachable } from "@e2e/vault-script.ts";
 import { reloadWindow } from "@e2e/window-reload.ts";
 import { execFile } from "node:child_process";
 import { mkdir, readdir, rm } from "node:fs/promises";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { promisify } from "node:util";
 import type {
   FileSystemAdapter,
@@ -1224,6 +1224,8 @@ describe.skipIf(!reachable)(
         // Companion build installed from a file, offline.
         const guide = await openGuide();
         const xpi = join(root, ".scratch", "docs-walks", SLUG, "companion.xpi");
+        // A new worktree has no folder for the walk yet.
+        await mkdir(dirname(xpi), { recursive: true });
         await rm(xpi, { force: true });
         await execFileAsync("zip", ["-qr", "-X", xpi, "."], {
           cwd: companionDir,
@@ -1588,33 +1590,31 @@ describe.skipIf(!reachable)(
       await walk.compose("step-5");
     });
 
-    it("step 6: go back to the Zotero library tab and select Write literature note; the notice Literature note created. and the note in a new tab", async () => {
+    it("step 6: at the top right of the PDF tab, select Write literature note; the notice Literature note created. and the note beside the PDF", async () => {
       const written = await walk.record(
         "step-6",
         () =>
           obRun(
             walk.vaultId,
-            async ({ app, page }, { note }) => {
+            async ({ app, page }, { note, labels }) => {
               const pointer = page.scratch.docsWalkPointer;
-              const leaf = app.workspace.getLeavesOfType(
-                "zotlit-library",
-              )[0] as LibraryLeaf;
-              const card = leaf.view.contentEl.querySelector<HTMLElement>(
-                "[data-library-card]",
-              )!;
-              const tab = (leaf as unknown as { tabHeaderEl: HTMLElement })
-                .tabHeaderEl;
-              await pointer?.point(tab);
-              app.workspace.setActiveLeaf(leaf, { focus: true });
-              await page.until(
-                "library in front",
-                () => card.checkVisibility(),
-                5000,
+              const pdf = app.workspace.getLeavesOfType("pdf")[0]!;
+              app.workspace.setActiveLeaf(pdf, { focus: true });
+              const button = await page.until(
+                "the PDF view's literature note action",
+                () =>
+                  [
+                    ...pdf.view.containerEl.querySelectorAll<HTMLElement>(
+                      ".view-action",
+                    ),
+                  ].find(
+                    (el) =>
+                      labels.includes(el.getAttribute("aria-label") ?? "") &&
+                      el.style.display !== "none",
+                  ),
+                10000,
               );
-              const button = card.querySelector<HTMLElement>(
-                '[data-library-card-action="note"]',
-              )!;
-              const label = button.innerText.trim();
+              const label = button.getAttribute("aria-label");
               await pointer?.point(button);
               page.press(button, "Write literature note");
               await page.until(
@@ -1653,14 +1653,20 @@ describe.skipIf(!reachable)(
               return {
                 label,
                 active: app.workspace.getActiveFile()?.path ?? null,
-                ownTab:
-                  noteLeaf !== leaf &&
-                  !app.workspace.getLeavesOfType("pdf").includes(noteLeaf) &&
-                  leaf.view.getViewType() === "zotlit-library",
+                // The note opens in a split beside the PDF, which stays on screen.
+                besidePdf:
+                  noteLeaf.parent !== pdf.parent &&
+                  pdf.view.containerEl.isShown(),
                 prompt: !!document.querySelector(".prompt"),
               };
             },
-            { note: NOTE },
+            {
+              note: NOTE,
+              labels: [
+                m.library_view_menu_write_note(),
+                m.library_view_menu_open_note(),
+              ],
+            },
             STEP,
           ),
         { notices: true },
@@ -1668,7 +1674,7 @@ describe.skipIf(!reachable)(
       expect(written).toEqual({
         label: m.library_view_menu_write_note(),
         active: NOTE,
-        ownTab: true,
+        besidePdf: true,
         prompt: false,
       });
       expect(await readNotices(walk.vaultId)).toContain(

@@ -6,7 +6,7 @@ minutes: 12
 media: connect-zotero-to-obsidian
 lede: Connect ZotLit to your Zotero library and create your first literature note.
 chore: Connect Zotero once
-instead: Select Write literature note on the paper’s card.
+instead: Select Write literature note at the top right of the PDF.
 note: ZotLit reads your Zotero library on this computer and changes nothing in it.
 needs:
   - item: Obsidian
@@ -27,7 +27,7 @@ steps:
   - title: Open the PDF
     alt: The PDF opens in a tab showing coloured highlights alongside an annotations list of comments and tags.
   - title: Write the literature note
-    alt: The literature note opens with the notice Literature note created, displaying links and an Annotations section.
+    alt: The literature note opens beside the PDF with the notice Literature note created, displaying links and an Annotations section.
   - title: Add your own thoughts
     alt: The literature note displays a My thoughts heading and notes written directly above the Annotations section.
 end:
@@ -148,18 +148,18 @@ On the paper’s card, select <UiLabel name={m.library_view_menu_open_pdf()} />.
 
 <Step n={6}>
 
-In <UiLabel name={m.library_view_name()} />, select <UiLabel name={m.library_view_menu_write_note()} /> on the card.
+At the top right of the PDF tab, select the page icon with a plus sign, <UiLabel name={m.library_view_menu_write_note()} />.
 
 <Check>
   The notice appears: <UiLabel name={m.notice_created_note()} /> The note for
-  your paper (here `sandve2013`) opens in `literatures` with links to Zotero and
-  the PDF, and an **Annotations** section.
+  your paper (here `sandve2013`) opens in `literatures` beside the PDF, with
+  links to Zotero and the PDF, and an **Annotations** section.
 </Check>
 
 <Fix
   title={
     <>
-      The button reads <UiLabel name={m.library_view_menu_open_note()} />
+      The tooltip reads <UiLabel name={m.library_view_menu_open_note()} />
     </>
   }
 >
