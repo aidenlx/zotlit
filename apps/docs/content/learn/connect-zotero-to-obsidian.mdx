@@ -38,13 +38,20 @@ end:
   next: Read and annotate papers directly in Obsidian.
 ---
 
+import { ActionLink } from "@/components/action-link";
 import { Check, Figure, Fix, Step } from "@/components/learn/lesson-mdx";
 import { UiLabel } from "@/components/ui-label";
 import { m } from "@/paraglide/messages.js";
 
 <Step n={1}>
 
-In Obsidian, open **Settings**, select **Community plugins**, and choose **Browse**. Search for `ZotLit`. Select **Install**, then select **Enable**. As a shortcut, [open ZotLit's page in Obsidian](obsidian://show-plugin?id=zotlit), then select **Install** and **Enable**. If Obsidian asks, select **Turn on community plugins**.
+In Obsidian, open **Settings**, select **Community plugins**, and choose **Browse**. Search for `ZotLit`. Select **Install**, then select **Enable**. If Obsidian asks, select **Turn on community plugins**.
+
+As a shortcut, open ZotLit's page in Obsidian directly, then select **Install** and **Enable**:
+
+<ActionLink href="obsidian://show-plugin?id=zotlit" kind="obsidian">
+  Show ZotLit in Obsidian
+</ActionLink>
 
 <Check>
   A tab named <UiLabel name={m.library_view_name()} /> opens. At the top sits a

@@ -101,7 +101,15 @@ export default function RecordingPlayer({
 
   useEffect(() => {
     const v = video.current;
-    if (!v || mode === "paused") return;
+    if (!v) return;
+    if (mode === "paused") {
+      // A clip the reader paused keeps the turn while in view, so no waiting loop starts behind the pause.
+      const held = new IntersectionObserver(([entry]) => {
+        if (!entry?.isIntersecting) endTurn(me);
+      });
+      held.observe(v);
+      return () => held.disconnect();
+    }
     function play() {
       if (!v) return;
       stopWaiting(me);
@@ -158,7 +166,6 @@ export default function RecordingPlayer({
       askedPause.current = false;
       return;
     }
-    endTurn(me);
     setTouched(true);
     setMode("paused");
   }

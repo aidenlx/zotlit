@@ -224,7 +224,9 @@ Values follow the `better-ui` skill.
   crosses the middle band of the viewport, and the demo while half of it is
   on screen; each rests elsewhere, and a loop that starts rests the one that
   played. A recording plays in the recording player, whose play button
-  pauses it; the table demo carries a visible pause button (WCAG 2.2.2).
+  pauses it; a recording the reader paused holds the turn while it stays in
+  view, so no other loop starts behind the pause. The table demo carries a
+  visible pause button (WCAG 2.2.2).
   With reduced motion, a recording rests on its poster until the reader
   plays it, and the table demo shows its finished frame.
 - **Scroll.** The page scrolls as a document, with no scroll-linked movement.
