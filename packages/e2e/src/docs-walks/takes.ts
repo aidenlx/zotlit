@@ -4,6 +4,7 @@
 // the camera track the clip was cut with, the recorder's commit, the app
 // versions, the command, and the clip's length and output sizes.
 
+import { regex } from "arkregex";
 import { execFile } from "node:child_process";
 import { access, mkdir, readFile, stat, writeFile } from "node:fs/promises";
 import { dirname, join, relative } from "node:path";
@@ -22,6 +23,7 @@ const RECORDER = [
   "packages/e2e/src/docs-walks/clip-encode.ts",
   "packages/e2e/src/docs-walks/docs-browser.ts",
   "packages/e2e/src/docs-walks/macos-desktop.ts",
+  "packages/e2e/src/docs-walks/pointer-look.ts",
 ];
 
 /** One recorded clip. */
@@ -99,7 +101,7 @@ export async function takeRun(
     "show",
     "HEAD:packages/e2e/src/vault-script.ts",
   ).catch(() => "");
-  const pin = /OBSIDIAN_VERSION = "([^"]+)"/.exec(committed)?.[1] ?? "";
+  const pin = regex('OBSIDIAN_VERSION = "([^"]+)"').exec(committed)?.[1] ?? "";
   const env = Object.fromEntries(
     Object.entries(process.env).filter(
       (e): e is [string, string] =>

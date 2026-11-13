@@ -1053,6 +1053,9 @@ importers:
       '@zotlit/scripts':
         specifier: workspace:*
         version: link:../scripts
+      arkregex:
+        specifier: 'catalog:'
+        version: 0.0.5
       obsidian:
         specifier: 'catalog:'
         version: 1.14.4(@codemirror/state@6.7.6)(@codemirror/view@6.43.13)

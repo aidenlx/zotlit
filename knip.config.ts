@@ -86,9 +86,10 @@ const config: KnipConfig = {
       entry: [
         "src/*.e2e.ts",
         "src/query-measure.ts",
-        // The docs walks run under their own Vitest config, and the clip
-        // encoder also runs alone to cut a clip again.
+        // The docs walks and their global setup run under their own Vitest
+        // config, and the clip encoder also runs alone to cut a clip again.
         "src/docs-walks/*.walk.ts",
+        "src/docs-walks/docs-walk-setup.ts",
         "src/docs-walks/clip-encode.ts",
       ],
     },

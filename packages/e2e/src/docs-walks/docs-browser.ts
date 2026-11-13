@@ -12,6 +12,12 @@ import { join } from "node:path";
 
 import type { CameraEvent } from "./camera.ts";
 import type { ClipSettings } from "./clip-settings.ts";
+import {
+  arrowStyle,
+  pointerGlide,
+  pointerLook,
+  ringStyle,
+} from "./pointer-look.ts";
 
 /** The Chrome binary; `DOCS_WALK_CHROME` names another. */
 const CHROME =
@@ -115,6 +121,10 @@ class Cdp {
   close(): void {
     this.#ws.close();
   }
+
+  [Symbol.dispose](): void {
+    this.close();
+  }
 }
 
 /** A page in the clean browser. */
@@ -124,8 +134,12 @@ export interface DocsBrowserPage {
 }
 
 export interface DocsBrowser extends AsyncDisposable {
-  /** Open `url` in the page and wait for it to load. */
-  open(url: string): Promise<void>;
+  /**
+   * Open `url` in the page and wait for it to load, its web fonts, and
+   * `ready`, an expression in the page that holds once the page shows what
+   * the walk reads next.
+   */
+  open(url: string, ready: string): Promise<void>;
   /**
    * Run `actions` and record the page content into `dir` as a shot: one PNG
    * per frame, `frames.json` and `camera.json`, as `encodeClip` reads them.
@@ -149,14 +163,19 @@ export interface DocsBrowser extends AsyncDisposable {
 
 /**
  * Start the clean browser: a page of `width` × `height` CSS px at 2× pixels,
- * like the Obsidian window of a walk, saving downloads into `downloads`.
+ * like the Obsidian window of a walk, saving downloads into `downloads`. A
+ * failed start stops Chrome and removes its profile.
  */
 export async function openDocsBrowser(options: {
   width: number;
   height: number;
   downloads: string;
 }): Promise<DocsBrowser> {
-  const profile = await mkdtemp(join(tmpdir(), "docs-walk-browser-"));
+  await using stack = new AsyncDisposableStack();
+  const profile = stack.adopt(
+    await mkdtemp(join(tmpdir(), "docs-walk-browser-")),
+    (dir) => rm(dir, { recursive: true, force: true }),
+  );
   await mkdir(options.downloads, { recursive: true });
   const chrome = spawn(
     CHROME,
@@ -176,7 +195,15 @@ export async function openDocsBrowser(options: {
     ],
     { stdio: "ignore" },
   );
-  const exited = new Promise((r) => chrome.once("exit", r));
+  // A Chrome that cannot start reports an error and no exit.
+  const exited = new Promise((r) => {
+    chrome.once("exit", r);
+    chrome.once("error", r);
+  });
+  stack.defer(async () => {
+    chrome.kill();
+    await exited;
+  });
   const portFile = join(profile, "DevToolsActivePort");
   let port = "";
   let browserPath = "";
@@ -186,13 +213,17 @@ export async function openDocsBrowser(options: {
     [port = "", browserPath = ""] = text.trim().split("\n");
   }
   if (!port) throw new Error(`Chrome did not start: ${CHROME}`);
-  const browser = await Cdp.connect(`ws://127.0.0.1:${port}${browserPath}`);
+  const browser = stack.use(
+    await Cdp.connect(`ws://127.0.0.1:${port}${browserPath}`),
+  );
   const targets = await browser.send<{
     targetInfos: { targetId: string; type: string }[];
   }>("Target.getTargets");
   const target = targets.targetInfos.find((t) => t.type === "page")!;
-  const page = await Cdp.connect(
-    `ws://127.0.0.1:${port}/devtools/page/${target.targetId}`,
+  const page = stack.use(
+    await Cdp.connect(
+      `ws://127.0.0.1:${port}/devtools/page/${target.targetId}`,
+    ),
   );
   await page.send("Page.enable");
   await page.send("Emulation.setDeviceMetricsOverride", {
@@ -238,14 +269,22 @@ export async function openDocsBrowser(options: {
     return reply.result.value as T;
   };
 
+  const owned = stack.move();
   return {
-    async open(url) {
+    async open(url, ready) {
       const loaded = page.once("Page.loadEventFired", () => true, 60000);
       await page.send("Page.navigate", { url });
       await loaded;
-      // Web fonts and the page's own scripts settle.
       await evaluate("document.fonts.ready.then(() => true)");
-      await new Promise((r) => setTimeout(r, 800));
+      await evaluate(`(async () => {
+        const end = performance.now() + 15000;
+        while (!(${ready})) {
+          if (performance.now() > end)
+            throw new Error(${JSON.stringify(`the page never showed ${ready}`)});
+          await new Promise((r) => setTimeout(r, 100));
+        }
+        return true;
+      })()`);
     },
     async record(dir, settings, actions) {
       await rm(dir, { recursive: true, force: true });
@@ -266,10 +305,14 @@ export async function openDocsBrowser(options: {
           .send("Page.screencastFrameAck", { sessionId: p.sessionId })
           .catch(() => {});
       });
+      const { glideMs, transitionMs } = pointerGlide(settings);
       await evaluate(
         `(${installPointer.toString()})(${JSON.stringify({
-          glideMs: settings.glide * 1000,
+          glideMs,
+          arrowCss: arrowStyle(transitionMs),
+          ringCss: ringStyle(),
           lookMs: settings.camera ? settings.ease * 1000 : 0,
+          look: pointerLook,
         })})`,
       );
       await page.send("Page.startScreencast", {
@@ -352,13 +395,7 @@ export async function openDocsBrowser(options: {
       })();
       return { done };
     },
-    async [Symbol.asyncDispose]() {
-      page.close();
-      browser.close();
-      chrome.kill();
-      await exited;
-      await rm(profile, { recursive: true, force: true });
-    },
+    [Symbol.asyncDispose]: () => owned.disposeAsync(),
   };
 }
 
@@ -367,20 +404,24 @@ export async function openDocsBrowser(options: {
  * Obsidian shots, and the same camera log, on the screencast's clock.
  * Serialized into the page, so it uses nothing outside itself.
  */
-function installPointer(o: { glideMs: number; lookMs: number }): void {
+function installPointer(o: {
+  glideMs: number;
+  arrowCss: string;
+  ringCss: string;
+  lookMs: number;
+  look: typeof pointerLook;
+}): void {
   type Box = { left: number; top: number; right: number; bottom: number };
   const events: unknown[] = [];
   const now = () => (performance.timeOrigin + performance.now()) / 1000;
   const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
   const arrow = document.createElement("div");
   arrow.dataset.docsWalkPointer = "";
-  arrow.style.cssText = `position:fixed;left:0;top:0;z-index:2147483647;pointer-events:none;transition:transform ${Math.max(0, o.glideMs - 50)}ms cubic-bezier(.4,0,.2,1);`;
-  arrow.innerHTML =
-    '<svg width="22" height="26" viewBox="0 0 22 26" style="display:block;filter:drop-shadow(0 1px 2px rgba(0,0,0,.35))"><path d="M2 1.5v20.2l5.3-5.1 3.4 7.8 3.4-1.5-3.3-7.6 7.4-.2z" fill="#111" stroke="#fff" stroke-width="1.6" stroke-linejoin="round"/></svg>';
+  arrow.style.cssText = o.arrowCss;
+  arrow.innerHTML = o.look.arrow;
   const ring = document.createElement("div");
   ring.dataset.docsWalkPointer = "";
-  ring.style.cssText =
-    "position:fixed;left:0;top:0;width:28px;height:28px;margin:-14px 0 0 -14px;border-radius:50%;border:2px solid #7c5cff;background:rgba(124,92,255,.18);z-index:2147483646;pointer-events:none;opacity:0;";
+  ring.style.cssText = `position:fixed;left:0;top:0;${o.ringCss}opacity:0;`;
   document.body.append(arrow, ring);
   const at = {
     x: Math.round(innerWidth * 0.55),
@@ -410,14 +451,11 @@ function installPointer(o: { glideMs: number; lookMs: number }): void {
       events.push({ kind: "point", t: now(), x, y, rect: rect(b) });
       ring.style.left = `${x}px`;
       ring.style.top = `${y}px`;
-      ring.animate(
-        [
-          { opacity: 1, transform: "scale(.5)" },
-          { opacity: 0, transform: "scale(1.4)" },
-        ],
-        { duration: 450, easing: "ease-out" },
-      );
-      await wait(150);
+      ring.animate(o.look.ringKeyframes, {
+        duration: o.look.ringMs,
+        easing: "ease-out",
+      });
+      await wait(o.look.markMs);
     },
     async park(x: number, y: number) {
       await glide(Math.round(x), Math.round(y));
