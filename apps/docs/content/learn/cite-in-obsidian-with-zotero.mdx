@@ -13,7 +13,7 @@ needs:
   - item: Better BibTeX
     detail: Required to cite as you write, installed in Zotero
   - item: Draft note
-    detail: Chapter 3 - Presenting the results
+    detail: A draft note of your own, such as Chapter 3 - Presenting the results
 steps:
   - title: Install the citation engine
     alt: Under Citations in ZotLit settings, the Pandoc engine row reads Pandoc 3.10 is installed.
@@ -53,11 +53,11 @@ In **Settings** > **ZotLit** > <UiLabel name={m.settings_page_citations()} />, s
 
 <Step n={2}>
 
-In `Chapter 3 - Presenting the results`, place the cursor and type `[@sandve`.
+In your draft (here `Chapter 3 - Presenting the results`), place the cursor and type `[@` with an author's name from your library, such as `[@sandve`.
 
 <Check>
-  A citation menu opens, showing **Sandve et al. (2013), PLOS Computational
-  Biology, 9(10), e1003285**.
+  A citation menu opens, showing your paper (here **Sandve et al. (2013), PLOS
+  Computational Biology, 9(10), e1003285**).
 </Check>
 
 <Fix title="The paper is not in the list">
@@ -71,7 +71,10 @@ In `Chapter 3 - Presenting the results`, place the cursor and type `[@sandve`.
 
 Press Enter to choose the paper.
 
-<Check>The draft displays `[@sandve2013]` at the cursor.</Check>
+<Check>
+  The draft displays the citation key for your paper (here `[@sandve2013]`) at
+  the cursor.
+</Check>
 
 </Step>
 
@@ -79,7 +82,10 @@ Press Enter to choose the paper.
 
 Type `, p. 2` before the closing bracket, then move the cursor away.
 
-<Check>The citation formats as **(Sandve et al. 2013, 2)**.</Check>
+<Check>
+  The citation now shows as author, year and page, here **(Sandve et al. 2013,
+  2)**.
+</Check>
 
 <Fix title="It still reads [@sandve2013, p. 2]">
   Install the engine in Step 1.
@@ -91,7 +97,10 @@ Type `, p. 2` before the closing bracket, then move the cursor away.
 
 Point at the formatted citation.
 
-<Check>A preview card opens with the full Sandve 2013 reference.</Check>
+<Check>
+  A preview card opens with the full reference for your paper (here Sandve
+  2013).
+</Check>
 
 </Step>
 
