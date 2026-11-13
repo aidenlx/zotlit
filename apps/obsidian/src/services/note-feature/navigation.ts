@@ -2,8 +2,7 @@
 import { Effect } from "effect";
 import type { Cause } from "effect";
 import type { RpcClientError } from "effect/rpc";
-import { MarkdownView } from "obsidian";
-import type { PaneType, TFile } from "obsidian";
+import type { PaneType, TFile, WorkspaceLeaf } from "obsidian";
 
 import type { Item } from "@zotlit/db";
 
@@ -59,11 +58,15 @@ type LiteratureNoteOptions =
       readonly source: "interactive";
       readonly item?: Item;
       readonly paneType: PaneType | boolean;
+    }
+  | {
+      readonly source: "interactive";
+      readonly item?: Item;
       /**
-       * Bring a tab that already shows the note forward, in place of opening
-       * it in `paneType`. An open with no pane always does this.
+       * Open the note in a split beside this leaf, unless a tab already shows
+       * it, which comes forward.
        */
-      readonly reuseOpen?: boolean;
+      readonly beside: WorkspaceLeaf;
     };
 
 /** Open an existing Literature Note or create one through Profile selection. */
@@ -87,13 +90,20 @@ export const openLiteratureNote = Effect.fn("LiteratureNoteNavigation.open")(
     const workspace = yield* Workspace;
     const noteFeature = yield* NoteFeature;
     const open = Effect.fnUntraced(function* (file: TFile) {
+      const beside =
+        options.source === "interactive" && "beside" in options
+          ? options.beside
+          : null;
       if (
-        options.source === "interactive" &&
-        (!options.paneType || options.reuseOpen)
+        beside ||
+        (options.source === "interactive" &&
+          "paneType" in options &&
+          !options.paneType)
       ) {
+        // A tab restored but not yet shown holds a deferred view, which
+        // names its file only in its view state.
         const existing = (yield* workspace.leavesOfType("markdown")).find(
-          (leaf) =>
-            leaf.view instanceof MarkdownView && leaf.view.file === file,
+          (leaf) => leaf.getViewState().state?.file === file.path,
         );
         if (existing) {
           yield* workspace.revealLeaf(existing);
@@ -101,8 +111,15 @@ export const openLiteratureNote = Effect.fn("LiteratureNoteNavigation.open")(
           return;
         }
       }
+      // A split divides the active leaf; the leaf to open beside is the one
+      // to divide, whatever took the focus while the note was written.
+      if (beside) yield* workspace.setActiveLeaf(beside, { focus: false });
       const navigate = workspace.openLinkText(file.path, "", {
-        newLeaf: options.paneType ?? false,
+        newLeaf: beside
+          ? "split"
+          : "paneType" in options
+            ? (options.paneType ?? false)
+            : false,
         state: { active: true },
       });
       return yield* options.source === "companion" &&

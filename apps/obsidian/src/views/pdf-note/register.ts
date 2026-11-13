@@ -1,8 +1,4 @@
-// The Literature Note of the Item a PDF view shows, opened or written from
-// that view: a view-header action, a "More options" entry and a command. Each
-// stands on an Obsidian PDF view bound to a Zotero Attachment with a parent
-// Item, and on no other view. The note opens beside the PDF, so the reader
-// keeps both on screen; a tab that already shows the note comes forward.
+// The literature note controls of a PDF view bound to a Zotero Attachment with a parent Item.
 import { FileView, setIcon, setTooltip } from "obsidian";
 import type { App, Plugin, View, WorkspaceLeaf } from "obsidian";
 
@@ -15,20 +11,18 @@ import type { InteractiveCreationPorts } from "@/services/note-feature/creation-
 import type { ReaderSession } from "@/services/reader-session/session";
 import type { LiteratureNotes } from "@/views/query-view/table-notes";
 
-import { openNoteBeside, pdfNoteCommand } from "./open-note";
+import { openNoteBeside, pdfNoteOpens } from "./open-note";
 import type { PdfSessions } from "./open-note";
 
 export interface PdfNoteDeps {
   app: App;
   bridge: Pick<EffectBridge, "subscribe">;
-  /** The Reader Session of each bound PDF view. */
   sessions: PdfSessions;
   literatureNotes: Pick<LiteratureNotes, "find" | "on">;
   registry: ViewRegistryHandle;
   creation: InteractiveCreationPorts;
 }
 
-/** The header action of one bound PDF view. */
 interface HeaderAction {
   readonly session: ReaderSession;
   readonly el: HTMLElement;
@@ -47,7 +41,7 @@ export function registerPdfNote(
 ): FileMenuSegment {
   const { app } = deps;
   // An open can outlive the PDF view that started it.
-  plugin.register(deps.registry.mount(pdfNoteCommand));
+  plugin.register(deps.registry.mount(pdfNoteOpens));
   let sessions: ReadonlyMap<View, ReaderSession> = new Map();
   const actions = new Map<View, HeaderAction>();
 
@@ -62,7 +56,7 @@ export function registerPdfNote(
 
   const openNote = (leaf: WorkspaceLeaf, itemKey: string) =>
     deps.registry.set(
-      pdfNoteCommand,
+      pdfNoteOpens,
       openNoteBeside(deps.creation, leaf, itemKey),
     );
 
