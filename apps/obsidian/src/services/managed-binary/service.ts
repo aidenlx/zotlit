@@ -407,19 +407,22 @@ const makeManagedBinary = Effect.fn("ManagedBinary.make")(function* <
         const current = yield* SubscriptionRef.get(status);
         if (current.kind === "installing")
           yield* Deferred.await(current.done).pipe(Effect.ignore);
-        uninstalling = true;
-        yield* Effect.gen(function* () {
-          yield* dropEngine();
-          yield* store.clear;
-          yield* consent.saveLocalStorage(declinedKey, null);
-          yield* log("Removed the binary cache", { pin: binary.pin });
-          yield* setStatus({ kind: "absent" });
-        }).pipe(
-          Effect.ensuring(
+        yield* Effect.acquireUseRelease(
+          Effect.sync(() => {
+            uninstalling = true;
+          }),
+          () =>
+            Effect.gen(function* () {
+              yield* dropEngine();
+              yield* store.clear;
+              yield* consent.saveLocalStorage(declinedKey, null);
+              yield* log("Removed the binary cache", { pin: binary.pin });
+              yield* setStatus({ kind: "absent" });
+            }),
+          () =>
             Effect.sync(() => {
               uninstalling = false;
             }),
-          ),
         );
       }),
       scope,
