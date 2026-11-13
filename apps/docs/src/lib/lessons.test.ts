@@ -1,16 +1,16 @@
+import { regex } from "arkregex";
 import { frontmatter } from "fumadocs-core/content/md/frontmatter";
 import {
   globSync,
   mkdirSync,
-  mkdtempSync,
+  mkdtempDisposableSync,
   readFileSync,
-  rmSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import * as v from "valibot";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 
 import { mp4Size, scanLearnMedia, webpSize } from "./learn-media";
 
@@ -25,11 +25,18 @@ const lessons = globSync("*.mdx", { cwd: learnDir }).map((file) => {
   return { file, data: v.parse(learnSchema, data), body: content };
 });
 
+const STEP_BLOCK = regex(
+  "<Step n=\\{(?<n>\\d+)}>(?<inner>[\\s\\S]*?)</Step>",
+  "g",
+);
+
 /** The body between `<Step n={k}>` and its `</Step>`, for each step in order. */
 function stepBlocks(body: string) {
-  return [...body.matchAll(/<Step n=\{(\d+)\}>([\s\S]*?)<\/Step>/g)].map(
-    ([, n, inner]) => ({ n: Number(n), inner: inner! }),
-  );
+  const blocks: { n: number; inner: string }[] = [];
+  // `exec` carries the typed groups; the global pattern walks the body and resets at its end.
+  for (let match = STEP_BLOCK.exec(body); match; match = STEP_BLOCK.exec(body))
+    blocks.push({ n: Number(match.groups.n), inner: match.groups.inner });
+  return blocks;
 }
 
 describe("the lessons", () => {
@@ -91,8 +98,6 @@ describe("the media scan", () => {
   });
 
   describe("of a folder", () => {
-    let packageRoot: string;
-    const folder = () => join(packageRoot, "public/img/learn/lesson");
     /** A lossy WebP header of the given size. */
     const webp = (width: number, height: number) => {
       const header = new Uint8Array(30);
@@ -103,23 +108,29 @@ describe("the media scan", () => {
       view.setUint16(28, height, true);
       return header;
     };
-
-    beforeEach(() => {
-      packageRoot = mkdtempSync(join(tmpdir(), "learn-media-"));
-      mkdirSync(folder(), { recursive: true });
-      writeFileSync(join(folder(), "step-1.webp"), webp(3456, 2296));
-    });
-    afterEach(() => rmSync(packageRoot, { recursive: true, force: true }));
+    /** A package root whose one lesson folder holds step 1's still; removed when the test's scope ends. */
+    const packageWithStill = () => {
+      const root = mkdtempDisposableSync(join(tmpdir(), "learn-media-"));
+      const folder = join(root.path, "public/img/learn/lesson");
+      mkdirSync(folder, { recursive: true });
+      writeFileSync(join(folder, "step-1.webp"), webp(3456, 2296));
+      return { path: root.path, folder, [Symbol.dispose]: () => root.remove() };
+    };
 
     it("reads a step with no poster as its still alone", () => {
-      expect(scanLearnMedia(packageRoot)).toEqual({
+      using packageRoot = packageWithStill();
+      expect(scanLearnMedia(packageRoot.path)).toEqual({
         "lesson/step-1": { width: 3456, height: 2296 },
       });
     });
 
     it("gives a step its poster's size, and no step to the poster itself", () => {
-      writeFileSync(join(folder(), "step-1.poster.webp"), webp(1440, 860));
-      expect(scanLearnMedia(packageRoot)).toEqual({
+      using packageRoot = packageWithStill();
+      writeFileSync(
+        join(packageRoot.folder, "step-1.poster.webp"),
+        webp(1440, 860),
+      );
+      expect(scanLearnMedia(packageRoot.path)).toEqual({
         "lesson/step-1": {
           width: 3456,
           height: 2296,
@@ -129,13 +140,14 @@ describe("the media scan", () => {
     });
 
     it("leaves out a poster that is still a Git LFS pointer", () => {
+      using packageRoot = packageWithStill();
       writeFileSync(
-        join(folder(), "step-1.poster.webp"),
+        join(packageRoot.folder, "step-1.poster.webp"),
         "version https://git-lfs.github.com/spec/v1\noid sha256:00\nsize 1\n",
       );
-      expect(scanLearnMedia(packageRoot)["lesson/step-1"]).not.toHaveProperty(
-        "poster",
-      );
+      expect(
+        scanLearnMedia(packageRoot.path)["lesson/step-1"],
+      ).not.toHaveProperty("poster");
     });
   });
 });
