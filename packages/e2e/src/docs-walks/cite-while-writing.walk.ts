@@ -110,25 +110,12 @@ describe.skipIf(!reachable)("Lesson 3: Cite while you write", () => {
     // this computer first, and the reader's Install puts it back.
     const recording = recordRequested("step-1");
     const removed = recording
-      ? await obRunUntil(
-          walk.vaultId,
-          async ({ zotlit }) => {
-            const h = zotlit.services.pandocEngine;
-            await h.runPromise(h.binary.uninstall);
-            // An engine start that the open draft began during the removal
-            // can fail after it and leave the engine failed, not absent; the
-            // next try removes it again.
-            await new Promise((r) => setTimeout(r, 1500));
-            const s = await h.runPromise(h.binary.getStatus);
-            return s.kind;
-          },
-          undefined,
-          {
-            what: "the engine removed",
-            ready: (kind) => kind === "absent",
-            tries: 3,
-          },
-        )
+      ? await obRun(walk.vaultId, async ({ zotlit }) => {
+          const h = zotlit.services.pandocEngine;
+          await h.runPromise(h.binary.uninstall);
+          const s = await h.runPromise(h.binary.getStatus);
+          return s.kind;
+        })
       : null;
     expect(removed).toBe(recording ? "absent" : null);
     const before = await obRun(walk.vaultId, async ({ zotlit }) => {

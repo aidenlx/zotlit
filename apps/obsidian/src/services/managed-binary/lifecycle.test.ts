@@ -248,6 +248,59 @@ it.effect("drives download, store, and consent Effects with TestClock", () =>
   ),
 );
 
+it.effect(
+  "keeps an uninstall at absent when an engine start races its cache clear",
+  () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const device = memoryDevice();
+        const clearing = Promise.withResolvers<void>();
+        const cleared = Promise.withResolvers<void>();
+        const context = yield* Layer.build(
+          testLayer({
+            ...device,
+            openStore: (directory) => {
+              const store = device.openStore(directory);
+              // The directory goes at once; the clear itself ends later, as
+              // a slow device's does.
+              return {
+                ...store,
+                clear: async () => {
+                  await store.clear();
+                  clearing.resolve();
+                  await cleared.promise;
+                },
+              };
+            },
+          }),
+        );
+        const binary = Context.get(context, TestBinary);
+        yield* binary.install;
+        const statuses = yield* Queue.unbounded<ManagedBinaryStatus>();
+        yield* Effect.forkScoped(
+          Stream.runForEach(binary.changes, (status) =>
+            Queue.offer(statuses, status),
+          ),
+          { startImmediately: true },
+        );
+        expect((yield* Queue.take(statuses)).kind).toBe("installed");
+
+        const uninstall = yield* Effect.forkChild(binary.uninstall, {
+          startImmediately: true,
+        });
+        yield* Effect.promise(() => clearing.promise);
+        const start = yield* Effect.flip(binary.getEngine);
+        cleared.resolve();
+        yield* Fiber.join(uninstall);
+
+        expect(yield* Queue.take(statuses)).toEqual({ kind: "absent" });
+        expect(yield* Queue.size(statuses)).toBe(0);
+        expect(yield* binary.getStatus).toEqual({ kind: "absent" });
+        expect(start.message).toBe("The Test binary is not installed");
+      }),
+    ),
+);
+
 function testLayer(
   device: ReturnType<typeof memoryDevice>,
   overrides: Partial<ManagedBinary<Disposable>> = {},

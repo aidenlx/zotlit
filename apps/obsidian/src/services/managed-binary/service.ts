@@ -158,6 +158,8 @@ const makeManagedBinary = Effect.fn("ManagedBinary.make")(function* <
     ),
   );
   let closed = false;
+  /** An uninstall is dropping the engine and clearing the cache, so no start may begin. */
+  let uninstalling = false;
   const setStatus = (next: ManagedBinaryStatus) =>
     SubscriptionRef.set(status, Object.freeze(next));
   const log = (
@@ -286,7 +288,10 @@ const makeManagedBinary = Effect.fn("ManagedBinary.make")(function* <
   const getEngine = Effect.gen(function* () {
     if (closed) return null;
     if (!engine) {
-      if ((yield* SubscriptionRef.get(status)).kind !== "installed")
+      if (
+        uninstalling ||
+        (yield* SubscriptionRef.get(status)).kind !== "installed"
+      )
         return yield* new ManagedBinaryError({
           message: `The ${binary.label} is not installed`,
         });
@@ -402,11 +407,20 @@ const makeManagedBinary = Effect.fn("ManagedBinary.make")(function* <
         const current = yield* SubscriptionRef.get(status);
         if (current.kind === "installing")
           yield* Deferred.await(current.done).pipe(Effect.ignore);
-        yield* dropEngine();
-        yield* store.clear;
-        yield* consent.saveLocalStorage(declinedKey, null);
-        yield* log("Removed the binary cache", { pin: binary.pin });
-        yield* setStatus({ kind: "absent" });
+        uninstalling = true;
+        yield* Effect.gen(function* () {
+          yield* dropEngine();
+          yield* store.clear;
+          yield* consent.saveLocalStorage(declinedKey, null);
+          yield* log("Removed the binary cache", { pin: binary.pin });
+          yield* setStatus({ kind: "absent" });
+        }).pipe(
+          Effect.ensuring(
+            Effect.sync(() => {
+              uninstalling = false;
+            }),
+          ),
+        );
       }),
       scope,
       { uninterruptible: true },
