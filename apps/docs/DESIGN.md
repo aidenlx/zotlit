@@ -431,8 +431,11 @@ closing call. Sections run 1152px wide (`max-w-6xl`) with 32px side gutters
   "Private, on your computer.", "Free and open source.", "Works with Zotero
   9 and 10.".
 - **Closing call.** A band on the quiet fill: the H2 "Start your next
-  chapter with ZotLit." and the two actions, centred. The requirements line
-  appears once on the page, under the hero's actions.
+  chapter with ZotLit." and the two actions, centred. Under them, one muted
+  15px line for readers of another Zotero plugin links the two answer pages
+  (the plugin comparison and "Zotero Integration not working") in the accent
+  text tone. The requirements line appears once on the page, under the
+  hero's actions.
 - **Labels.** The layout explains, at the text level of obsidian.md: no
   apparatus labels over headings, each section an H2 with one short line,
   each item a lead with one or two sentences.
