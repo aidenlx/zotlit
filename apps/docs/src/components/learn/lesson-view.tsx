@@ -79,9 +79,8 @@ function prefersReducedMotion() {
 const wideQuery = "(min-width: 80rem)";
 
 /**
- * How far down the window the checklist's first row must rise before the
- * panel turns from the outcome to the open step: the reader has reached the
- * checklist. Every lesson's first row loads below this line at 1440 × 900.
+ * How far down the window the checklist's first row must rise, once the page
+ * has scrolled, before the panel turns from the outcome to the open step.
  */
 const reachedLine = 0.35;
 
@@ -121,6 +120,7 @@ export function LessonView({
   const written = useRef<string | null>(null);
   // The row to bring into view after the next render.
   const reveal = useRef<number | null>(null);
+  const list = useRef<HTMLOListElement>(null);
 
   // Runs before paint, so a client-side visit — which never ran the inline
   // script below — does not show every row open for a frame.
@@ -140,29 +140,34 @@ export function LessonView({
     setReady(true);
   }, [lesson.slug, total]);
 
-  // From `xl`, the panel shows the outcome until the reader scrolls the
-  // checklist into the upper part of the window. Every row is watched, so a
-  // jump past the first one (End, a restored scroll) counts too; a page that
-  // has not scrolled has not been read yet.
+  // From `xl`, the panel shows the outcome until the reader reaches the
+  // checklist: scrolls its first row above the line, or clicks inside it.
+  // The observer reports the rows once it starts and whenever one crosses the
+  // line, which also covers a restored scroll; the scroll listener covers a
+  // row that starts above the line. A page that has not scrolled has not
+  // been read yet.
   useEffect(() => {
-    if (!ready || !wide || engaged) return;
-    const observer = new IntersectionObserver(
-      (entries) => {
-        const line = window.innerHeight * reachedLine;
-        if (
-          window.scrollY > 0 &&
-          entries.some((entry) => entry.boundingClientRect.top < line)
-        )
-          setEngaged(true);
-      },
-      { rootMargin: `0px 0px -${Math.round((1 - reachedLine) * 100)}% 0px` },
-    );
-    for (let n = 1; n <= total; n++) {
-      const row = document.getElementById(String(n));
-      if (row) observer.observe(row);
+    const rows = list.current;
+    if (!ready || !wide || engaged || !rows) return;
+    function reached() {
+      const first = document.getElementById("1");
+      if (
+        window.scrollY > 0 &&
+        first &&
+        first.getBoundingClientRect().top < window.innerHeight * reachedLine
+      )
+        setEngaged(true);
     }
-    return () => observer.disconnect();
-  }, [ready, wide, engaged, total]);
+    const observer = new IntersectionObserver(reached, {
+      rootMargin: `0px 0px -${Math.round((1 - reachedLine) * 100)}% 0px`,
+    });
+    for (const row of rows.children) observer.observe(row);
+    window.addEventListener("scroll", reached, { passive: true });
+    return () => {
+      observer.disconnect();
+      window.removeEventListener("scroll", reached);
+    };
+  }, [ready, wide, engaged]);
 
   // The hash names the open row; with none, the first row not ticked opens.
   useLayoutEffect(() => {
@@ -247,7 +252,12 @@ export function LessonView({
           open,
           ticks,
           tick,
-          toggle: (n) => show(open === n ? null : n),
+          // The first press on the open row, before the panel follows the
+          // rows, shows its recording in the panel rather than closing it.
+          toggle: (n) =>
+            wide && !engaged && open === n
+              ? setEngaged(true)
+              : show(open === n ? null : n),
           go: (n) => (n > total ? show(null, n) : show(n)),
           wide,
         }
@@ -314,7 +324,15 @@ export function LessonView({
             <p aria-live="polite" className="sr-only">
               {say}
             </p>
-            <ol className="mt-2">{children}</ol>
+            <ol
+              ref={list}
+              // Bubbles up after the row's own handlers, so a toggle still
+              // reads the panel's state from before the click.
+              onClick={() => wide && setEngaged(true)}
+              className="mt-2"
+            >
+              {children}
+            </ol>
           </div>
           {(!ready || allDone) && <End lesson={lesson} progress={progress} />}
         </div>

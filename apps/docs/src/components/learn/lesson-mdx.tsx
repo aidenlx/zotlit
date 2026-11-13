@@ -80,15 +80,16 @@ const marksClass =
   "[&_code]:rounded-sm [&_code]:bg-fd-muted [&_code]:px-1 [&_code]:font-mono [&_code]:text-[0.9375rem] [&_strong]:font-semibold";
 
 /**
- * Action text: links in the accent text tone. A shared block device inside it
- * (an `ActionLink` or a `Command`, each `not-prose`) takes the meta size, its
- * command name the title size and its copy affordance the label size.
+ * Action text: links in the accent text tone. A shared device inside it (each
+ * `not-prose`) keeps the scale: an `ActionLink` takes the meta size, an inline
+ * `Command` the text's size, a block `Command`'s name the title size and its
+ * copy affordance the label size.
  */
 const captionClass = cn(
   bodyClass,
   marksClass,
   "[&_a]:rounded-sm [&_a]:font-medium [&_a]:text-fd-primary [&_a]:underline [&_a]:decoration-fd-primary/40 [&_a]:underline-offset-4 [&_a]:hover:decoration-fd-primary [&_a]:focus-visible:outline-2 [&_a]:focus-visible:outline-offset-2 [&_a]:focus-visible:outline-fd-ring [&_p+p]:mt-3 [&>:not(:first-child)]:mt-3",
-  "[&_.not-prose]:text-[0.9375rem] [&_.not-prose_*]:text-[length:inherit] [&_.not-prose_.font-serif]:text-[1.25rem] [&_.not-prose_button]:text-[0.6875rem]",
+  "[&_.not-prose_*]:text-[length:inherit] [&_.not-prose_.font-serif]:text-[1.25rem] [&_.not-prose_button]:text-[0.6875rem] [&_.not-prose.inline-flex]:text-[0.9375rem]",
 );
 
 export const buttonClass = cn(

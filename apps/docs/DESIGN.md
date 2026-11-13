@@ -169,9 +169,9 @@ takes the title's sans face, regular and tabular (see Learn).
 **The layout explains; a label appears only where position and grouping
 cannot.** Before adding a label or a secondary description, check whether
 the element's place, its group or the element itself already says it: a
-numbered row needs no "Step 2 of 6" above it, a green check band needs no
-"You should see", and the first, wider card needs no "Start here". A
-screen reader that cannot see the layout gets the name as `sr-only` text.
+row's number gives its order, the green band marks what the reader should
+see, and the first, wider card is where to start. A screen reader that
+cannot see the layout gets the name as `sr-only` text.
 
 Docs-chrome labels ride the same voice at a smaller size (~0.72rem) and quieter
 weight — micro-apparatus inside the sans body rather than marketing display, but
@@ -492,9 +492,9 @@ explains, and each fact appears once (see The label voice).
 
   A lesson page sets five sizes (label, meta, body, title, display) and the
   course page six. Inline code in step text is mono 15px; a UI label is
-  semibold at the text's own size. A shared block device in a step (an
-  `ActionLink`, a `Command`) takes the meta size, its command name the
-  title size. Step titles carry the lesson's only H2 style.
+  semibold at the text's own size. In a step, an `ActionLink`
+  takes the meta size, an inline `Command` the text's size, and a block
+  `Command` its name at the title size. Step titles carry the lesson's only H2 style.
 - **Shell.** The course sits outside the docs layout: a top bar (the
   wordmark, a mono "Learn" label, then "All lessons" and "Docs" as muted
   links, over a hairline) and one centred column, 720px at most, with 20px
@@ -554,8 +554,10 @@ explains, and each fact appears once (see The label voice).
   checklist column and, 48px beside it, a sticky panel. It opens on the
   outcome: "You end with", the outcome as a serif title and the last
   step's recording at rest on its poster. Once the reader reaches the
-  checklist — the first row rises into the top 35% of the window, or the
-  reader opens, toggles or ticks a row — the panel follows the open row:
+  checklist — the page scrolls the first row into the top 35% of the
+  window, or the reader clicks inside the checklist (the first press on the
+  open row's title shows that row here and leaves it open) — the panel
+  follows the open row:
   the step number (a check in check green once ticked) and title in serif
   at the title size, then its recording, which plays while it crosses the
   middle of the window. A reader with ticks saved, or one who follows a
