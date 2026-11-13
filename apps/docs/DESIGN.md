@@ -285,11 +285,14 @@ heading, one caption and one check line.
   button at the centre (the secondary action: 44px tall, the surface with
   the shadow ring, a Lucide rotate icon), after any actions the page adds
   (`endActions`); on the scrim their focus ring is white (4.7:1 or more on
-  the dimmed frame). It gives its turn back, and plays again only on the
-  reader's press, not when it comes back into view. Once the reader plays
-  or pauses a clip, the reader's choice holds: a clip they played, here or
-  with a press elsewhere such as Start, plays while any of it is in view,
-  and a clip they paused stays paused.
+  the dimmed frame). The control bar leaves while the end shows, so this
+  Replay is the only one. In a player under 20rem wide (a 320px window)
+  Replay keeps its icon in a 44px square, its name read but not shown, so
+  it shares one row with the page's action. It gives its turn back, and
+  plays again only on the reader's press, not when it comes back into
+  view. Once the reader plays or pauses a clip, the reader's choice holds.
+  A clip asked for with a press elsewhere (`playNow`, such as Start) plays
+  at once, or once it comes into view when it mounts below the fold.
   A clip rested by another loop while still in view plays again when that
   loop rests. In fullscreen the whole clip shows (`object-fit: contain`).
   Each clip is one H.264 MP4, which every browser the site targets plays.

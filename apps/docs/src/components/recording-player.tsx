@@ -26,6 +26,7 @@ import { Maximize, Minimize, Pause, Play, RotateCcw } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { CSSProperties, ReactNode } from "react";
 
+import { secondaryButtonClass } from "@/components/learn/action-classes";
 import {
   askTurn,
   awaitTurn,
@@ -103,20 +104,35 @@ export default function RecordingPlayer({
   );
   // A clip that plays once has reached its end, and rests there until the reader plays it again.
   const [ended, setEnded] = useState(false);
-  // "auto" plays mid-viewport, "manual" plays from the reader's press while any of it is in view, "paused" stays still.
+  // "auto" plays mid-viewport, "manual" plays from the reader's press until it leaves view, "paused" stays still.
   const mode = ended ? "paused" : (chosen ?? (reduced ? "paused" : "auto"));
   // The reader has played or paused the clip, so its changes are announced.
   const [touched, setTouched] = useState(false);
-  // The play and the pause this player asked for itself, which the reader did not.
-  const askedPlay = useRef(false);
-  const askedPause = useRef(false);
+  // The plays and pauses this player asked for itself, which the reader did not, whose events have not arrived yet.
+  // The browser fires each event in a later task, so two requests can come before the first event.
+  const askedPlay = useRef(0);
+  const askedPause = useRef(0);
+  // A clip asked for by a press elsewhere (`playNow`) that has not yet been in view: it plays once it comes into view.
+  const owedView = useRef(playNow && !reduced);
   const [me] = useState(() => Symbol(base));
 
   const rest = useCallback(() => {
     const v = video.current;
     if (!v || v.paused) return;
-    askedPause.current = true;
+    askedPause.current += 1;
     v.pause();
+  }, []);
+
+  const askPlay = useCallback(() => {
+    const v = video.current;
+    if (!v) return;
+    askedPlay.current += 1;
+    void v.play().catch((error: unknown) => {
+      // A pause that cuts the play short rejects it after its `play` event; any other refusal fires no event.
+      if (!(error instanceof DOMException && error.name === "AbortError")) {
+        askedPlay.current -= 1;
+      }
+    });
   }, []);
 
   // How the clip plays again once a loop that rested it in view rests, while its mode lets it play.
@@ -131,7 +147,8 @@ export default function RecordingPlayer({
     const v = video.current;
     if (!v) return;
     if (mode === "paused") {
-      // A clip the reader paused keeps the turn while in view, so no waiting loop starts behind the pause.
+      // A clip at rest (paused by the reader, ended, or under reduced motion) ends its turn when it leaves view;
+      // one the reader paused holds the turn until then (`holdTurn`), so no waiting loop starts behind the pause.
       const held = new IntersectionObserver(([entry]) => {
         if (!entry?.isIntersecting) endTurn(me);
       });
@@ -148,11 +165,7 @@ export default function RecordingPlayer({
         awaitTurn(me, play);
         return;
       }
-      if (!v.paused) return;
-      askedPlay.current = true;
-      void v.play().catch(() => {
-        askedPlay.current = false;
-      });
+      if (v.paused) askPlay();
     }
     const observer = new IntersectionObserver(
       ([entry]) => {
@@ -160,7 +173,8 @@ export default function RecordingPlayer({
           rest();
           stopWaiting(me);
           endTurn(me);
-        } else {
+        } else if (mode === "auto" || owedView.current) {
+          owedView.current = false;
           play();
         }
       },
@@ -173,7 +187,7 @@ export default function RecordingPlayer({
       observer.disconnect();
       stopWaiting(me);
     };
-  }, [mode, me, rest, yieldTurn]);
+  }, [mode, me, rest, askPlay, yieldTurn]);
 
   useEffect(
     () => () => {
@@ -183,31 +197,27 @@ export default function RecordingPlayer({
     [me, rest],
   );
 
-  // A clip asked for by a press plays once it mounts, and takes the turn.
+  // A clip asked for by a press plays once it mounts, and takes the turn; a loop that rests it in view hands it back.
   useEffect(() => {
-    const v = video.current;
-    if (!v || !playNow || reduced) return;
+    if (!playNow || reduced) return;
     takeTurn(me, yieldTurn);
-    askedPlay.current = true;
-    void v.play().catch(() => {
-      askedPlay.current = false;
-    });
-  }, [playNow, reduced, me, yieldTurn]);
+    askPlay();
+  }, [playNow, reduced, me, yieldTurn, askPlay]);
 
   function onPlay() {
     setEnded(false);
-    if (askedPlay.current) {
-      askedPlay.current = false;
+    if (askedPlay.current > 0) {
+      askedPlay.current -= 1;
       return;
     }
-    takeTurn(me, yieldTurn);
+    takeTurn(me, rest);
     setTouched(true);
     setChosen("manual");
   }
 
   function onPause() {
-    if (askedPause.current) {
-      askedPause.current = false;
+    if (askedPause.current > 0) {
+      askedPause.current -= 1;
       return;
     }
     // The browser pauses a clip that reaches its end; `onEnded` follows.
@@ -264,76 +274,85 @@ export default function RecordingPlayer({
                   frame.current?.focus({ preventScroll: true });
                   void video.current?.play().catch(() => {});
                 }}
-                className="inline-flex min-h-11 cursor-pointer items-center gap-2 rounded-[10px] border border-transparent bg-fd-background px-5 py-2.5 text-[0.9375rem] leading-[1.45] font-semibold text-fd-foreground shadow-ring transition-[box-shadow,scale] duration-150 ease-out hover:shadow-ring-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fd-ring motion-safe:active:scale-[0.96]"
+                // Under 20rem the page's action and Replay share one row, so Replay keeps its icon and a 44px square.
+                className={cn(
+                  secondaryButtonClass,
+                  "@max-[20rem]:size-11 @max-[20rem]:justify-center @max-[20rem]:px-0",
+                )}
               >
                 <RotateCcw aria-hidden strokeWidth={2.25} className="size-4" />
-                {m.docs_learn_recording_replay()}
+                <span className="@max-[20rem]:sr-only">
+                  {m.docs_learn_recording_replay()}
+                </span>
               </button>
             </div>
           )}
-          <Controls.Root>
-            <Controls.Content className="pointer-events-none absolute inset-x-2.5 bottom-2.5 transition-opacity duration-150 ease-out not-data-visible:not-has-focus-visible:opacity-0">
-              <Controls.Group
-                aria-label={m.docs_learn_recording_controls()}
-                className="pointer-events-auto flex items-center gap-1 rounded-full border border-transparent bg-fd-card p-0.5 shadow-ring"
-              >
-                <PlayButton className={buttonClass}>
-                  <Pause
-                    aria-hidden
-                    strokeWidth={2.25}
-                    className={cn(
-                      iconClass,
-                      "group-data-paused/button:opacity-0",
-                    )}
-                  />
-                  <Play
-                    aria-hidden
-                    strokeWidth={2.25}
-                    className={cn(
-                      iconClass,
-                      "opacity-0 group-data-paused/button:opacity-100",
-                    )}
-                  />
-                </PlayButton>
-                <TimeSlider.Root
-                  step={0.5}
-                  largeStep={2}
-                  className="group/slider relative mx-1.5 flex h-9 min-w-0 flex-1 cursor-pointer touch-none items-center"
+          {/* The bar's play button reads "Replay" at the end too; the centred Replay stands alone there. */}
+          {!ended && (
+            <Controls.Root>
+              <Controls.Content className="pointer-events-none absolute inset-x-2.5 bottom-2.5 transition-opacity duration-150 ease-out not-data-visible:not-has-focus-visible:opacity-0">
+                <Controls.Group
+                  aria-label={m.docs_learn_recording_controls()}
+                  className="pointer-events-auto flex items-center gap-1 rounded-full border border-transparent bg-fd-card p-0.5 shadow-ring"
                 >
-                  <TimeSlider.Track className="relative h-1 w-full overflow-hidden rounded-full bg-fd-muted-foreground/70">
-                    <TimeSlider.Buffer className="absolute inset-y-0 left-0 w-(--media-slider-buffer) bg-fd-foreground/10" />
-                    <TimeSlider.Fill className="absolute inset-y-0 left-0 w-(--media-slider-fill) bg-(--media-accent-color) group-data-dragging/slider:w-(--media-slider-pointer)" />
-                  </TimeSlider.Track>
-                  <TimeSlider.Thumb className="absolute left-(--media-slider-fill) size-3.5 -translate-x-1/2 rounded-full border-2 border-fd-card bg-(--media-accent-color) shadow-ring group-data-dragging/slider:left-(--media-slider-pointer) focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fd-ring" />
-                </TimeSlider.Root>
-                <Time.Group className="shrink-0 px-1 font-mono text-[0.6875rem] text-fd-muted-foreground tabular-nums @max-[18rem]:hidden">
-                  <Time.Value type="current" />
-                  <Time.Separator className="mx-1" />
-                  <Time.Value type="duration" />
-                </Time.Group>
-                <FullscreenButton
-                  className={cn(buttonClass, "data-hidden:hidden")}
-                >
-                  <Maximize
-                    aria-hidden
-                    strokeWidth={2.25}
-                    className={cn(
-                      iconClass,
-                      "group-data-fullscreen/button:opacity-0",
-                    )}
-                  />
-                  <Minimize
-                    aria-hidden
-                    strokeWidth={2.25}
-                    className={cn(
-                      iconClass,
-                      "opacity-0 group-data-fullscreen/button:opacity-100",
-                    )}
-                  />
-                </FullscreenButton>
-              </Controls.Group>
-            </Controls.Content>
-          </Controls.Root>
+                  <PlayButton className={buttonClass}>
+                    <Pause
+                      aria-hidden
+                      strokeWidth={2.25}
+                      className={cn(
+                        iconClass,
+                        "group-data-paused/button:opacity-0",
+                      )}
+                    />
+                    <Play
+                      aria-hidden
+                      strokeWidth={2.25}
+                      className={cn(
+                        iconClass,
+                        "opacity-0 group-data-paused/button:opacity-100",
+                      )}
+                    />
+                  </PlayButton>
+                  <TimeSlider.Root
+                    step={0.5}
+                    largeStep={2}
+                    className="group/slider relative mx-1.5 flex h-9 min-w-0 flex-1 cursor-pointer touch-none items-center"
+                  >
+                    <TimeSlider.Track className="relative h-1 w-full overflow-hidden rounded-full bg-fd-muted-foreground/70">
+                      <TimeSlider.Buffer className="absolute inset-y-0 left-0 w-(--media-slider-buffer) bg-fd-foreground/10" />
+                      <TimeSlider.Fill className="absolute inset-y-0 left-0 w-(--media-slider-fill) bg-(--media-accent-color) group-data-dragging/slider:w-(--media-slider-pointer)" />
+                    </TimeSlider.Track>
+                    <TimeSlider.Thumb className="absolute left-(--media-slider-fill) size-3.5 -translate-x-1/2 rounded-full border-2 border-fd-card bg-(--media-accent-color) shadow-ring group-data-dragging/slider:left-(--media-slider-pointer) focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fd-ring" />
+                  </TimeSlider.Root>
+                  <Time.Group className="shrink-0 px-1 font-mono text-[0.6875rem] text-fd-muted-foreground tabular-nums @max-[18rem]:hidden">
+                    <Time.Value type="current" />
+                    <Time.Separator className="mx-1" />
+                    <Time.Value type="duration" />
+                  </Time.Group>
+                  <FullscreenButton
+                    className={cn(buttonClass, "data-hidden:hidden")}
+                  >
+                    <Maximize
+                      aria-hidden
+                      strokeWidth={2.25}
+                      className={cn(
+                        iconClass,
+                        "group-data-fullscreen/button:opacity-0",
+                      )}
+                    />
+                    <Minimize
+                      aria-hidden
+                      strokeWidth={2.25}
+                      className={cn(
+                        iconClass,
+                        "opacity-0 group-data-fullscreen/button:opacity-100",
+                      )}
+                    />
+                  </FullscreenButton>
+                </Controls.Group>
+              </Controls.Content>
+            </Controls.Root>
+          )}
           <Hotkey keys="Space" action="togglePaused" />
           <Hotkey keys="ArrowLeft" action="seekStep" value={-1} />
           <Hotkey keys="ArrowRight" action="seekStep" value={1} />

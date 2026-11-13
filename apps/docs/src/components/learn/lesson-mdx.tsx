@@ -29,6 +29,7 @@ import { cn } from "@/lib/cn";
 import * as m from "@/paraglide/messages.js";
 import { localizeHref } from "@/paraglide/runtime.js";
 
+import { metaClass, secondaryButtonClass } from "./action-classes";
 import { LessonContext, nextOpenStep } from "./lesson-state";
 import type { LessonState, LessonStepMeta } from "./lesson-state";
 import { stepMedia, StepPicture } from "./step-picture";
@@ -59,8 +60,8 @@ export const preHydration = {
 export const labelClass =
   "font-mono text-[0.6875rem] leading-[1.25] font-medium tracking-[0.08em] text-fd-muted-foreground uppercase";
 
-/** 15px: secondary text, meta lines, buttons and links beside the step text. */
-export const metaClass = "text-[0.9375rem] leading-[1.45]";
+// 15px, `metaClass`, lives in ./action-classes with the secondary action.
+export { metaClass } from "./action-classes";
 
 /** 17px: every step text — action, check, fix and figure — and the lede. */
 export const bodyClass = "text-[1.0625rem] leading-[1.55]";
@@ -95,12 +96,6 @@ const captionClass = cn(
 export const buttonClass = cn(
   metaClass,
   "inline-flex min-h-11 cursor-pointer items-center gap-2 rounded-[10px] bg-fd-foreground px-5 py-2.5 font-semibold text-fd-background transition-[background-color,scale] duration-150 hover:bg-fd-foreground/90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fd-ring motion-safe:active:scale-[0.96]",
-);
-
-/** The secondary action: the raised surface with the shadow ring. */
-const secondaryButtonClass = cn(
-  metaClass,
-  "inline-flex min-h-11 cursor-pointer items-center gap-2 rounded-[10px] border border-transparent bg-fd-background px-5 py-2.5 font-semibold text-fd-foreground shadow-ring transition-[box-shadow,scale] duration-150 hover:shadow-ring-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fd-ring motion-safe:active:scale-[0.96]",
 );
 
 export const focusClass =

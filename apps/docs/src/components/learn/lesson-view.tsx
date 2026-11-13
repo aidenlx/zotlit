@@ -8,8 +8,8 @@
 // outcome, until they press Start or open a row themselves. The outcome's
 // recording loops; a step's plays once and ends dimmed under its replay and
 // tick buttons. Ticks are saved per step for this browser, and the course
-// page reads them. Until
-// the page runs, CSS alone opens the row the hash targets — see `preHydration`.
+// page reads them. Until the page runs, CSS alone opens the row the hash
+// targets — see `preHydration`.
 
 import { Link, useLocation, useNavigate } from "@tanstack/react-router";
 import { ArrowRight, Check } from "lucide-react";
@@ -432,8 +432,8 @@ function MediaPanel({
   /** The Start button, while no row is open. */
   children: ReactNode;
 }) {
-  const live = use(LessonContext)?.live;
-  if (!live) return null;
+  // LessonView provides the context and renders the panel only once the page runs, so `live` is set.
+  const live = use(LessonContext)!.live!;
   const { open, ticks, launched } = live;
   const total = lesson.steps.length;
   const step = open === null ? undefined : lesson.steps[open - 1];
