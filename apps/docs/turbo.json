@@ -24,8 +24,14 @@
       "outputs": ["dist/**", ".tanstack/**", ".wrangler/deploy/**"],
       // The Cloudflare Web Analytics token is read at build time, so builds
       // with different values are distinct; `CLOUDFLARE_ENV` likewise
-      // separates beta and production outputs.
-      "env": ["VITE_CF_BEACON_TOKEN", "CLOUDFLARE_ENV", "GITHUB_SHA"]
+      // separates beta and production outputs, and `VITE_MEDIA_ORIGIN` a
+      // build that plays its videos from the media store.
+      "env": [
+        "VITE_CF_BEACON_TOKEN",
+        "VITE_MEDIA_ORIGIN",
+        "CLOUDFLARE_ENV",
+        "GITHUB_SHA"
+      ]
     },
     "generate:messages": {
       "dependsOn": ["@zotlit/paraglide-vite#build"],

@@ -19,6 +19,7 @@
     "generate:messages": "node scripts/generate-messages.ts",
     "generate:query-functions": "node scripts/generate-query-functions.ts",
     "generate:template-data": "node scripts/generate-template-data.ts",
+    "upload:media": "node scripts/upload-media.ts",
     "typecheck": "tsc --noEmit -p tsconfig.app.json && tsc --noEmit -p tsconfig.node.json",
     "lint": "oxlint",
     "test": "vitest run"
@@ -83,11 +84,13 @@
     "@types/react": "catalog:",
     "@types/react-dom": "catalog:",
     "@types/semver": "catalog:",
+    "@types/yargs": "catalog:",
     "@vitejs/plugin-react": "^6.0.1",
     "@zotlit/config": "workspace:*",
     "@zotlit/db": "workspace:*",
     "@zotlit/paraglide-vite": "workspace:*",
     "@zotlit/scripts": "workspace:*",
+    "aws4fetch": "1.0.20",
     "cross-env": "catalog:",
     "fflate": "catalog:",
     "happy-dom": "catalog:",
@@ -99,6 +102,7 @@
     "typescript": "catalog:",
     "vite": "catalog:",
     "vitest": "catalog:",
-    "wrangler": "^4.151.0"
+    "wrangler": "^4.151.0",
+    "yargs": "catalog:"
   }
 }

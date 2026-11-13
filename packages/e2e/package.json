@@ -20,6 +20,7 @@
     "@zotlit/obsidian": "workspace:*",
     "@zotlit/protocol": "workspace:*",
     "@zotlit/scripts": "workspace:*",
+    "arkregex": "catalog:",
     "obsidian": "catalog:",
     "typescript": "catalog:",
     "vitest": "catalog:",

@@ -5,7 +5,7 @@
 // on a calm frame and ends on its result. The window's content area is
 // 1024 × 640 CSS px, 16:10, so a clip shown about 720 px wide keeps its text
 // readable. With `DOCS_WALK_RECORD=1 DOCS_WALK_CAPTURE=1`, each case writes
-// `<case>.webm`, `<case>.mp4` and the poster `<case>.webp` (1600 × 1000) to
+// `<case>.mp4` and the poster `<case>.webp` (1600 × 1000) to
 // `apps/docs/public/img/landing/`; `word` writes only the poster, the
 // exported document's first page. Run it with
 // `pnpm --filter @zotlit/e2e docs-walk src/docs-walks/landing.walk.ts`.
@@ -217,7 +217,6 @@ describe.skipIf(!reachable)("Landing page clips", () => {
         opening: 0.3,
         openPad: 0,
         endPad: 0,
-        vp9Crf: 30,
         h264Crf: 20,
       },
     });

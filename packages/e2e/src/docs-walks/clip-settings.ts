@@ -46,8 +46,7 @@ export interface ClipSettings {
   fps: number;
   /** The poster's WebP quality. */
   posterQuality: number;
-  /** The quality of the VP9 and H.264 encodes; a higher CRF is smaller. */
-  vp9Crf: number;
+  /** The quality of the H.264 encode; a higher CRF is smaller. */
   h264Crf: number;
 }
 
@@ -71,9 +70,8 @@ export const defaultClipSettings: ClipSettings = {
   width: 1440,
   fps: 30,
   posterQuality: 82,
-  // Clips with camera moves passed 1.5 MB at 30 and 20; at 42 and 32 the UI
-  // text reads the same at the site's size.
-  vp9Crf: 42,
+  // Clips with camera moves passed 1.5 MB at 20; at 32 the UI text reads
+  // the same at the site's size.
   h264Crf: 32,
 };
 
@@ -98,7 +96,7 @@ export function clipSettings(base: Partial<ClipSettings> = {}): ClipSettings {
 }
 
 /** The settings of the cut: the camera and the pads, not the recording. */
-const cutKeys = [
+export const cutKeys = [
   "zoom",
   "hold",
   "openHold",
@@ -111,6 +109,11 @@ const cutKeys = [
   "openPad",
   "endPad",
 ] as const satisfies readonly (keyof ClipSettings)[];
+
+/** The settings of the recording, which a recut keeps: every setting but the cut's. */
+export const recordedKeys = Object.keys(defaultClipSettings).filter(
+  (key) => !(cutKeys as readonly string[]).includes(key),
+);
 
 /** The cut settings among `settings`. */
 export function cutSettings(
@@ -126,13 +129,14 @@ export function cutSettings(
 /**
  * The settings to cut a recorded clip again with: the recording's own
  * settings from `recorded`, and the cut settings of this run
- * ({@link clipSettings}), so a new cut follows today's camera.
+ * ({@link clipSettings}), so a new cut follows today's camera. A recorded
+ * setting the encoder no longer has, such as the retired `vp9Crf`, is left
+ * out.
  */
 export function recutSettings(recorded: Partial<ClipSettings>): ClipSettings {
-  const cut = cutSettings(recorded);
   return clipSettings(
     Object.fromEntries(
-      Object.entries(recorded).filter(([key]) => !(key in cut)),
+      Object.entries(recorded).filter(([key]) => recordedKeys.includes(key)),
     ),
   );
 }
