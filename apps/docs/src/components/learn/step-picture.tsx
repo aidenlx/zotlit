@@ -30,6 +30,7 @@ export function StepPicture({
   alt,
   active,
   autoplay = true,
+  playNow = false,
   thumb = false,
 }: {
   media: string;
@@ -39,6 +40,8 @@ export function StepPicture({
   active: boolean;
   /** The recording plays on its own while it crosses the middle of the window. */
   autoplay?: boolean;
+  /** The reader asked for this step with a press, so its recording plays at once. */
+  playNow?: boolean;
   /** A card's picture: the still in a window-shaped frame, cropped from its top. */
   thumb?: boolean;
 }) {
@@ -80,6 +83,7 @@ export function StepPicture({
           fit="contain"
           preload={autoplay ? "auto" : "metadata"}
           autoplay={autoplay}
+          playNow={playNow}
           fallback={still}
         />
       ) : (

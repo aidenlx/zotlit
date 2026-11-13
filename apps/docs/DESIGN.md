@@ -528,7 +528,21 @@ explains, and each fact appears once (see The label voice).
   once, directly above the checklist: the mono "You end with" label in the
   accent text tone and the outcome as a serif title beside the last step's
   recording from 561px (above it below). The recording rests on its poster
-  with its play button and plays only when the reader plays it.
+  with its play button and plays only when the reader plays it. While no
+  row is open, the Start button sits under the title (see Start).
+- **Start.** A new reader — no ticks, no `#n` in the address — finds every
+  row closed and the outcome in view, with one leading action under it:
+  **Start step 1** (ink fill, with an arrow). It names the step it opens,
+  so the reader knows the recording beside it changes from the result to
+  that step. Pressing it does what selecting step 1's title does: row 1
+  opens, the panel (from 1280px) turns to step 1, focus moves to row 1's
+  title, the row scrolls into view when it is out of sight, and the polite
+  live region says that step 1 is open, with its title. Being a press, it also plays
+  the step's recording at once (still under reduced motion). Whenever no
+  row is open later — the reader closed the open one — the outcome returns
+  with **Continue with step N** for the first step not ticked; once every
+  step is ticked, the outcome stands without it. The panel turns only on an
+  act of the reader: Start, a row's title, a tick, or **Go to step N**.
 - **Progress bar.** Sticky under the banner as the checklist scrolls: one
   segment per step across the column — check green when ticked, ink for
   the open row, the line colour otherwise — and the count as "3/7" in meta
@@ -551,26 +565,23 @@ explains, and each fact appears once (see The label voice).
   The body fades and rises 6px over 220 ms when it opens (none under
   reduced motion).
 - **Media panel.** From 1280px, on a running page, the lesson is a 580px
-  checklist column and, 48px beside it, a sticky panel. It opens on the
-  outcome: "You end with", the outcome as a serif title and the last
-  step's recording at rest on its poster. Once the reader reaches the
-  checklist — the page scrolls the first row into the top 35% of the
-  window, or the reader clicks inside the checklist (the first press on the
-  open row's title shows that row here and leaves it open) — the panel
-  follows the open row:
-  the step number (a check in check green once ticked) and title in serif
-  at the title size, then its recording, which plays while it crosses the
-  middle of the window. A reader with ticks saved, or one who follows a
-  link to a step, starts there. With no row open, the panel shows the
-  outcome again. The rows then show no picture of their own, so one player
+  checklist column and, 48px beside it, a sticky panel. While no row is
+  open it shows the outcome: "You end with", the outcome as a serif title,
+  the last step's recording at rest on its poster, and the Start button
+  under it. With a row open it shows that row: the step number (a check in
+  check green once ticked) and title in serif at the title size, then its
+  recording, which plays at once after Start and otherwise while it
+  crosses the middle of the window. A reader with ticks saved starts on the
+  first step not ticked, and one who follows a link to a step starts
+  there. The rows then show no picture of their own, so one player
   mounts per step. The prerendered page and a reader without JavaScript
   keep the one column, with every picture in its row.
 - **Picture.** One recording of the step in the real app, in the recording
   player (see Illustration), 10px radius, with the shadow ring, at most
   560px or 70% of the window tall. Only the open row's clip and the
-  outcome load. The open row's clip plays while it crosses the middle of
-  the window; the outcome waits for the reader's play; one plays at a
-  time. There is no zoom control: the recordings frame the action
+  outcome load. The open row's clip plays at once after Start, and
+  otherwise while it crosses the middle of the window; the outcome waits
+  for the reader's play; one plays at a time. There is no zoom control: the recordings frame the action
   themselves.
 - **Action.** Body size, each control named in semibold at the text's size;
   a link, such as the `obsidian://` shortcut in lesson 1, is underlined in

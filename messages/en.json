@@ -2320,6 +2320,17 @@
   "docs_learn_say_ticked": "Step {number} done. Next: step {next}, {title}.",
   "docs_learn_say_unticked": "Step {number} is not done.",
   "docs_learn_say_all_done": "All {total} steps are done.",
+  "docs_learn_start_step": [
+    {
+      "declarations": ["input number", "input begun"],
+      "selectors": ["begun"],
+      "match": {
+        "begun=yes": "Continue with step {number}",
+        "begun=*": "Start step {number}"
+      }
+    }
+  ],
+  "docs_learn_say_opened": "Step {number} is open: {title}.",
   "docs_learn_more_chores": "Two more chores",
   "docs_learn_all_chores": "See all chores",
   "docs_learn_tick_step": "Tick step {number}",

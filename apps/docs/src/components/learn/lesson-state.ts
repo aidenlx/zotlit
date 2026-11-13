@@ -28,6 +28,8 @@ export interface LessonState {
     go: (n: number) => void;
     /** The window is wide enough for the media panel, which shows the open row's recording. */
     wide: boolean;
+    /** The row the reader opened with the Start button, whose recording plays at once. */
+    launched: number | null;
   } | null;
 }
 
@@ -39,6 +41,22 @@ export function partFromHash(hash: string, total: number): number {
   if (value === "done") return total + 1;
   const step = Number(value);
   return Number.isInteger(step) && step >= 1 && step <= total ? step : 0;
+}
+
+/**
+ * The row open when a lesson page loads: the step a `#n` hash names, else the
+ * first step not ticked for a reader who began, else none — a new reader
+ * starts on the outcome, with every row closed.
+ */
+export function openOnLoad(
+  hash: string,
+  ticks: readonly number[],
+  total: number,
+): number | null {
+  const part = partFromHash(hash, total);
+  if (part >= 1 && part <= total) return part;
+  if (part > total || ticks.length === 0) return null;
+  return firstOpenStep(ticks, total) ?? null;
 }
 
 /** One lesson's saved progress: the steps ticked, and whether every step was once ticked. */
