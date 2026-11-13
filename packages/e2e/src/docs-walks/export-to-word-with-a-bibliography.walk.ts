@@ -192,8 +192,19 @@ describe.skipIf(!reachable)(
             await leaf.view.save();
             leaf.view.editor.setCursor({ line: 0, ch: 0 });
             if (pointer) {
-              const b = leaf.view.contentEl.getBoundingClientRect();
-              await pointer.park(b.right - 14, b.bottom - 24);
+              // The step ends on the draft's last lines, where the notes were.
+              const { doc: left } = cm.state;
+              const text = cm.contentDOM.getBoundingClientRect();
+              const top = cm.coordsAtPos(
+                left.line(Math.max(1, left.lines - 4)).from,
+              )!;
+              const end = cm.coordsAtPos(left.length)!;
+              await pointer.look({
+                left: text.left,
+                right: text.right,
+                top: top.top,
+                bottom: end.bottom,
+              });
             }
             return app.vault.read(leaf.view.file!);
           },
@@ -252,7 +263,7 @@ describe.skipIf(!reachable)(
             );
             const shown = item.innerText.replaceAll(/\s+/g, " ").trim();
             await page.trusted(window).key("Enter");
-            await page.until(
+            const dialog = await page.until(
               "export dialog",
               () =>
                 [...document.querySelectorAll(".modal")].find(
@@ -260,6 +271,11 @@ describe.skipIf(!reachable)(
                 ),
               10000,
             );
+            // The step ends on the dialog's title and its Format row.
+            await pointer?.look([
+              dialog.querySelector(".modal-title")!,
+              dialog.querySelectorAll(".setting-item")[0]!,
+            ]);
             return shown;
           },
           {
@@ -307,9 +323,14 @@ describe.skipIf(!reachable)(
             await pointer?.point(style);
             await page.pick(style, apa, "Citation style");
             if (pointer) {
-              // The pointer leaves the row's new description in view.
+              // The pointer steps just below the choice, off its text, and
+              // the step ends on the row and its new description.
               const b = style.getBoundingClientRect();
-              await pointer.park(b.right - 20, b.bottom + 40);
+              await pointer.park(
+                b.left + Math.min(b.width / 2, 120),
+                b.bottom + 14,
+              );
+              await pointer.look(style.closest(".setting-item")!);
             }
           },
           { title: m.pandoc_export_title(), apa: APA },
@@ -357,6 +378,20 @@ describe.skipIf(!reachable)(
               );
               // The pointer leaves the notice in the top right corner clear.
               await pointer?.park(at.left, at.bottom);
+              // The step ends on the notice.
+              if (pointer) {
+                const notice = await page.until(
+                  "the notice in place",
+                  () =>
+                    [...document.querySelectorAll(".notice")].find(
+                      (n) =>
+                        n.textContent.startsWith(done) &&
+                        n.getBoundingClientRect().right <= window.innerWidth,
+                    ),
+                  5000,
+                );
+                await pointer.look(notice);
+              }
               return page.scratch.docsWalkNotices!;
             },
             {

@@ -100,16 +100,18 @@ describe.skipIf(!reachable)("Lesson 5: Track what you have read", () => {
 
   /**
    * Mark `paper` with `value` in the plan's status cell, as a reader types
-   * it, and answer what the cell suggested before the typing.
+   * it, and answer what the cell suggested before the typing. With `last`,
+   * the clip ends on the cell and the notice the mark shows.
    */
   async function mark(
     paper: keyof typeof PAPERS,
     value: string,
+    last = false,
   ): Promise<string[]> {
     const key = PAPERS[paper].key;
     const suggested = await obRun(
       walk.vaultId,
-      async ({ app, page }, { planFile, key, property, value }) => {
+      async ({ app, page }, { planFile, key, property, value, last }) => {
         const pointer = page.scratch.docsWalkPointer;
         const view = (
           app.workspace
@@ -174,9 +176,22 @@ describe.skipIf(!reachable)("Lesson 5: Track what you have read", () => {
         await page.trusted(window).key("Enter");
         await new Promise((r) => setTimeout(r, 300));
         hold();
+        if (pointer && last) {
+          const notice = await page
+            .until("the notice", () => document.querySelector(".notice"), 3000)
+            .catch(() => null);
+          const now = el
+            .querySelector(
+              `[data-query-key="${key}"] [data-query-vault-cell][data-query-vault-name="${property}"]`,
+            )
+            ?.closest("td");
+          await pointer.look(
+            [now, notice].filter((e) => e !== null && e !== undefined),
+          );
+        }
         return suggested;
       },
-      { planFile: PLAN_FILE, key, property: PROPERTY, value },
+      { planFile: PLAN_FILE, key, property: PROPERTY, value, last },
       STEP,
     );
     await tableWhen(`${paper} marked ${value}`, (t) => t.cells[key] === value);
@@ -301,10 +316,11 @@ describe.skipIf(!reachable)("Lesson 5: Track what you have read", () => {
             },
             10000,
           );
-          if (pointer) {
-            const b = view.contentEl.getBoundingClientRect();
-            await pointer.park(b.right - 14, b.bottom - 24);
-          }
+          // The step ends on the new tab and its papers.
+          await pointer?.look([
+            (view.leaf as unknown as { tabHeaderEl: HTMLElement }).tabHeaderEl,
+            ...view.contentEl.querySelectorAll("[data-query-papers-row]"),
+          ]);
           return {
             heading,
             banner,
@@ -383,10 +399,9 @@ describe.skipIf(!reachable)("Lesson 5: Track what you have read", () => {
             () => !document.querySelector("[data-query-view-list]"),
           );
           await view.query.settled;
-          if (pointer) {
-            const b = el.getBoundingClientRect();
-            await pointer.park(b.right - 14, b.bottom - 24);
-          }
+          // The step ends on the table.
+          const table = el.querySelector("table");
+          if (table) await pointer?.look(table);
           return { options, name };
         },
         { planFile: PLAN_FILE },
@@ -510,9 +525,14 @@ describe.skipIf(!reachable)("Lesson 5: Track what you have read", () => {
             behavior: pointer ? "smooth" : "instant",
           });
           await new Promise((r) => setTimeout(r, pointer ? 800 : 100));
-          if (pointer) {
-            await pointer.park(pane.right - 14, pane.bottom - 24);
-          }
+          // The step ends on the titles and the new column's cells.
+          await pointer?.look([
+            column,
+            ...titles,
+            ...el.querySelectorAll(
+              `[data-query-vault-cell][data-query-vault-name="${property}"]`,
+            ),
+          ]);
           // The Title column's text and the new column's name show whole.
           const within = (r: DOMRect) =>
             r.left >= pane.left - 1 && r.right <= pane.right + 1;
@@ -561,7 +581,7 @@ describe.skipIf(!reachable)("Lesson 5: Track what you have read", () => {
   it("step 4: select a cell, type to-read, and press Enter; the notice Literature note created. and the cell shows to-read", async () => {
     const suggested = await walk.record(
       "step-4",
-      () => mark("wilson", "to-read"),
+      () => mark("wilson", "to-read", true),
       { notices: true },
     );
     expect(suggested).toEqual([]);
@@ -642,9 +662,14 @@ describe.skipIf(!reachable)("Lesson 5: Track what you have read", () => {
             ),
           );
           if (pointer) {
-            // The pointer moves off the cell and its suggestions.
+            // The pointer moves off the cell and its suggestions, and the
+            // step ends on them.
             const b = cell.getBoundingClientRect();
             await pointer.park(b.left - 30, b.bottom + 30);
+            await pointer.look([
+              cell,
+              ...activeDocument.querySelectorAll(".suggestion-container"),
+            ]);
           }
         },
         { planFile: PLAN_FILE, key: PAPERS.munafo.key, property: PROPERTY },
@@ -755,6 +780,9 @@ describe.skipIf(!reachable)("Lesson 5: Track what you have read", () => {
               el.querySelectorAll('[data-query-table-row="item"]').length === 1,
             10000,
           );
+          // The step ends on the condition and the one paper left.
+          const table = el.querySelector("table");
+          await pointer?.look(table ? [row, table] : row);
           return { name, operators, text: await app.vault.read(view.file!) };
         },
         {

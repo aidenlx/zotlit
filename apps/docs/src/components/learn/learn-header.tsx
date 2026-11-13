@@ -7,7 +7,7 @@ import { Logo } from "@/components/logo";
 import * as m from "@/paraglide/messages.js";
 
 const linkClass =
-  "rounded-sm px-1 py-1.5 text-sm text-fd-muted-foreground transition-colors hover:text-fd-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fd-ring";
+  "rounded-sm px-1 py-1.5 text-[0.9375rem] text-fd-muted-foreground transition-colors hover:text-fd-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fd-ring";
 
 export function LearnHeader() {
   return (
@@ -17,9 +17,9 @@ export function LearnHeader() {
         aria-label="ZotLit"
         className="rounded-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fd-ring"
       >
-        <Logo small className="text-lg" />
+        <Logo small className="text-[1.25rem]" />
       </Link>
-      <span className="font-mono text-[11px] font-medium tracking-[0.08em] text-fd-muted-foreground uppercase">
+      <span className="font-mono text-[0.6875rem] font-medium tracking-[0.08em] text-fd-muted-foreground uppercase">
         {m.docs_nav_learn()}
       </span>
       <span className="flex-1" />

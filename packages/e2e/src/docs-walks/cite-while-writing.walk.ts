@@ -23,6 +23,7 @@ import {
   closeWelcome,
   openDocsWalk,
   readNotices,
+  recordRequested,
   watchNotices,
 } from "./docs-walk.ts";
 import type { DocsWalk } from "./docs-walk.ts";
@@ -105,6 +106,31 @@ describe.skipIf(!reachable)("Lesson 3: Cite while you write", () => {
   });
 
   it("step 1: in Settings, ZotLit, Citations, select Install at Pandoc engine; Pandoc … is installed", async () => {
+    // The clip shows the install from the start: the engine is removed from
+    // this computer first, and the reader's Install puts it back.
+    const recording = recordRequested("step-1");
+    const removed = recording
+      ? await obRunUntil(
+          walk.vaultId,
+          async ({ zotlit }) => {
+            const h = zotlit.services.pandocEngine;
+            await h.runPromise(h.binary.uninstall);
+            // An engine start that the open draft began during the removal
+            // can fail after it and leave the engine failed, not absent; the
+            // next try removes it again.
+            await new Promise((r) => setTimeout(r, 1500));
+            const s = await h.runPromise(h.binary.getStatus);
+            return s.kind;
+          },
+          undefined,
+          {
+            what: "the engine removed",
+            ready: (kind) => kind === "absent",
+            tries: 3,
+          },
+        )
+      : null;
+    expect(removed).toBe(recording ? "absent" : null);
     const before = await obRun(walk.vaultId, async ({ zotlit }) => {
       const h = zotlit.services.pandocEngine;
       const s = await h.runPromise(h.binary.getStatus);
@@ -113,7 +139,10 @@ describe.skipIf(!reachable)("Lesson 3: Cite while you write", () => {
     const row = await walk.record("step-1", () =>
       obRun(
         walk.vaultId,
-        async ({ app, page }, { citationsName, engineName, install }) => {
+        async (
+          { app, page },
+          { citationsName, engineName, install, installingStatus, uninstall },
+        ) => {
           const pointer = page.scratch.docsWalkPointer;
           app.vault.setConfig("settingsPopoutWindow", false);
           app.setting.open();
@@ -148,11 +177,11 @@ describe.skipIf(!reachable)("Lesson 3: Cite while you write", () => {
           );
           row.scrollIntoView({ block: "center", behavior: "instant" });
           await page.stands(row, "engine row");
-          if (pointer) {
-            // The pointer rests under the row's button, off its text.
+          // The pointer rests under the row's button, off its text.
+          const rest = async () => {
             const b = row.getBoundingClientRect();
-            await pointer.park(b.right - 40, b.bottom + 30);
-          }
+            await pointer?.park(b.right - 40, b.bottom + 30);
+          };
           const buttons = [...row.querySelectorAll("button")].map(
             (b) => b.textContent,
           );
@@ -161,17 +190,50 @@ describe.skipIf(!reachable)("Lesson 3: Cite while you write", () => {
           const press = [...row.querySelectorAll<HTMLElement>("button")].find(
             (b) => b.textContent === install,
           );
-          if (press) page.press(press, "Install");
-          return { buttons, pressed: !!press };
+          let installing = false;
+          if (press) {
+            // The reader reads "Not installed" before pressing Install.
+            if (pointer) await new Promise((r) => setTimeout(r, 1000));
+            await pointer?.point(press);
+            page.press(press, "Install");
+            // The row re-renders as the status moves: it shows the download,
+            // then the installed engine and its Uninstall.
+            await page.until(
+              "installing state",
+              () =>
+                named(engineName)
+                  ?.querySelector(".setting-item-description")
+                  ?.textContent.includes(installingStatus),
+              5000,
+            );
+            installing = true;
+            await rest();
+            await page.until(
+              "installed state",
+              () =>
+                [...(named(engineName)?.querySelectorAll("button") ?? [])].some(
+                  (b) => b.textContent === uninstall,
+                ),
+              300000,
+            );
+          } else await rest();
+          // The step ends on the row, where the status appears.
+          await pointer?.look(named(engineName) ?? row);
+          return { buttons, pressed: !!press, installing };
         },
         {
           citationsName: m.settings_page_citations(),
           engineName: m.settings_citation_engine_name(),
           install: m.settings_citation_engine_install(),
+          installingStatus: m.settings_citation_engine_status_installing(),
+          uninstall: m.settings_citation_engine_uninstall(),
         },
-        STEP,
+        // A real download can take minutes.
+        { timeoutMs: 330000 },
       ),
     );
+    // A recorded step starts from the removed engine and shows its install.
+    expect(!recording || (row.pressed && row.installing)).toBe(true);
     const version = await obRunUntil(
       walk.vaultId,
       async ({ zotlit }) => {
@@ -298,6 +360,8 @@ describe.skipIf(!reachable)("Lesson 3: Cite while you write", () => {
           await new Promise((r) => setTimeout(r, 500));
           const caret = cm.coordsAtPos(cm.state.selection.main.head)!;
           const box = popup.getBoundingClientRect();
+          // The step ends on the typed text and the list under it.
+          await pointer?.look([popup, caret]);
           return {
             rows: [
               ...popup.querySelectorAll<HTMLElement>(".suggestion-item"),
@@ -344,6 +408,20 @@ describe.skipIf(!reachable)("Lesson 3: Cite while you write", () => {
             () => editor.getValue().includes(`[@${citekey}]`),
             5000,
           );
+          const pointer = page.scratch.docsWalkPointer;
+          if (pointer) {
+            // The step ends on the citation in the draft.
+            const at = editor.getValue().indexOf(`[@${citekey}]`);
+            const from = editor.cm.coordsAtPos(at);
+            const to = editor.cm.coordsAtPos(at + `[@${citekey}]`.length);
+            if (from && to)
+              await pointer.look({
+                left: from.left,
+                right: to.right,
+                top: Math.min(from.top, to.top),
+                bottom: Math.max(from.bottom, to.bottom),
+              });
+          }
           return editor
             .getValue()
             .split("\n")
@@ -422,8 +500,8 @@ describe.skipIf(!reachable)("Lesson 3: Cite while you write", () => {
           });
           if (pointer) {
             await new Promise((r) => setTimeout(r, 700));
-            const b = draft.view.contentEl.getBoundingClientRect();
-            await pointer.park(b.right - 14, b.top + b.height * 0.7);
+            // The step ends on the formatted citation.
+            await pointer.look(cite);
           }
           return { line, cites };
         },
@@ -483,6 +561,8 @@ describe.skipIf(!reachable)("Lesson 3: Cite while you write", () => {
             },
             10000,
           );
+          // The step ends on the citation and its reference.
+          await pointer?.look([cite, pop.hoverEl]);
           await new Promise((r) => setTimeout(r, 800));
           return pop.hoverEl.innerText;
         },
@@ -629,9 +709,10 @@ describe.skipIf(!reachable)("Lesson 3: Cite while you write", () => {
           side!.querySelector(card)!.scrollIntoView({ block: "center" });
           await new Promise((r) => setTimeout(r, 1200));
           if (pointer) {
-            // The pointer leaves the quote for the empty foot of the draft.
-            const b = beside.view.contentEl.getBoundingClientRect();
-            await pointer.park(b.right - 14, b.bottom - 24);
+            // The pointer steps left of the drop, off the quote, and the step
+            // ends on the quote block.
+            await pointer.park(rect.left - 35, (rect.top + rect.bottom) / 2);
+            if (box) await pointer.look(box);
           }
           return { label, doc: editor.getValue(), rendered: !!box };
         },

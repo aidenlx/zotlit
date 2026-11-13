@@ -3,10 +3,14 @@ import { createServerFn } from "@tanstack/react-start";
 import { use } from "react";
 
 import { LessonView } from "@/components/learn/lesson-view";
+import type { LessonViewData } from "@/components/learn/lesson-view";
 import { getMDXComponents } from "@/components/mdx";
+import { ReleaseSnapshotProvider } from "@/components/release-snapshot";
 import { lessons } from "@/lib/collections";
+import { installLessonSlugs } from "@/lib/github-releases";
 import { localeInput } from "@/lib/i18n";
 import { getPageLocaleState } from "@/lib/locale-state";
+import { getReleaseSnapshot } from "@/lib/release-data";
 import { pageHead } from "@/lib/seo";
 import { appName, learnRoute, ogImageUrl } from "@/lib/shared";
 import { getLessonPages, learn } from "@/lib/source";
@@ -27,7 +31,6 @@ const getLesson = createServerFn({ method: "GET" })
       ?.toISOString()
       .slice(0, 10);
     const pages = getLessonPages({ locale });
-    const next = pages[pages.findIndex((entry) => entry.url === page.url) + 1];
     const { data } = page;
 
     return {
@@ -36,27 +39,35 @@ const getLesson = createServerFn({ method: "GET" })
       slugs: page.slugs,
       description: data.description,
       modified,
+      snapshot: installLessonSlugs.includes(slug)
+        ? await getReleaseSnapshot()
+        : null,
       view: {
         slug,
         title: data.title,
         lesson: data.lesson,
         lessonCount: pages.length,
         minutes: data.minutes,
-        lede: data.lede,
         note: data.note,
         media: data.media,
-        map: data.map,
+        instead: data.instead,
         needs: data.needs,
         steps: data.steps,
-        end: data.end,
-        next: next
-          ? {
-              slug: next.slugs.join("/"),
-              title: next.data.title,
-              lesson: next.data.lesson,
-            }
-          : null,
-      },
+        end: { title: data.end.title, caption: data.end.caption },
+        others: pages
+          .filter((entry) => entry.url !== page.url)
+          .map((entry) => ({
+            slug: entry.slugs.join("/"),
+            lesson: entry.data.lesson,
+            chore: entry.data.chore,
+            minutes: entry.data.minutes,
+            media: entry.data.media,
+            result: {
+              n: entry.data.steps.length,
+              alt: entry.data.steps.at(-1)?.alt ?? "",
+            },
+          })),
+      } satisfies LessonViewData,
     };
   });
 
@@ -110,7 +121,9 @@ function Lesson() {
   const lesson = Route.useLoaderData();
   return (
     <LessonView key={lesson.url} lesson={lesson.view}>
-      <LessonBody path={lesson.path} />
+      <ReleaseSnapshotProvider snapshot={lesson.snapshot}>
+        <LessonBody path={lesson.path} />
+      </ReleaseSnapshotProvider>
     </LessonView>
   );
 }

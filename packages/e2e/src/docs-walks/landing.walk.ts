@@ -210,6 +210,16 @@ describe.skipIf(!reachable)("Landing page clips", () => {
       collection: SLUG,
       vaultCase: "docs",
       window: WINDOW,
+      // The landing clips keep the whole window, their short still start, and
+      // their encode quality, with no pads.
+      clip: {
+        camera: false,
+        opening: 0.3,
+        openPad: 0,
+        endPad: 0,
+        vp9Crf: 30,
+        h264Crf: 20,
+      },
     });
     // `setSize` sets the outer size; the clip needs the content area itself.
     const size = await obRun(

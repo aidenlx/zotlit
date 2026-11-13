@@ -26,14 +26,24 @@ import { getWorkspaceRoot } from "@zotlit/scripts/package-roots";
 import type { AnnotationView } from "@/views/annot-view/view";
 import type { LibraryView } from "@/views/library/view";
 
+import type { Rect } from "./camera.ts";
+import { clipSettings } from "./clip-settings.ts";
 import {
   captureRequested,
   closeWelcome,
+  holdNotices,
   openDocsWalk,
   readNotices,
+  recordRequested,
   watchNotices,
 } from "./docs-walk.ts";
 import type { DocsWalk } from "./docs-walk.ts";
+import {
+  bringToFront,
+  DesktopShotSpoiled,
+  menuPoint,
+  setAppVisible,
+} from "./macos-desktop.ts";
 
 const root = await getWorkspaceRoot(import.meta.dirname);
 const reachable = await isObsidianReachable(root);
@@ -61,6 +71,20 @@ const COMMENT = "Why I script every change to the survey data.";
 const NOTE = `literatures/${PAPER.citekey}.md`;
 /** Zotero's yellow, the highlight colour a new highlight takes. */
 const YELLOW = "#ffd400";
+/**
+ * Step 2's Zotero shot presses Always Allow with the real macOS pointer under
+ * `DOCS_WALK_NATIVE=1`, in an unattended window with the other apps hidden.
+ * Without it, the shot records the dialog and presses the button through RDP.
+ */
+const NATIVE = process.env.DOCS_WALK_NATIVE === "1";
+/**
+ * The private part of that shot, blurred in the encode, in screen points:
+ * the menu bar right of `menuBarFrom` (other apps' status items, the clock).
+ * The camera keeps it out of view as well.
+ */
+const PRIVATE = { menuBarFrom: 600 };
+/** The closest a view of the Zotero shot comes in: the clip's own zoom. */
+const ZOOM = clipSettings().zoom;
 
 type PdfLeaf = WorkspaceLeaf & { view: PagePdfView };
 type AnnotationLeaf = WorkspaceLeaf & { view: AnnotationView };
@@ -270,8 +294,8 @@ describe.skipIf(!reachable)(
             );
             const view = pdf.view.containerEl.getBoundingClientRect();
             const box = tools[0]!.getBoundingClientRect();
-            // The pointer rests in the tab's right margin, off the page text.
-            await pointer?.park(view.right - 8, view.top + view.height * 0.6);
+            // The step ends on the dimmed tools and the sidebar's heading.
+            await pointer?.look([...tools, header]);
             return {
               tools: tools.map((t) => t.dataset.ztTool),
               disabled: tools.map((t) => t.getAttribute("aria-disabled")),
@@ -310,9 +334,10 @@ describe.skipIf(!reachable)(
       await walk.compose("step-1");
     });
 
-    it("step 2: select the heading of the Zotero annotations sidebar and choose Allow editing; the toolbar shows Waiting for approval in Zotero", async () => {
+    it("step 2: select the sidebar heading and choose Allow editing, then Always Allow in Zotero's dialog; a notice that editing is on, and the tools are in colour", async () => {
       await raiseWindow(walk.vaultId);
-      const asked = await walk.record("step-2", () =>
+      /** Obsidian: the sidebar heading, Allow editing; the toolbar waits for Zotero. */
+      const ask = () =>
         obRun(
           walk.vaultId,
           async ({ app, page }, { file, enable }) => {
@@ -352,83 +377,231 @@ describe.skipIf(!reachable)(
                 )?.innerText,
               10000,
             );
-            if (pointer) {
-              // The pointer leaves the sidebar's cards for the tab's margin.
-              const view = pdf.view.containerEl.getBoundingClientRect();
-              await pointer.park(view.right - 8, view.top + view.height * 0.6);
+            // The shot ends on the toolbar's status, and rests on it as long
+            // as a shot holds (the shot's own rest is shorter).
+            const shown =
+              pdf.view.containerEl.querySelector(".zt-pdf-capability");
+            if (shown && pointer) {
+              await pointer.look(shown);
+              await new Promise((r) => setTimeout(r, 1000));
             }
             return { menu, status };
           },
           { file: PAPER.file, enable: m.capability_enable_editing() },
           STEP,
-        ),
-      );
-      expect(asked.menu).toContain(m.capability_enable_editing());
-      expect(asked.status).toBe(m.capability_authorizing());
-      expect(await waitForAuthorizationDialog(walk.zotero)).toBe(true);
-      await walk.capture("step-2");
-      await captureZotero("step-2-zotero", "dialog");
-      await walk.compose("step-2");
-    });
+        );
+      /** Back in Obsidian: the notice, and the tools in colour. */
+      const granted = () =>
+        obRun(
+          walk.vaultId,
+          async ({ app, page }, { file }) => {
+            const pdf = (
+              app.workspace.getLeavesOfType("pdf") as PdfLeaf[]
+            ).find((l) => decodeURI(l.view.file?.path ?? "").endsWith(file))!;
+            const tools = await page.until(
+              "tools on",
+              () => {
+                const t = [
+                  ...pdf.view.containerEl.querySelectorAll<HTMLElement>(
+                    "[data-zt-tool]",
+                  ),
+                ];
+                return (
+                  t.length > 0 &&
+                  t.every((x) => x.getAttribute("aria-disabled") !== "true") &&
+                  t
+                );
+              },
+              20000,
+            );
+            // The step ends on the tools in colour and the notice.
+            const notice = document.querySelector(".notice");
+            await page.scratch.docsWalkPointer?.look(
+              notice ? [...tools, notice] : tools,
+            );
+            return tools.map((t) => t.getAttribute("aria-disabled"));
+          },
+          { file: PAPER.file },
+          STEP,
+        );
+      /** Zotero's authorization dialog: its text, buttons, and place on screen. */
+      const readDialog = () =>
+        walk.zotero.json<{
+          text: string;
+          buttons: string[];
+          window: Rect;
+          alwaysAllow: Rect;
+        }>(
+          `(()=>{const w=${FIND_DIALOG};const d=w.document.getElementById('commonDialog');const r=d.getButton('cancel').getBoundingClientRect();
+          return ({text:w.document.getElementById('infoBody').textContent,buttons:['accept','cancel','extra1'].map(b=>d.getButton(b).label),
+          window:{x:w.screenX,y:w.screenY,w:w.outerWidth,h:w.outerHeight},
+          alwaysAllow:{x:w.mozInnerScreenX+r.left,y:w.mozInnerScreenY+r.top,w:r.width,h:r.height}});})()`,
+        );
+      const dialogOpen = () =>
+        walk.zotero.json<boolean>(`${FIND_DIALOG}!==null`);
 
-    it("step 3: in Zotero, choose Always Allow (not Allow); a notice that editing is on, and the tools are in colour", async () => {
-      const dialog = await walk.zotero.json<{
-        text: string;
-        buttons: string[];
-      }>(
-        `(()=>{const w=${FIND_DIALOG};const d=w.document.getElementById('commonDialog');return ({text:w.document.getElementById('infoBody').textContent,buttons:['accept','cancel','extra1'].map(b=>d.getButton(b).label)});})()`,
-      );
-      expect(dialog.text).toContain("wants to modify your Zotero library");
-      expect(dialog.buttons).toEqual(["Allow", "Always Allow", "Deny"]);
-      // The reader chooses Always Allow, Zotero's second button. The clip
-      // records Zotero's dialog with macOS screen capture and ends on the
-      // press, before the dialog closes.
-      const title = await walk.zotero.json<string>(
-        `${FIND_DIALOG}.document.title`,
-      );
-      // The image is taken before the clip encodes: the notice lasts only a
-      // few seconds.
-      const granted = await walk.recordZotero(
-        "step-3",
-        exactly(title),
-        async (pointAt, stop) => {
-          await pointAt(
-            FIND_DIALOG,
-            "w.document.getElementById('commonDialog').getButton('cancel')",
+      let result: {
+        asked: Awaited<ReturnType<typeof ask>>;
+        dialog: Awaited<ReturnType<typeof readDialog>>;
+        tools: Awaited<ReturnType<typeof granted>>;
+      };
+      if (recordRequested("step-2")) {
+        const pid = await walk.zotero.json<number>(
+          "Services.appinfo.processID",
+        );
+        // Zotero's main window fills the recorded region under the menu bar,
+        // and the dialog opens over it.
+        const tools = await bringToFront(pid).then(() =>
+          menuPoint(pid, "Tools"),
+        );
+        const bar = Math.round(tools.y * 2);
+        const region: Rect = { x: 0, y: 0, w: 1456, h: 870 };
+        // The menu bar right of Zotero's menus: its status items and clock.
+        const menuBarStatus: Rect = {
+          x: PRIVATE.menuBarFrom,
+          y: 0,
+          w: region.w - PRIVATE.menuBarFrom,
+          h: bar,
+        };
+        const below: Rect = {
+          x: 0,
+          y: bar,
+          w: Math.round(((region.h - bar) * region.w) / region.h),
+          h: region.h - bar,
+        };
+        await walk.zotero.json<boolean>(
+          `(() => {
+            const w = Zotero.getMainWindow();
+            w.moveTo(0, ${bar});
+            w.resizeTo(${region.w}, ${region.h - bar});
+            return true;
+          })()`,
+        );
+        /** A view of the region's ratio about `r`, inside `within`, at most the clip's zoom. */
+        const view = (r: Rect, within: Rect): Rect => {
+          const ratio = region.w / region.h;
+          const w = Math.min(
+            within.w,
+            Math.max(region.w / ZOOM, r.w + 64, (r.h + 64) * ratio),
           );
-          await stop();
-          await clickAuthorizationDialog(walk.zotero, "cancel");
-          const granted = await obRunUntil(
-            walk.vaultId,
-            ({ app }, { file }) => {
-              const pdf = (
-                app.workspace.getLeavesOfType("pdf") as PdfLeaf[]
-              ).find((l) => decodeURI(l.view.file?.path ?? "").endsWith(file))!;
-              return [
-                ...pdf.view.containerEl.querySelectorAll("[data-zt-tool]"),
-              ].map((t) => t.getAttribute("aria-disabled"));
-            },
-            { file: PAPER.file },
-            {
-              what: "tools on",
-              ready: (value) => value.length > 0 && !value.includes("true"),
-            },
+          const h = w / ratio;
+          const x = Math.min(
+            Math.max(r.x + r.w / 2 - w / 2, within.x),
+            within.x + within.w - w,
           );
-          await raiseWindow(walk.vaultId);
-          await walk.capture("step-3", { notices: true });
-          return granted;
-        },
+          const y = Math.min(
+            Math.max(r.y + r.h / 2 - h / 2, within.y),
+            within.y + within.h - h,
+          );
+          return { x, y, w, h };
+        };
+        await raiseWindow(walk.vaultId);
+        try {
+          result = await walk.recordClip("step-2", async (shots) => {
+            // Obsidian: the heading, Allow editing, Waiting for approval.
+            const asked = await shots.obsidian(ask);
+            if (!(await waitForAuthorizationDialog(walk.zotero)))
+              throw new Error("Zotero showed no authorization dialog");
+            // The dialog sits in the middle of Zotero's window.
+            await walk.zotero.json<boolean>(
+              `(()=>{const w=${FIND_DIALOG};w.moveTo(Math.round(${below.x + below.w / 2}-w.outerWidth/2),Math.round(${below.y + below.h / 2}-w.outerHeight/2));return true;})()`,
+            );
+            await new Promise((r) => setTimeout(r, 400));
+            const dialog = await readDialog();
+            // The reader presses Always Allow, the dialog's second button.
+            if (dialog.buttons[1] !== "Always Allow")
+              throw new Error(`the dialog's buttons: ${dialog.buttons.join()}`);
+            // The notice lasts 3 s and shows while Zotero is in front: it
+            // stays on screen to the end of the clip.
+            await holdNotices(walk.vaultId);
+            // Obsidian, with the computer's other vaults, is hidden behind
+            // Zotero meanwhile, so no window of it can come between.
+            await setAppVisible("Obsidian", false);
+            const button = {
+              x: dialog.alwaysAllow.x + dialog.alwaysAllow.w / 2,
+              y: dialog.alwaysAllow.y + dialog.alwaysAllow.h / 2,
+            };
+            // The Zotero shot is taken again, up to three times, when another
+            // app comes to the front before the press.
+            for (let attempt = 1; ; attempt++) {
+              const mark = shots.mark();
+              try {
+                await bringToFront(pid);
+                await shots.desktop(
+                  { pid, region, start: below, blur: [menuBarStatus] },
+                  async (shot) => {
+                    // The whole Zotero window first, then in on its dialog.
+                    await shot.wait(800);
+                    shot.frame(view(dialog.window, below));
+                    // The move takes 1 s; the view holds 2.5 s from there,
+                    // with the glide and the press.
+                    await shot.wait(2400);
+                    if (NATIVE) await shot.click(button.x, button.y);
+                    else {
+                      await shot.wait(600);
+                      await clickAuthorizationDialog(walk.zotero, "cancel");
+                    }
+                    // The dialog closes: the shot ends on the press.
+                    await shot.wait(500);
+                    shot.end();
+                  },
+                );
+                break;
+              } catch (error) {
+                if (
+                  !(error instanceof DesktopShotSpoiled) ||
+                  attempt >= 3 ||
+                  !(await dialogOpen())
+                )
+                  throw error;
+                console.log(
+                  "[walk] Zotero shot spoiled, again:",
+                  error.message,
+                );
+                await shots.rollback(mark);
+              }
+            }
+            // Back in Obsidian: the notice and the tools in colour.
+            await setAppVisible("Obsidian", true);
+            await raiseWindow(walk.vaultId);
+            await new Promise((r) => setTimeout(r, 800));
+            const tools = await shots.obsidian(granted, { notices: true });
+            return { asked, dialog, tools };
+          });
+        } finally {
+          // Obsidian comes back even when a shot fails.
+          await setAppVisible("Obsidian", true);
+        }
+        // The last shot captured the image while the notice showed; this
+        // keeps it.
+        await walk.capture("step-2", { notices: true });
+      } else {
+        const asked = await ask();
+        if (!(await waitForAuthorizationDialog(walk.zotero)))
+          throw new Error("Zotero showed no authorization dialog");
+        const dialog = await readDialog();
+        await clickAuthorizationDialog(walk.zotero, "cancel");
+        const tools = await granted();
+        // The image is taken while the notice shows: it lasts 3 s.
+        await walk.capture("step-2", { notices: true });
+        result = { asked, dialog, tools };
+      }
+      expect(result.asked.menu).toContain(m.capability_enable_editing());
+      expect(result.asked.status).toBe(m.capability_authorizing());
+      expect(result.dialog.text).toContain(
+        "wants to modify your Zotero library",
       );
-      expect(granted).not.toContain("true");
+      expect(result.dialog.buttons).toEqual(["Allow", "Always Allow", "Deny"]);
+      expect(result.tools).not.toContain("true");
       expect(await readNotices(walk.vaultId)).toContain(
         m.notice_zotero_editing_enabled(),
       );
-      await walk.compose("step-3");
+      await walk.compose("step-2");
     });
 
-    it("step 4: drag across a passage in the PDF; a small toolbar under the passage", async () => {
+    it("step 3: drag across a passage in the PDF; a small toolbar under the passage", async () => {
       await raiseWindow(walk.vaultId);
-      const popup = await walk.record("step-4", () =>
+      const popup = await walk.record("step-3", () =>
         obRun(
           walk.vaultId,
           async ({ app, page }, { file, from, to, pageNumber }) => {
@@ -499,11 +672,8 @@ describe.skipIf(!reachable)(
               5000,
             );
             const box = row.getBoundingClientRect();
-            if (pointer) {
-              // Then it moves off the passage, so the clip shows all of it.
-              const view = pdf.view.containerEl.getBoundingClientRect();
-              await pointer.park(view.right - 8, box.bottom + 40);
-            }
+            // The step ends on the passage and the toolbar under it.
+            await pointer?.look([...rects, row]);
             return {
               verbs: [...row.querySelectorAll("[data-zt-verb]")].map((b) =>
                 b.getAttribute("aria-label"),
@@ -533,12 +703,12 @@ describe.skipIf(!reachable)(
         ]),
       );
       expect(popup.popupTop).toBeGreaterThanOrEqual(popup.selectionBottom - 2);
-      await walk.capture("step-4");
-      await walk.compose("step-4");
+      await walk.capture("step-3");
+      await walk.compose("step-3");
     });
 
-    it("step 5: select Add comment, type a comment, and select Highlight; the passage turns yellow and a card appears in the sidebar", async () => {
-      const { typed, created } = await walk.record("step-5", async () => {
+    it("step 4: select Add comment, type a comment, and select Highlight; the passage turns yellow and a card appears in the sidebar", async () => {
+      const { typed, created } = await walk.record("step-4", async () => {
         const typed = await obRun(
           walk.vaultId,
           async ({ page }, { comment, highlight }) => {
@@ -635,11 +805,8 @@ describe.skipIf(!reachable)(
               : mark.querySelector("[fill],[stroke]");
             card.scrollIntoView({ block: "center" });
             await new Promise((r) => setTimeout(r, 500));
-            if (pointer) {
-              // The pointer leaves the new highlight and its card in view.
-              const view = pdf.view.containerEl.getBoundingClientRect();
-              await pointer.park(view.right - 8, view.top + view.height * 0.6);
-            }
+            // The step ends on the yellow passage and its new card.
+            await pointer?.look([mark, card]);
             return {
               key,
               text: card.innerText,
@@ -679,15 +846,15 @@ describe.skipIf(!reachable)(
         page: String(PASSAGE.page),
       });
       expect(stored.text).toContain(PASSAGE.words);
-      await walk.capture("step-5");
-      await walk.compose("step-5");
+      await walk.capture("step-4");
+      await walk.compose("step-4");
     });
 
-    it("step 6: open the same PDF in Zotero; the same highlight is there", async () => {
+    it("step 5: open the same PDF in Zotero; the same highlight is there", async () => {
       const title = await walk.zotero.json<string>(
         `(async()=>{const w=Zotero.getMainWindow();w.resizeTo(1440,900);w.focus();await new Promise(r=>setTimeout(r,800));return w.document.title;})()`,
       );
-      const shown = await walk.recordZotero("step-6", exactly(title), () =>
+      const shown = await walk.recordZotero("step-5", exactly(title), () =>
         walk.zotero.json<{
           listed: boolean;
           comment: string | null;
@@ -700,13 +867,13 @@ describe.skipIf(!reachable)(
         ),
       );
       expect(shown).toEqual({ listed: true, comment: COMMENT });
-      await captureZotero("step-6", "main");
-      await walk.compose("step-6");
+      await captureZotero("step-5", "main");
+      await walk.compose("step-5");
     });
 
-    it("step 7: open your literature note from Lesson 1; the new highlight is in the Annotations section, with no update", async () => {
+    it("step 6: open your literature note from Lesson 1; the new highlight is in the Annotations section, with no update", async () => {
       await raiseWindow(walk.vaultId);
-      const note = await walk.record("step-7", async () => {
+      const note = await walk.record("step-6", async () => {
         const popupState = await obRun(
           walk.vaultId,
           async ({ app, page }, { note, name }) => {
@@ -757,12 +924,6 @@ describe.skipIf(!reachable)(
               () => app.workspace.getActiveFile()?.path === note,
               10000,
             );
-            if (pointer) {
-              const b = app.workspace
-                .getMostRecentLeaf()!
-                .view.containerEl.getBoundingClientRect();
-              await pointer.park(b.right - 14, b.top + b.height * 0.6);
-            }
             // The popup hides while the note's tab covers the PDF.
             return {
               before,
@@ -804,6 +965,8 @@ describe.skipIf(!reachable)(
             });
             await new Promise((r) => setTimeout(r, 900));
             await page.until("settled", () => true);
+            // The step ends on the new card in the Annotations section.
+            await page.scratch.docsWalkPointer?.look(card);
             return {
               cards: leaf.view.contentEl.querySelectorAll(
                 ".zt-annot-card[data-zotero-annotation-key]",
@@ -827,8 +990,8 @@ describe.skipIf(!reachable)(
           ({ page }) => page.scratch.annotatePdfsLinks!.passed,
         ),
       ).toEqual([]);
-      await walk.capture("step-7");
-      await walk.compose("step-7");
+      await walk.capture("step-6");
+      await walk.compose("step-6");
     });
   },
 );
