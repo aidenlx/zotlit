@@ -25,12 +25,25 @@ export type CameraEvent =
   | { kind: "point"; t: number; x: number; y: number; rect?: Rect }
   /** A pointer move without a click. The camera does not follow it. */
   | { kind: "park"; t: number; x: number; y: number }
+  /**
+   * A press at `from` at `t`, a drag, and a release at `to` at `end`. Each
+   * end is a point, on the element `rect` when there is one. The camera
+   * shows both ends in one view from `lead` before the press to the release.
+   */
+  | { kind: "drag"; t: number; end: number; from: Spot; to: Spot }
   /** Typing from `t` to `end` into the input `rect`. */
   | { kind: "type"; t: number; end: number; rect: Rect }
   /** Typing from `t` to `end`, with the caret or focused element in `rect`. */
   | { kind: "keys"; t: number; end: number; rect?: Rect }
   /** A region to frame without a pointer move, such as a step's result. */
   | { kind: "look"; t: number; rect: Rect; padding?: number };
+
+/** A point of a pointer action in CSS px, on the element `rect` when there is one. */
+export interface Spot {
+  x: number;
+  y: number;
+  rect?: Rect;
+}
 
 /**
  * The view at each keyframe, in clip seconds. Between two keyframes with
@@ -251,18 +264,25 @@ function frame(
       };
     }
     case "point": {
-      // A small box about the click; the element too, when it fits the zoom.
-      const mark = pad({ x: event.x, y: event.y, w: 0, h: 0 }, 48);
-      const element = event.rect && pad(event.rect, o.padding);
-      const need = clip(
-        element && fits(union(element, mark), viewport, o.zoom)
-          ? union(element, mark)
-          : mark,
-      );
+      const need = clip(spot(event, viewport, o));
       return {
         t: event.t,
         by: event.t - o.lead,
         end: event.t,
+        need,
+        frame: clip(pad(need, o.context)),
+      };
+    }
+    case "drag": {
+      // Both ends in one action: its shot stands from the press to the
+      // release, at a lower zoom when the ends lie far apart.
+      const need = clip(
+        union(spot(event.from, viewport, o), spot(event.to, viewport, o)),
+      );
+      return {
+        t: event.t,
+        by: event.t - o.lead,
+        end: event.end,
         need,
         frame: clip(pad(need, o.context)),
       };
@@ -280,6 +300,22 @@ function frame(
       };
     }
   }
+}
+
+/**
+ * The area a click or a drag's end at `s` must show: a small box about the
+ * point, and the element too when both fit the zoom.
+ */
+function spot(
+  s: Spot,
+  viewport: CameraPlanInput["viewport"],
+  o: Required<CameraPlanOptions>,
+): Rect {
+  const mark = pad({ x: s.x, y: s.y, w: 0, h: 0 }, 48);
+  const element = s.rect && pad(s.rect, o.padding);
+  return element && fits(union(element, mark), viewport, o.zoom)
+    ? union(element, mark)
+    : mark;
 }
 
 /**

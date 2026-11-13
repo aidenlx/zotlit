@@ -187,6 +187,57 @@ describe("planCamera", () => {
     const track = plan([{ kind: "park", t: 2, x: 1400, y: 840 }]);
     expect(viewAt(track, 8)).toEqual(full);
   });
+
+  it("widens a zoomed shot to one still view of both ends of a far drag", () => {
+    // The click at the centre zooms in to 720 x 430. The drag starts there
+    // and drops at the bottom left, outside that shot.
+    const track = plan(
+      [
+        { kind: "point", t: 3.5, x: 720, y: 430 },
+        {
+          kind: "drag",
+          t: 7,
+          end: 8,
+          from: { x: 720, y: 430 },
+          to: { x: 60, y: 800 },
+        },
+      ],
+      10,
+    );
+    expect(viewAt(track, 3.5)).toEqual({ x: 360, y: 215, w: 720, h: 430 });
+    // The drop's mark with its context reaches the window's left and bottom
+    // edges; with the zoomed shot, the view spans x 0-1080 and y 215-860.
+    const view = { x: 0, y: 215, w: 1080, h: 645 };
+    // The view is in place `lead` before the press and stays to the release.
+    for (let t = 6.5; t <= 8; t += 0.01) expect(viewAt(track, t)).toEqual(view);
+    expect(shows(view, 720, 430)).toBe(true);
+    expect(shows(view, 60, 800)).toBe(true);
+  });
+
+  it("frames a drag whose ends fit the zoom in one still zoomed shot", () => {
+    const track = plan([
+      {
+        kind: "drag",
+        t: 4,
+        end: 5,
+        from: { x: 600, y: 400 },
+        to: { x: 840, y: 460 },
+      },
+    ]);
+    // Both marks with their context span x 402-1038 and y 202-658, 636 x 456
+    // px: at the window's ratio, 763.5 x 456 px, centred on (720, 430).
+    const w = (456 * 1440) / 860;
+    expect(moves(track)).toEqual([2.5]);
+    for (let t = 3.5; t <= 5; t += 0.01) {
+      const v = viewAt(track, t);
+      expect(v.x).toBeCloseTo(720 - w / 2);
+      expect(v.y).toBeCloseTo(202);
+      expect(v.w).toBeCloseTo(w);
+      expect(v.h).toBeCloseTo(456);
+    }
+    expect(shows(viewAt(track, 4), 600, 400)).toBe(true);
+    expect(shows(viewAt(track, 4), 840, 460)).toBe(true);
+  });
 });
 
 describe("closingPad", () => {

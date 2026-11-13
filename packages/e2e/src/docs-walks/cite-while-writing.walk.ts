@@ -663,12 +663,11 @@ describe.skipIf(!reachable)("Lesson 3: Cite while you write", () => {
           const rect = editor.cm.coordsAtPos(
             editor.posToOffset({ line: line - 1, ch: 0 }),
           )!;
-          if (pointer) {
-            // The reader drags the page label across to the draft.
-            const c = chip.getBoundingClientRect();
-            await pointer.pointAt(c.left + c.width / 2, c.top + c.height / 2);
-            await pointer.park(rect.left + 1, (rect.top + rect.bottom) / 2);
-          }
+          // The reader drags the page label across to the draft.
+          await pointer?.drag(chip, {
+            x: rect.left + 1,
+            y: (rect.top + rect.bottom) / 2,
+          });
           const drop = new DragEvent("drop", {
             bubbles: true,
             cancelable: true,
