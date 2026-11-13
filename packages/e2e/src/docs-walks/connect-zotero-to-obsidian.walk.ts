@@ -28,6 +28,7 @@ import { getWorkspaceRoot } from "@zotlit/scripts/package-roots";
 import type { LibraryView } from "@/views/library/view";
 
 import type { Rect } from "./camera.ts";
+import { clipSettings } from "./clip-settings.ts";
 import { openDocsBrowser } from "./docs-browser.ts";
 import {
   openDocsWalk,
@@ -821,8 +822,24 @@ describe.skipIf(!reachable)(
             return true;
           })()`,
         );
+        // The calm camera of the screencast clips: views at most `zoom`×, and
+        // each move held `hold` after its `ease` before the next one.
+        const calm = clipSettings();
+        const settle = (calm.ease + calm.hold) * 1000;
+        /** Waits until `settle` has passed since `since`, the time of a move. */
+        const holdSince = (
+          shot: { wait(ms: number): Promise<void> },
+          since: number,
+        ) =>
+          shot.wait(
+            Math.max(
+              0,
+              since + settle - Temporal.Now.instant().epochMilliseconds,
+            ),
+          );
+        const movedAt = () => Temporal.Now.instant().epochMilliseconds;
         /** A view of the region's ratio about `r`, inside `within`, `zoom`× at most. */
-        const view = (r: Rect, within: Rect, zoom = 2): Rect => {
+        const view = (r: Rect, within: Rect, zoom = calm.zoom): Rect => {
           const ratio = region.w / region.h;
           const w = Math.min(
             within.w,
@@ -957,19 +974,21 @@ describe.skipIf(!reachable)(
                   await shots.desktop(
                     { pid, region, start: below, blur: [menuBarStatus] },
                     async (shot) => {
-                      // In to the menu bar's left end, under the bar first, so no
-                      // other app's menu bar item shows.
+                      // The whole window holds, then one move in to the menu
+                      // bar's left end. The status items right of Zotero's
+                      // menus are blurred.
                       const menu: Rect = {
                         x: 0,
                         y: 0,
-                        w: 600,
-                        h: (600 * region.h) / region.w,
+                        w: region.w / calm.zoom,
+                        h: region.h / calm.zoom,
                       };
-                      shot.frame({ ...menu, y: bar });
-                      await shot.wait(700);
+                      await shot.wait(calm.openHold * 1000);
                       shot.frame(menu);
+                      let moved = movedAt();
+                      await shot.wait((calm.ease + calm.lead) * 1000);
                       await shot.click(tools.x, tools.y);
-                      await shot.wait(500);
+                      await shot.wait(800);
                       const plugins = await menuPoint(pid, "Tools", "Plugins");
                       await shot.click(plugins.x, plugins.y);
                       const opened = await until(
@@ -979,11 +998,10 @@ describe.skipIf(!reachable)(
                           return m?.gear && m;
                         },
                       );
-                      await shot.wait(300);
-                      shot.frame({ ...menu, y: bar });
-                      await shot.wait(600);
+                      await holdSince(shot, moved);
                       shot.frame(view(opened.window, below, 1));
-                      await shot.wait(1200);
+                      moved = movedAt();
+                      await holdSince(shot, moved);
                       const gear = centre(opened.gear!);
                       shot.frame(
                         view(
@@ -991,12 +1009,16 @@ describe.skipIf(!reachable)(
                           below,
                         ),
                       );
+                      moved = movedAt();
+                      await shot.wait((calm.ease + calm.lead) * 1000);
                       await shot.click(gear.x, gear.y);
                       const fromFile = await until(
                         "Install Plugin From File…",
                         async () => (await manager())?.fromFile,
                       );
+                      // The gear's view holds before the cut to the dialog.
                       await shot.wait(400);
+                      await holdSince(shot, moved);
                       const at = centre(fromFile);
                       await shot.click(at.x, at.y);
                       // The dialog opens in the folder it last showed: the shot ends
@@ -1049,7 +1071,7 @@ describe.skipIf(!reachable)(
                   ]);
                   // The file list and the buttons under it. The sidebar (the
                   // computer's folders and user name) and the toolbar (the folder
-                  // menu) stay out of the view, and are blurred too.
+                  // menu) are blurred in every frame.
                   const d = dialog.bounds;
                   const sidebar: Rect = {
                     x: d.x,
@@ -1063,21 +1085,18 @@ describe.skipIf(!reachable)(
                     w: d.w,
                     h: PRIVATE.dialogToolbar,
                   };
-                  // From the file icon's left edge to the dialog's right edge,
-                  // down to its bottom: the edge of the sidebar and the
-                  // toolbar that come into the view stay blurred.
-                  const listW = d.w - PRIVATE.dialogSidebar + 8;
-                  const listH = (listW * region.h) / region.w;
-                  const list: Rect = {
-                    x: d.x + d.w - listW,
-                    y: d.y + d.h - listH,
-                    w: listW,
-                    h: listH,
-                  };
-                  if (list.y < d.y)
-                    throw new Error(
-                      `the file dialog is too narrow to frame without its sidebar: ${JSON.stringify(d)}`,
-                    );
+                  // About the file list and the buttons under it, `zoom`× at
+                  // most: the parts of the sidebar and the toolbar that come
+                  // into the view stay blurred.
+                  const list = view(
+                    {
+                      x: d.x + PRIVATE.dialogSidebar,
+                      y: d.y + PRIVATE.dialogToolbar,
+                      w: d.w - PRIVATE.dialogSidebar,
+                      h: d.h - PRIVATE.dialogToolbar,
+                    },
+                    below,
+                  );
                   // The dialog's shot ends on the click on Open, and blurs the
                   // sidebar and the toolbar in all of its frames.
                   await shots.desktop(
@@ -1088,9 +1107,9 @@ describe.skipIf(!reachable)(
                       blur: [menuBarStatus, sidebar, toolbar],
                     },
                     async (shot) => {
-                      await shot.wait(500);
+                      await shot.wait(1500);
                       await shot.click(d.x + 219, d.y + 120);
-                      await shot.wait(500);
+                      await shot.wait(1000);
                       await shot.click(d.x + d.w - 60, d.y + d.h - 32);
                       shot.end();
                     },
@@ -1117,19 +1136,20 @@ describe.skipIf(!reachable)(
                       blur: [menuBarStatus],
                     },
                     async (shot) => {
+                      await shot.wait(calm.openHold * 1000);
                       shot.frame(
                         view(
                           { ...listed, y: listed.y - 60, h: listed.h + 60 },
                           below,
-                          1.6,
                         ),
                       );
+                      const moved = movedAt();
                       const card = centre(listed);
                       await shot.move(
                         card.x + listed.w / 2 - 140,
                         card.y + listed.h / 2 + 50,
                       );
-                      await shot.wait(1200);
+                      await holdSince(shot, moved);
                     },
                   );
                 } else {
