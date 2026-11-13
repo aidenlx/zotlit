@@ -1,6 +1,7 @@
 ---
 title: "Eta template syntax"
-description: "Eta (JavaScript) template reference: delimiters, whitespace control, auto-filter, helpers, and the zt variable."
+searchTitle: "Eta template syntax for Zotero literature notes"
+description: "Eta (JavaScript) syntax for ZotLit note templates: delimiters, whitespace control, output filtering, helpers, and the zt variable for Zotero data."
 ---
 
 import { Card, Cards } from "fumadocs-ui/components/card";
@@ -103,7 +104,230 @@ All template data lives under the `zt` variable. The variable name applies acros
 
 The editor autocomplete inserts `= zt. ` when you select the interpolation hint inside `<%= %>` tags.
 
-`zt` replaces v1's `it` variable. See [Migrate v1 Eta templates](/docs/how-to/migrate-v1-eta-templates) for the full property mapping.
+`zt` replaces v1's `it` variable. See [Changes from v1](#v1-changes) for the full property mapping.
+
+## Changes from v1 [#v1-changes]
+
+### Template file names [#v1-file-names]
+
+| v1 filename        | Rename to                  | Where its content ends up                            |
+| ------------------ | -------------------------- | ---------------------------------------------------- |
+| `zt-note.eta.md`   | `zotlit-note.eta.md`       | The note body of the default profile document        |
+| `zt-annots.eta.md` | `zotlit-content.eta.md`    | The managed block inside that same note body         |
+| `zt-annot.eta.md`  | `zotlit-annotation.eta.md` | The annotation section of that same profile document |
+
+Your two v1 citation files, `zt-cite*.eta.md`, take the same `zt-` to `zotlit-` rename. Both of them fold into one citation text document, `zotlit-citation.md`, as an `if`/`else` on `zt.variant`.
+
+### Renamed and reshaped fields [#v1-fields]
+
+These fields changed name or type:
+
+| v1 property           | v2 property         | Notes                                                                                                                       |
+| --------------------- | ------------------- | --------------------------------------------------------------------------------------------------------------------------- |
+| `it.citekey`          | `zt.citationKey`    | `zt.citekey` also works as an alias                                                                                         |
+| `it.abstractNote`     | `zt.abstract`       | `zt.abstractNote` also works                                                                                                |
+| `it.publicationTitle` | `zt.containerTitle` | `zt.publicationTitle` also works                                                                                            |
+| `it.color`            | `zt.colorHex`       | Hex string, e.g. `#ffd400`                                                                                                  |
+| —                     | `zt.colorName`      | New: palette name (`"yellow"`, `"red"`, etc.)                                                                               |
+| `it.imgExcerpt`       | `embed(zt.imgLink)` | `zt.imgLink` is a [link helper](/docs/reference/templates/eta-syntax#link-helpers) or `null`; `embed()` adds the `!` prefix |
+| `it.imgPath`          | _(removed)_         | Use `zt.imgLink()` instead                                                                                                  |
+| `it.imgUrl`           | _(removed)_         | Use `zt.imgLink()` instead                                                                                                  |
+| `it.textExcerpt`      | `zt.text`           | Renamed                                                                                                                     |
+| `it.commentMd`        | `zt.comment`        | Markdown comment is now the default                                                                                         |
+| `it.comment`          | `zt.commentHtml`    | Raw HTML (only `<i>/<b>/<sub>/<sup>`)                                                                                       |
+
+Direct Zotero fields that are plain strings (`title`, `DOI`, `url`, `volume`, `issue`, `pages`, `publisher`, etc.) carry over unchanged after the `it` → `zt` rename.
+
+### Tags [#v1-tags]
+
+v1 exposed tags as formatted strings. v2 exposes them as objects with `name` and `type` properties. Tags coerce to their `name` in string contexts, so `join` still works:
+
+```eta
+<%/* Tags coerce to their name */%>
+<%= zt.tags.join(", ") %>
+
+<%/* Explicit property access */%>
+<%= zt.tags.map(t => t.name).join(", ") %>
+
+<%/* Filter to manual tags only */%>
+<%= zt.tags.filter(t => t.type === "manual").join(", ") %>
+```
+
+### Collections [#v1-collections]
+
+v2 reshapes collection objects. Key differences:
+
+| Aspect           | v1                          | v2                                         |
+| ---------------- | --------------------------- | ------------------------------------------ |
+| `path` order     | leaf → root                 | root → leaf                                |
+| `path` rendering | auto-rendered `"A > B > C"` | plain `string[]`; use `c.path.join(" > ")` |
+| Singular alias   | `it.collection`             | removed; use the `zt.collections` array    |
+
+```eta
+<%/* Collections coerce to their name in string contexts */%>
+<%= zt.collections.join(", ") %>
+
+<%/* Render each collection's full hierarchy */%>
+<%= zt.collections.map(c => c.path.join(" > ")).join("; ") %>
+```
+
+### Dates [#v1-dates]
+
+| v1 property                        | v2 property                        | Type change                                                                                                                        |
+| ---------------------------------- | ---------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| `it.date`                          | `zt.date`                          | Was a year-only string; now a parsed `ItemDate` object. `<%= zt.date %>` renders ISO; `zt.date?.year` gets the numeric year.       |
+| `it.dateAdded` / `it.dateModified` | `zt.dateAdded` / `zt.dateModified` | Were raw SQL strings (`"YYYY-MM-DD HH:MM:SS"`); now `Temporal.Instant`. Render as local date in `<%= %>` tags (e.g. `2026-06-21`). |
+
+If your v1 template used `it.date` as a year string, replace with `zt.date?.year`:
+
+```eta
+<%/* v1 */%>
+year: "<%= it.date %>"
+
+<%/* v2 */%>
+year: "<%= zt.date?.year %>"
+```
+
+### Child notes [#v1-child-notes]
+
+v1 inlined child-note content as Markdown on `it.notes`. v2 provides link-only entries. A child note becomes a separate file only when you [import it](/docs/how-to/import-zotero-notes):
+
+| v1                                      | v2                                                                        |
+| --------------------------------------- | ------------------------------------------------------------------------- |
+| `it.notes`: array of `{title, content}` | `zt.notes`: array of `{key, title, noteLink()}`                           |
+| Note content inlined                    | `noteLink()` links to the imported file, or else opens the note in Zotero |
+
+The default template no longer lists child notes. To list them as links, add a loop like this to your template:
+
+```eta
+<% if (zt.notes.length) { %>
+## Notes
+
+<% for (const note of zt.notes) { -%>
+- <%~ note.noteLink() %>
+<% } %>
+<% } %>
+```
+
+### The annotation template and `bq()` [#v1-annotation]
+
+v1 relied on external blockquote handling. v2 uses the [`bq()` helper](/docs/reference/templates/eta-syntax#bq-blockquote-helper) inside the annotation template:
+
+```eta
+<% bq(() => { %>
+[!note] Page <%= zt.pageLabel %>
+
+<%= embed(zt.imgLink) %><%= zt.text %>
+<% if (zt.comment) { %>
+
+<%= zt.comment %>
+<% } %>
+<% }) %>
+```
+
+`bq()` wraps all content in a Markdown blockquote (`> ` per line), trims the result, and collapses consecutive empty blockquote lines. It must appear in a `<% %>` execute tag.
+
+### The content template [#v1-content]
+
+The template is renamed from `annots` to `content`. It now receives the full context object instead of a raw annotation array:
+
+```eta
+<%/* v1: received a raw array as `it` */%>
+<% for (const annotation of it) { %>
+
+<%/* v2: receives full context, access annotations via zt.annotations */%>
+<% for (const annotation of zt.annotations) { %>
+```
+
+Update the `include` call in your note template:
+
+```eta
+<%/* v1 */%>
+<%~ include("annots", it.annotations) %>
+
+<%/* v2 */%>
+<%~ include("content", zt) %>
+```
+
+The content template now has access to all `zt.*` properties (attachments, tags, notes, etc.), not annotations alone.
+
+### The citation source [#v1-citation]
+
+v1 passed `it` as a raw array. v2 wraps items in an object:
+
+```eta
+<%/* v1 */%>
+[<%= it.filter(lit => !!lit.citekey).map(lit => `@${lit.citekey}`).join("; ") %>]
+
+<%/* v2 */%>
+[<%= zt.citations.filter(c => c.item.citationKey).map(c =>
+  `${c.suppressAuthor ? "-" : ""}@${c.item.citationKey}`
+).join("; ") %>]
+```
+
+Key changes:
+
+- `it` (array) becomes `zt.citations` (array inside an object). `zt.items` exposes the same items without citation metadata.
+- `lit.citekey` becomes `c.item.citationKey` (or `c.item.citekey`).
+- Both of your v1 citation files render from one v2 document. The [conversion](/docs/how-to/migrate-v1-eta-templates#convert) writes them as the two branches of an `if`/`else` on `zt.variant`, which is `"main"` or `"alt"`. See [Citation templates](/docs/reference/templates/data#citation-templates).
+
+### Attachments [#v1-attachments]
+
+v1 selected one attachment and exposed it as `it.fileLink` (a string). v2 provides all attachments as an array, and `fileLink` is a [link helper](/docs/reference/templates/eta-syntax#link-helpers) you call:
+
+```eta
+<%= zt.attachments.map(a => a.fileLink()).filter(Boolean).join(" ") %>
+```
+
+Each attachment object has: `key`, `filename`, `contentType`, `linkMode`, `filePath`, `fileLink`.
+
+### Creators [#v1-creators]
+
+v2 uses a flat array with explicit properties. Creators coerce to their full name in string contexts:
+
+```eta
+<%/* All authors (coerces to fullName) */%>
+<%= zt.authors.join(", ") %>
+
+<%/* Explicit property access */%>
+<%= zt.authors.map(c => c.fullName).join(", ") %>
+
+<%/* Filter by role */%>
+<%= zt.creators.filter(c => c.role === "editor").join(", ") %>
+```
+
+Creator properties: `family`, `given`, `literal` (institutional names), `role`, `fullName`.
+
+Convenience properties on the item context: `zt.authors` (the first populated role: primary creator, editor, director, then contributor) and `zt.authorsShort` (formatted short string, e.g. "Smith et al.").
+
+### The filename template [#v1-filename]
+
+The filename template is a template file (`zotlit-filename.eta.md`), not a setting string. The [one-pass conversion](/docs/how-to/migrate-v1-eta-templates#convert) later folds it into the `filename` key of your profile document's manifest. The v2 default adds `suffix()` for collision avoidance:
+
+```eta
+<%= zt.citationKey ?? zt.DOI ?? zt.title ?? zt.key %><%= suffix() %>
+```
+
+- `it.citekey` becomes `zt.citationKey` (canonical name; `zt.citekey` also works).
+- The `.md` extension is no longer included. ZotLit appends it automatically.
+- [`suffix()`](/docs/reference/templates/eta-syntax#suffix-filename-collision-guard) appends a random string only when the name collides with an existing note.
+
+### Properties from `zt-field.eta.md` [#v1-frontmatter]
+
+| v1 template line           | <UiLabel name={m.workbench_properties_name()} /> | <UiLabel name={m.workbench_properties_expression()} /> | <UiLabel name={m.workbench_properties_merge()} />         |
+| -------------------------- | ------------------------------------------------ | ------------------------------------------------------ | --------------------------------------------------------- |
+| `title: "<%= it.title %>"` | `title`                                          | `zt.title`                                             | <UiLabel name={m.workbench_properties_merge_replace()} /> |
+| `authors: ...`             | `authors`                                        | `zt.authors \| map: "fullName" \| join: ", "`          | <UiLabel name={m.workbench_properties_merge_replace()} /> |
+| `year: "<%= it.date %>"`   | `year`                                           | `zt.date \| date: "%Y"`                                | <UiLabel name={m.workbench_properties_merge_replace()} /> |
+| `tags: ...`                | `tags`                                           | `zt.tags \| map: "name" \| join: ", "`                 | <UiLabel name={m.workbench_properties_merge_append()} />  |
+
+YAML escaping is handled automatically.
+
+### Whitespace [#v1-whitespace]
+
+<Callout type="info" title="Whitespace change from v1">
+  v1 defaulted `autoTrim` to `[false, "nl"]` (trim one newline after tags). v2 defaults to `[false, false]` (preserve all whitespace). Migrated templates may produce extra blank lines where `%>` previously consumed a trailing newline. Add `-%>` to the closing side of tags that need the old trim behavior. See [Whitespace control](/docs/reference/templates/eta-syntax#whitespace-control).
+</Callout>
 
 ## `renderAnnotation()`: annotation rendering [#render-annotation]
 
@@ -337,7 +561,7 @@ linkHelper(alias?, subpath?)
 <%= zt.noteLink("See notes", "#Summary") %>
 ```
 
-`zt.noteLink()` returns `null` when the literature note path is unresolvable (collision, recursive resolution, or template error). `zt.imgLink` is `null` for annotation types other than `image` and `ink`. An unavailable image uses the [excerpt fallback](/docs/concepts/excerpt-images#import-outcomes).
+`zt.noteLink()` returns `null` when the literature note path is unresolvable (collision, recursive resolution, or template error). `zt.imgLink` is `null` for annotation types other than `image` and `ink`. An unavailable image uses the [excerpt fallback](/docs/reference/excerpt-images#import-outcomes).
 
 ### The durable annotation link [#annotation-backlink]
 

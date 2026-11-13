@@ -1,6 +1,7 @@
 import type { BaseLayoutProps } from "fumadocs-ui/layouts/shared";
 import {
   BookIcon,
+  GraduationCapIcon,
   MessageSquareMoreIcon,
   NewspaperIcon,
   UsersIcon,
@@ -20,6 +21,11 @@ export function baseOptions({
     i18n: true,
     nav: { title: <Logo small className="ml-1 text-lg" /> },
     links: [
+      {
+        text: m.docs_nav_learn(),
+        url: localizeHref("/learn"),
+        icon: <GraduationCapIcon />,
+      },
       ...(includeDocsLink
         ? [
             {

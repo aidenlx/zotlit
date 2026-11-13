@@ -19,7 +19,7 @@ Use this guide when you currently use the mgmeyers **Zotero Integration** plugin
 - Your existing literature notes remain in the vault as regular Markdown files.
 - Templates need translation: Zotero Integration uses Nunjucks; ZotLit uses [Liquid](/docs/reference/templates/syntax) (or [Eta](/docs/reference/templates/eta-syntax)).
 - Better BibTeX is no longer required. ZotLit reads Zotero's database directly. You are recommended to keep Better BibTeX installed for its citation key format.
-- The `{% persist %}` block model changes to a [managed region](/docs/concepts/literature-notes-and-the-managed-region) model. The two models are inverted: Zotero Integration marks content to keep; ZotLit marks content to replace.
+- The `{% persist %}` block model changes to a [managed region](/docs/reference/literature-notes) model. The two models are inverted: Zotero Integration marks content to keep; ZotLit marks content to replace.
 
 </Callout>
 
@@ -158,7 +158,7 @@ Key points:
 
 ### Template includes [#includes]
 
-Zotero Integration's `{% include "[[file]]" %}` becomes ZotLit's shared partials. Create a `zotlit-partial.<name>.md` file in the [template folder](/docs/concepts/how-templates-work#template-folder), then reference it with `{% render "<name>" with zt as zt %}`.
+Zotero Integration's `{% include "[[file]]" %}` becomes ZotLit's shared partials. Create a `zotlit-partial.<name>.md` file in the [template folder](/docs/reference/templates/how-templates-work#template-folder), then reference it with `{% render "<name>" with zt as zt %}`.
 
 See [Customize a template](/docs/how-to/customize-a-template) for the steps.
 
@@ -181,14 +181,14 @@ The citation template reads `zt.variant` to render two forms: the suggester inse
 
 ## Features with no direct equivalent [#no-equivalent]
 
-| Zotero Integration feature                       | Workaround in ZotLit                                                                                          |
-| ------------------------------------------------ | ------------------------------------------------------------------------------------------------------------- |
-| `{% persist %}` (multiple blocks)                | Place personal content outside the single managed region                                                      |
-| `isFirstImport` / `lastImportDate`               | Managed region re-renders all content each time                                                               |
-| Annotation concatenation (`+` prefix)            | Merge text in Zotero's annotation editor                                                                      |
-| `pdfannots2json` (external annotation extractor) | Use Zotero's built-in PDF reader                                                                              |
-| Image DPI / format / quality / OCR settings      | ZotLit generates [excerpt images](/docs/concepts/excerpt-images) on demand; these settings have no equivalent |
-| `runImport()` public API                         | Use [ZotLit protocol links](/docs/reference/protocol-links)                                                   |
+| Zotero Integration feature                       | Workaround in ZotLit                                                                                           |
+| ------------------------------------------------ | -------------------------------------------------------------------------------------------------------------- |
+| `{% persist %}` (multiple blocks)                | Place personal content outside the single managed region                                                       |
+| `isFirstImport` / `lastImportDate`               | Managed region re-renders all content each time                                                                |
+| Annotation concatenation (`+` prefix)            | Merge text in Zotero's annotation editor                                                                       |
+| `pdfannots2json` (external annotation extractor) | Use Zotero's built-in PDF reader                                                                               |
+| Image DPI / format / quality / OCR settings      | ZotLit generates [excerpt images](/docs/reference/excerpt-images) on demand; these settings have no equivalent |
+| `runImport()` public API                         | Use [ZotLit protocol links](/docs/reference/protocol-links)                                                    |
 
 ## Features you gain [#features-you-gain]
 
@@ -210,12 +210,12 @@ The citation template reads `zt.variant` to render two forms: the suggester inse
   <Card
     title="Literature notes and the managed region"
     description="How ZotLit separates your writing from generated content."
-    href="/docs/concepts/literature-notes-and-the-managed-region"
+    href="/docs/reference/literature-notes"
   />
   <Card
     title="How templates work"
     description="The three kinds of template document and how ZotLit finds them."
-    href="/docs/concepts/how-templates-work"
+    href="/docs/reference/templates/how-templates-work"
   />
   <Card
     title="Explore template data"

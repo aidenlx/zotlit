@@ -4,6 +4,7 @@ import { useRouterState } from "@tanstack/react-router";
 import { ArrowRight } from "lucide-react";
 import { useSyncExternalStore } from "react";
 
+import { Banner } from "@/components/banner";
 import type { PageLocaleState } from "@/lib/locale-state";
 import * as m from "@/paraglide/messages.js";
 import { getLocale } from "@/paraglide/runtime.js";
@@ -39,22 +40,30 @@ export function LocaleFallbackNotice({ state }: { state: PageLocaleState }) {
   // when the reader chooses the English V2 page. The missing locale file owns this notice.
   const englishHref = `${state.canonicalPath}${url.search}${url.hash}`;
 
+  // The thin top strip: `--fd-banner-height` moves the sticky header and
+  // sidebar down by its height instead of the notice pushing the page.
   return (
-    <div
+    <Banner
       role="note"
       lang={getLocale()}
-      className="not-prose flex flex-col gap-2 border-b border-fd-border bg-fd-card px-6 py-3 text-[0.9rem] leading-snug text-fd-foreground"
+      height="2.25rem"
+      className="not-prose border-b border-fd-border/70 bg-fd-secondary py-2 text-fd-secondary-foreground"
     >
-      <p className="text-fd-muted-foreground">{m.docs_locale_fallback()}</p>
-      {/* A native anchor leaves the Chinese locale instead of passing through
-          the router's outgoing locale rewrite. */}
-      <a
-        href={englishHref}
-        className="inline-flex w-fit items-center gap-1 font-medium text-fd-primary underline decoration-fd-primary/40 underline-offset-[3px] transition-[text-decoration-color] hover:decoration-fd-primary"
-      >
-        {m.docs_read_in_english()}
-        <ArrowRight aria-hidden className="size-[1.05em]" />
-      </a>
-    </div>
+      <div className="flex flex-wrap items-baseline justify-center gap-x-1.5 px-7 text-[0.8125rem] leading-snug tracking-[0.005em]">
+        <p className="text-balance">{m.docs_locale_fallback()}</p>
+        {/* A native anchor leaves the Chinese locale instead of passing through
+            the router's outgoing locale rewrite. */}
+        <a
+          href={englishHref}
+          className="font-medium whitespace-nowrap text-fd-primary underline decoration-fd-primary/40 underline-offset-[3px] transition-[text-decoration-color] hover:decoration-fd-primary"
+        >
+          {m.docs_read_in_english()}
+          <ArrowRight
+            aria-hidden
+            className="ms-0.5 inline size-[1.05em] shrink-0 align-[-0.14em]"
+          />
+        </a>
+      </div>
+    </Banner>
   );
 }

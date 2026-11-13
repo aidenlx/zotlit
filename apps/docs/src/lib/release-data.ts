@@ -1,5 +1,5 @@
 // The GitHub lookups: the install pages' release facts and the repository
-// counters the landing and community pages show.
+// counters the community page shows.
 //
 // Server-only — the `GITHUB_TOKEN` secret lives in the Worker environment. Each
 // lookup is cached at the edge for about an hour, so a release shows up within
@@ -287,7 +287,7 @@ async function getObsidianPreRelease(
   };
 }
 
-/** The counters the landing and community pages show beside the repo link. */
+/** The counters the community page shows beside the repo link. */
 export interface RepoStats {
   stars: number | null;
   downloads: number | null;

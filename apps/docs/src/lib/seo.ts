@@ -25,8 +25,8 @@ export const HOME_OG_ALT = m.docs_og_home_alt;
 export interface PageSeo {
   /** Document `<title>`, rendered as "<title> | ZotLit". Omit for the bare site name. */
   title?: string;
-  /** og:title / twitter:title. @default title */
-  ogTitle?: string;
+  /** The whole `<title>` and og:title as written, with no site-name suffix: a page whose title names the site itself. Wins over `title`. */
+  fullTitle?: string;
   description?: string;
   /** Canonical path, e.g. "/blog/foo" or "/". */
   path: string;
@@ -56,9 +56,15 @@ export function ogImageMeta(type: OgType, alt: string, slugs?: string[]) {
   ];
 }
 
+/** The `<title>` text: `fullTitle` as written, else "<title> | ZotLit", else the bare site name. */
+function documentTitle({ title, fullTitle }: PageSeo) {
+  if (fullTitle) return fullTitle;
+  return title ? `${title} | ${appName}` : appName;
+}
+
 /** The `head` fragment for one page: title, description, canonical, OG, Twitter. */
 export function pageHead(seo: PageSeo) {
-  const ogTitle = seo.ogTitle ?? seo.title ?? appName;
+  const ogTitle = seo.fullTitle ?? seo.title ?? appName;
   const localeState = getPageLocaleState(seo.path, getLocale());
   const canonical = absoluteUrl(localeState.canonicalPath);
 
@@ -72,7 +78,7 @@ export function pageHead(seo: PageSeo) {
         property: "og:locale",
         content: localeState.contentLocale === "zh-CN" ? "zh_CN" : "en_US",
       },
-      { title: seo.title ? `${seo.title} | ${appName}` : appName },
+      { title: documentTitle(seo) },
       ...(seo.description === undefined
         ? []
         : [

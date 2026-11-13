@@ -61,7 +61,7 @@ A new note from the default template is written once. Its body has the title, th
 - Notes you already have keep their markers, and an update still refreshes the text between them. If you use the default templates, that text is now the Annotations query block: the next update replaces the static annotation list and the list of child notes with it. Annotations in the block show only inside Obsidian, not in search, Publish, or other apps. To keep the static text, delete the two marker lines before you update.
 - If you customized or duplicated the Default profile, add a `{% managed %}` block to its document to keep refreshing older notes.
 
-See [Keep notes up to date](/docs/how-to/keep-notes-updated) and [Literature notes and the managed region](/docs/concepts/literature-notes-and-the-managed-region).
+See [Keep notes up to date](/docs/how-to/keep-notes-updated) and [Literature notes and the managed region](/docs/reference/literature-notes).
 
 ### Child notes import only when you ask
 
@@ -130,7 +130,7 @@ Show your papers in a table, much like Obsidian Bases. Create a `.zotquery` quer
 - Filter with nested condition groups or with an expression. The expression editor colors the text, underlines errors, and completes field and function names.
 - Sort, group, search, add Formula columns, rename columns, and export to CSV or TSV.
 
-See [Track reading status in the Query View](/docs/how-to/track-reading-status), [Query files and query blocks](/docs/concepts/query-files-and-query-blocks), and [Use query files](/docs/how-to/use-query-files).
+See [Track reading status in the Query View](/docs/how-to/track-reading-status), [Query files and query blocks](/docs/reference/how-queries-work), and [Use query files](/docs/how-to/use-query-files).
 
 ## What's New
 
@@ -159,7 +159,7 @@ This is on by default. Turn it off with <UiLabel name={m.settings_citation_graph
   moves a note to another profile and keeps its subfolders.
 - Links and menu commands from Zotero can name a profile.
 
-See [Profiles](/docs/concepts/profiles), [Profile Match](/docs/reference/templates/profile-match), and [Use a different template for different notes](/docs/how-to/use-different-templates).
+See [Profiles](/docs/reference/templates/how-templates-work#profiles), [Profile Match](/docs/reference/templates/profile-match), and [Use a different template for different notes](/docs/how-to/use-different-templates).
 
 ### Template Workbench
 
@@ -172,7 +172,7 @@ See [Profiles](/docs/concepts/profiles), [Profile Match](/docs/reference/templat
 - Turn selected text into a partial with <UiLabel name={m.template_workbench_extract_partial()} />.
 - The template data explorer groups fields into sections and copies a field as a value, a path, or a loop.
 
-See [Template Workbench View](/docs/concepts/template-workbench-view), [Customize a template](/docs/how-to/customize-a-template), and [Explore template data](/docs/how-to/explore-template-data).
+See [Template Workbench View](/docs/reference/template-workbench-view), [Customize a template](/docs/how-to/customize-a-template), and [Explore template data](/docs/how-to/explore-template-data).
 
 ### Annotation view
 
@@ -242,7 +242,7 @@ See [Insert citations](/docs/how-to/insert-citations).
 
 ### ZotLit Query CLI
 
-Query your Zotero library from the Obsidian CLI with `zotlit:query`. Search, filter, group, and pick fields from items, attachments, and annotations, and export JSON for scripts or AI agents. `zotlit:query-values`, `zotlit:query-schema`, `zotlit:query-guide`, and `zotlit:query-cancel` help you build and run queries. See [How ZotLit Query works](/docs/concepts/how-zotlit-query-works) and [Query your Zotero library](/docs/how-to/query-zotero-library).
+Query your Zotero library from the Obsidian CLI with `zotlit:query`. Search, filter, group, and pick fields from items, attachments, and annotations, and export JSON for scripts or AI agents. `zotlit:query-values`, `zotlit:query-schema`, `zotlit:query-guide`, and `zotlit:query-cancel` help you build and run queries. See [How ZotLit Query works](/docs/reference/how-queries-work#zotlit-query) and [Query your Zotero library](/docs/how-to/query-zotero-library).
 
 ### Imported notes
 

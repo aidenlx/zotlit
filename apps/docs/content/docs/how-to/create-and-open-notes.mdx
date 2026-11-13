@@ -1,236 +1,99 @@
 ---
 title: "Create and open literature notes"
-description: "Open or create a Literature Note with the quick switcher, a Pandoc citation, or the Zotero menu."
+searchTitle: "Create Zotero literature notes in Obsidian"
+description: "Make a literature note for a Zotero paper in Obsidian, or open its note, from the quick switcher, a Pandoc citation, or Zotero's right-click menu."
 ---
 
-import { Steps, Step } from "fumadocs-ui/components/steps";
-import { Card, Cards } from "fumadocs-ui/components/card";
-import { Callout } from "@/components/callout";
+import { Accordion, Accordions } from "fumadocs-ui/components/accordion";
 import { Command } from "@/components/command";
 import { SettingsPath } from "@/components/settings-path";
 import { UiLabel } from "@/components/ui-label";
 import { m } from "@/paraglide/messages.js";
 
-Open an existing Literature Note or create one from its Zotero item.
+1. Press `Ctrl+P` (`Cmd+P` on macOS) and run <Command inline name={m.command_open_lit_note_name()} />.
+2. Type a few words of the paper's title.
+3. Press `Enter`. The note opens. If the paper had no note, ZotLit writes it first.
 
-## Use the quick switcher [#quick-switcher]
+## Open a note with the quick switcher [#quick-switcher]
 
-The quick switcher searches your Zotero library and opens or creates a literature note for the item you pick.
+1. Open the command palette (`Ctrl+P` on Windows and Linux, `Cmd+P` on macOS) and run <Command inline name={m.command_open_lit_note_name()} />. A search box opens over a list of papers. With nothing typed, the list shows papers by last activity, newest first. When the search covers more than one Zotero library, each row names its library.
+2. Type to search your library, then move to the paper with the arrow keys. The list narrows to matching papers.
+3. Press `Enter`. The paper's literature note opens. If the paper had no note, ZotLit writes it first: a short notice reads <UiLabel name={m.notice_creating_note()} />, followed by <UiLabel name={m.notice_created_note()} />
 
-It searches every library in your [library scope](/docs/reference/settings#library-scope) at once, in one relevance order. While more than one library can contribute results, each row names the library its item comes from. An empty search lists papers by Last Activity, newest first. This is the same order as [<UiLabel name={m.library_view_recent()} /> in the Library View](/docs/how-to/use-library-view#recent).
+Pressing `Ctrl+Enter` (`Cmd+Enter` on macOS) opens the note in a new pane, `Shift+Enter` opens the paper's PDF instead, and `Esc` closes the switcher. The full list of shortcuts is in the [Quick switcher reference](/docs/reference/commands#quick-switcher).
 
-<Steps>
-  <Step>
-    ### Open the quick switcher
+A literature note is written only when the paper has none; opening an existing note leaves your text intact. What you write in the note stays yours: with the current default template, updating a note later refreshes its properties and leaves your body text alone, while the annotations section updates automatically.
 
-    Open the command palette (`Ctrl+P` on Windows/Linux, `Cmd+P` on macOS) and run:
+<Accordions multiple>
+<Accordion title="ZotLit asks which profile to use" id="choose-profile">
 
-    <Command name={m.command_open_lit_note_name()} />
+This prompt appears only when you have created additional note profiles. With only the Default profile, ZotLit writes the note immediately without asking.
 
-  </Step>
-  <Step>
-    ### Search and select an item
+- **One profile matches the paper:** ZotLit writes the note with that profile; the notice names the match.
+- **Several match, or none match:** A picker opens. Select the profile to use for this note, or close the picker to cancel without creating a note.
 
-    Type to search your library. Use the arrow keys to navigate the results.
+Inside the picker, a matching profile displays the badge <UiLabel name={m.modal_profile_match_candidate()} />. When no profile matches, **Default** is preselected. When multiple profiles match, the search box displays <UiLabel name={m.modal_profile_overlap_placeholder()} />.
 
-    - Press `Enter` to open the literature note.
-    - Press `Ctrl+Enter` (`Cmd+Enter` on macOS) to open it in a new pane.
-    - Press `Shift+Enter` to open the item's PDF instead. See [Open an item's PDF in Obsidian](/docs/how-to/open-pdf-in-obsidian).
-    - Press `Ctrl+Shift+Enter` (`Cmd+Shift+Enter` on macOS) to open that PDF in a new pane.
-    - Press `Alt+Enter` (`Option+Enter` on macOS) to show the item in the [Library View](/docs/how-to/use-library-view#show-in-library).
-    - Press `Esc` to dismiss the switcher.
+To create a profile and configure when it applies, see [Use different templates](/docs/how-to/use-different-templates). Details on how a profile is chosen are in the [Profile match reference](/docs/reference/settings#profile-match).
 
-    If the item already has a literature note, ZotLit opens it. Otherwise ZotLit creates the note first, showing a brief <UiLabel name={m.notice_creating_note()} /> notice, followed by <UiLabel name={m.notice_created_note()} />
+</Accordion>
+<Accordion title="From a citation in your draft" id="from-citation">
 
-  </Step>
-</Steps>
+A Pandoc citation in your draft looks like `@key` or `[@key]` (as well as `[@key, p. 3]` or `[@a; @b]`).
 
-### Choose the profile that creates the note [#choose-profile]
+To open notes directly from citations, go to <SettingsPath page={m.settings_page_citations()} /> and turn on <UiLabel name={m.settings_citation_open_as_links_name()} /> (off by default). Ensure <UiLabel name={m.settings_citation_pandoc_citations_name()} /> is also enabled (on by default).
 
-A [profile](/docs/concepts/profiles) supplies a note's name, folder, properties, and body. While your vault holds only the Default profile, the Default creates the note and ZotLit asks nothing.
+| View         | What to do                                                                                            |
+| ------------ | ----------------------------------------------------------------------------------------------------- |
+| Live Preview | Click the citation.                                                                                   |
+| Source mode  | `Ctrl`-click the citation key (`Cmd`-click on macOS). A plain click places the cursor.                |
+| Reading view | Click the citation. One paper opens its note; a citation with multiple papers opens a selection menu. |
 
-Once you add a profile, ZotLit selects one by [Profile Match](/docs/reference/templates/profile-match):
+The note opens immediately, or ZotLit creates it first if no note exists yet. Alternatively, place the cursor on any citation key and run <Command inline name={m.command_open_citekey_name()} />.
 
-- One profile matches the item: ZotLit creates the note from it, and the notice reports the match.
-- Several profiles match, or none does: a picker opens. Select the profile for this note, or dismiss the picker to cancel the creation.
+ZotLit resolves the key against Zotero's Citation Key field across all libraries chosen in your [<UiLabel name={m.settings_library_scope_name()} />](/docs/reference/settings#library-scope). See [Citation links](/docs/reference/citation-links) for supported syntax and lookup rules.
 
-A profile that matches the item carries the <UiLabel name={m.modal_profile_match_candidate()} /> badge in the picker. When nothing matched, the Default is preselected. When several profiles match, ZotLit names them above the results and the search box reads <UiLabel name={m.modal_profile_overlap_placeholder()} />.
+</Accordion>
+<Accordion title="From Zotero or the Library View" id="from-zotero">
 
-See [Use a different template for different notes](/docs/how-to/use-different-templates) to add a profile and set the conditions that select it.
+| Start in                 | What to do                                                                                                                                                                                   | Needs                   |
+| ------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------- |
+| Zotero                   | Select exactly one paper, right-click, and select <UiLabel name={m["zotero.menu_item_open.label"]()} /> from the top-level menu. Writes the note if none exists, or opens the existing note. | ZotLit Companion add-on |
+| Library View in Obsidian | Select the paper's row and press `Enter`. Opens the note, or creates it if missing. See [Library View](/docs/how-to/use-library-view#rows).                                                  | Nothing extra           |
 
-## Browse the Library View [#library-view]
+To change where Zotero opens notes in Obsidian, open Zotero's settings, go to the <UiLabel name={m["zotero.prefs_pane_label"]()} /> pane, find <UiLabel name={m["zotero.prefs_open_section"]()} />, and set <UiLabel name={m["zotero.prefs_pane_type"]()} /> to <UiLabel name={m["zotero.prefs_pane_type_active.label"]()} /> (default), <UiLabel name={m["zotero.prefs_pane_type_tab.label"]()} />, <UiLabel name={m["zotero.prefs_pane_type_split.label"]()} />, or <UiLabel name={m["zotero.prefs_pane_type_window.label"]()} />. See [Pane type options](/docs/reference/protocol-links#pane-type).
 
-The Library View lists your library in a tab, by collection, recent activity, or reading state. Its rows take the same keys as the quick switcher: `Enter` opens or creates the literature note. See [Browse your library in the Library View](/docs/how-to/use-library-view#rows).
+</Accordion>
+<Accordion title="Several papers at once" id="bulk">
 
-## Open the item's PDF in Obsidian [#open-pdf]
+Creating notes in bulk from Zotero requires the ZotLit Companion add-on. The Obsidian command requires no extra setup.
 
-A literature note's PDF attachment opens in Obsidian's own PDF reader, from the note, the quick switcher, or Zotero. See [Open an item's PDF in Obsidian](/docs/how-to/open-pdf-in-obsidian).
+| Which papers                        | What to do                                                                                                                                                                                                                                                       |
+| ----------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Papers you select in Zotero         | Right-click the selection → <UiLabel name={m["zotero.menu_submenu.label"]()} /> → <UiLabel name={m["zotero.menu_item_update.label"]({ count: 2 })} /> (with one paper selected, this reads <UiLabel name={m["zotero.menu_item_update.label"]({ count: 1 })} />). |
+| One collection                      | In Zotero, right-click the collection → <UiLabel name={m["zotero.menu_submenu.label"]()} /> → <UiLabel name={m["zotero.menu_collection_update_all.label"]()} />. All subcollections are included.                                                                |
+| A whole Zotero library              | In Zotero, right-click **My Library** or a group library → <UiLabel name={m["zotero.menu_submenu.label"]()} /> → <UiLabel name={m["zotero.menu_collection_update_all.label"]()} />. Covers that library regardless of your library scope.                        |
+| Every library in your library scope | In Obsidian, run <Command inline name={m.command_update_all_notes_name()} />.                                                                                                                                                                                    |
 
-## Open a note from a Pandoc citation
+In each case, Obsidian opens a confirmation dialog showing which notes will be created and which will be updated. Review the list and confirm to proceed.
 
-Turn on <UiLabel name={m.settings_citation_pandoc_citations_name()} /> and <UiLabel name={m.settings_citation_open_as_links_name()} /> under <SettingsPath page={m.settings_page_citations()} />. <UiLabel name={m.settings_citation_pandoc_citations_name()} /> is on by default, and <UiLabel name={m.settings_citation_open_as_links_name()} /> is off by default.
+When you have multiple profiles configured, the confirmation window includes a profile selector for newly created notes (see [Batch profiles](/docs/reference/settings#batch-profiles)). To see how existing notes are affected, see [Keep notes updated](/docs/how-to/keep-notes-updated).
 
-Type or paste a Pandoc citation such as `@key` or `[@key]` in an editor.
+</Accordion>
+</Accordions>
 
-- In Live Preview, click the citation to open or create its Literature Note.
-- In Source mode, Ctrl-click the citation key. Use Cmd-click on macOS. A plain click places the caret.
-- In reading view, click the citation. A single-item citation opens its Literature Note. A multi-item citation opens a menu.
+## If you see something else
 
-You can also place the cursor on a recognized citation and run <Command inline name={m.command_open_citekey_name()} />. This command uses the same two settings.
+- **A notice: <UiLabel name={m.notice_citekey_not_found({ citekey: "key" })} />** No item in your library scope has this key in Zotero's Citation Key field. Verify which libraries are active under [<UiLabel name={m.settings_library_scope_name()} />](/docs/reference/settings#library-scope).
+- **A notice: <UiLabel name={m.notice_citekey_db_unavailable({ citekey: "key" })} />** ZotLit cannot access the Zotero database file. See [Database unavailable](/docs/reference/settings#database-unavailable) to restore the connection.
+- **Clicking a citation only puts the cursor in it.** <UiLabel name={m.settings_citation_open_as_links_name()} /> is disabled. Enable it under <SettingsPath page={m.settings_page_citations()} />, or use `Ctrl`-click (`Cmd`-click on macOS) on the key.
+- **A list asks which paper you mean.** More than one item shares that citation key. Each row shows its library and item key; select the correct entry to open its note. See [Ambiguous citation keys](/docs/reference/citation-links#ambiguous-key).
+- **A picker of profiles opens.** You have configured multiple profiles and ZotLit cannot pick one automatically. Select a profile from the list, or review the [profile selection fold-out](#choose-profile) above.
+- **Zotero says the selection is too large, or asks to enable a server.** Large batches transfer to Obsidian through ZotLit's local server. In Obsidian, go to <SettingsPath page={m.settings_page_advanced()} /> and turn on the server in the <UiLabel name={m.settings_advanced_local_server_heading()} /> group, or select fewer papers at once. See [Set up live updates](/docs/how-to/set-up-live-updates).
+- **Zotero asks for confirmation each time it opens Obsidian.** This prompt is Zotero's default security check for opening `obsidian://` links. See [Suppress Zotero security prompt](/docs/how-to/suppress-zotero-security-prompt).
 
-ZotLit recognizes bare keys and citation clusters alike: `@key`, `-@key`, `[@key]`, `[@key, p. 3]`, and multi-cite `[@a; @b]`.
+## Next
 
-A click resolves the citation key against Zotero's native citation key field, across every library in your <UiLabel name={m.settings_library_scope_name()} /> (set at the top of <SettingsPath />). When a Zotero item carries that key and already has a literature note, ZotLit opens the note. When the item exists but has no literature note yet, ZotLit creates one and opens it.
-
-If the item is not found in your Zotero library, a notice appears: <UiLabel name={m.notice_citekey_not_found({ citekey: "…" })} /> If the database is unavailable, ZotLit shows <UiLabel name={m.notice_citekey_db_unavailable({ citekey: "…" })} />
-
-If several Zotero items carry that key, ZotLit asks which one you mean. A picker lists each item with its library and item key, and opens the one you choose. See [A key that matches several items](/docs/concepts/how-citekey-links-work#ambiguous-key).
-
-The four open-under-cursor commands use <UiLabel name={m.settings_citation_open_as_links_name()} />; what hovering shows follows <UiLabel name={m.settings_citation_hover_action_name()} /> instead. <UiLabel name={m.settings_citation_show_formatted_name()} /> does not control navigation.
-
-<UiLabel name={m.settings_citation_open_as_links_name()} /> covers Literature
-Note wikilinks shown as citations as well. For recognized syntax and the
-complete interaction model, see [How in-text citation rendering and navigation
-work](/docs/concepts/how-citekey-links-work).
-
-## Find notes that cite a Literature Note
-
-Open the Literature Note whose incoming citations you want to inspect. Run:
-
-<Command name={m.command_show_cited_by_name()} />
-
-The <UiLabel name={m.cited_by_view_name()} /> Sidebar follows the active Literature Note. It groups citation occurrences by source note and shows the citation in its surrounding text.
-
-Use the sidebar toolbar to narrow and arrange the results:
-
-- <UiLabel name={m.cited_by_show_search_filter()} /> filters by source-note path
-  or the shown citation context.
-- <UiLabel name={m.cited_by_show_more_context()} /> expands every result from a
-  compact excerpt to its enclosing Markdown block.
-- <UiLabel name={m.cited_by_change_sort_order()} /> sorts source notes by file
-  name, modified time, or created time, in either direction.
-- <UiLabel name={m.cited_by_collapse_results()} /> collapses or expands the
-  visible source-note groups.
-
-Select a citation excerpt to open its source note at that occurrence. Select <UiLabel name={m.cited_by_open_source()} /> on a group to open the note without targeting one occurrence. Hold Ctrl on Windows or Linux, or Command on macOS, to open either action in another pane.
-
-## Create or update notes in bulk [#bulk]
-
-You can create or update literature notes for many Zotero items at once from the Zotero right-click menu. This action requires the Companion.
-
-### Choose the profile for new notes [#bulk-profiles]
-
-Every new note is created from a [profile](/docs/concepts/profiles), which decides its name, folder, properties, and body. When your vault holds added profiles, the confirmation carries a profile control for the new notes, above the item groups. Each control governs the rows it names:
-
-- <UiLabel name={m.batch_profile_unresolved_label({ count: "…" })} /> covers
-  items that no profile matched, or that several profiles matched. Its help
-  reads <UiLabel name={m.batch_profile_unresolved_help()} />.
-- <UiLabel name={m.batch_profile_affected_label({ count: "…" })} /> covers items
-  whose matched profile is unavailable. Its help reads
-  <UiLabel name={m.batch_profile_recovery_help()} />.
-- <UiLabel name={m.batch_profile_override_all_label()} /> overrides matching for
-  every new note in the batch.
-
-A control names its profile once every row it governs agrees on one. The line under it reads <UiLabel name={m.batch_profile_source_match()} /> when Profile Match selected that profile. To change the profile for those rows, select the control and choose another; its tooltip names the rows it governs. See [Use a different template for different notes](/docs/how-to/use-different-templates) for how matching picks a profile.
-
-### Update the entire library at once [#library-wide]
-
-Use this command to create or update literature notes for every item in your library at once.
-
-Open the command palette and run:
-
-<Command name={m.command_update_all_notes_name()} />
-
-Obsidian opens a confirmation modal that lists what will be created and what will be updated, and, when your vault holds added profiles, which profile creates the new notes. Review the list, then confirm to start the batch.
-
-In Zotero, right-click **My Library** or a group library in the sidebar. Choose <UiLabel name={m["zotero.menu_submenu.label"]()} /> > <UiLabel name={m["zotero.menu_collection_update_all.label"]()} />.
-
-The Obsidian command covers every library in your <UiLabel name={m.settings_library_scope_name()} /> (set in <SettingsPath />). The Zotero entry covers the library you right-clicked, whatever your library scope is.
-
-### Update one collection at once [#collection-wide]
-
-In Zotero, right-click a collection in the sidebar and choose <UiLabel name={m["zotero.menu_submenu.label"]()} /> > <UiLabel name={m["zotero.menu_collection_update_all.label"]()} />. Obsidian opens the same confirmation modal, scoped to that collection.
-
-Items in nested subcollections are included, so you do not need to repeat the action on each child collection.
-
-If the collection no longer exists in your Zotero database, Obsidian reports <UiLabel name={m.notice_collection_not_found()} />
-
-### Open or update a single item from Zotero
-
-When exactly one regular item is selected in the Zotero library, the top-level context menu shows <UiLabel name={m["zotero.menu_item_open.label"]()} />. This creates the note if none exists, or opens the existing one. The behavior matches the quick switcher.
-
-To choose where the note appears in Obsidian, open the <UiLabel name={m["zotero.prefs_pane_label"]()} /> pane in Zotero's settings. Under <UiLabel name={m["zotero.prefs_open_section"]()} />, set <UiLabel name={m["zotero.prefs_pane_type"]()} /> to <UiLabel name={m["zotero.prefs_pane_type_active.label"]()} /> (the default), <UiLabel name={m["zotero.prefs_pane_type_tab.label"]()} />, <UiLabel name={m["zotero.prefs_pane_type_split.label"]()} />, or <UiLabel name={m["zotero.prefs_pane_type_window.label"]()} />. See [Where the link opens](/docs/reference/protocol-links#pane-type).
-
-### Update multiple items at once
-
-<Steps>
-  <Step>
-    ### Select items in Zotero
-
-    Select the items you want to update in your Zotero library.
-
-  </Step>
-  <Step>
-    ### Open the ZotLit submenu
-
-    Right-click the selection, then open the <UiLabel name={m["zotero.menu_submenu.label"]()} /> submenu.
-
-  </Step>
-  <Step>
-    ### Choose an update action
-
-    - <UiLabel name={m["zotero.menu_item_update.label"]({ count: 2 })} /> creates a note for each item that does not have one yet, and refreshes existing notes with current Zotero data.
-    - <UiLabel name={m["zotero.menu_item_update_metadata.label"]()} /> refreshes only the frontmatter of existing notes, leaving the note body unchanged. Items without an existing literature note are skipped.
-
-  </Step>
-  <Step>
-    ### Confirm in Obsidian
-
-    Obsidian opens a confirmation modal that lists what will be created and what will be updated, and, when your vault holds added profiles, which profile creates the new notes. Review the list, then confirm to start the batch.
-
-  </Step>
-</Steps>
-
-<Callout type="warn">
-  A large selection may exceed the length limit for an `obsidian://` link. When
-  that happens, ZotLit sends the item list over HTTP to the ZotLit server
-  running inside Obsidian. If the server is not enabled, Zotero shows an alert
-  asking you to enable it or select fewer items. You can enable the ZotLit
-  server under <SettingsPath page={m.settings_page_advanced()} /> in the{" "}
-  <UiLabel name={m.settings_advanced_local_server_heading()} /> group. See [Set
-  up live updates](/docs/how-to/set-up-live-updates).
-</Callout>
-
-## How ZotLit identifies literature notes
-
-ZotLit identifies literature notes by their `zotero-key` frontmatter field. For details on note identity and the managed region, see [Literature notes and the managed region](/docs/concepts/literature-notes-and-the-managed-region).
-
-## See also
-
-<Cards>
-  <Card
-    title="Create your first literature note"
-    description="A step-by-step tutorial for new users."
-    href="/docs/tutorial/first-note"
-  />
-  <Card
-    title="Insert citations"
-    description="Insert citation markers while typing or from the command palette."
-    href="/docs/how-to/insert-citations"
-  />
-  <Card
-    title="Keep notes up to date"
-    description="Update literature notes when your Zotero data changes."
-    href="/docs/how-to/keep-notes-updated"
-  />
-  <Card
-    title="Import Zotero notes"
-    description="Import Zotero's own note items into Obsidian."
-    href="/docs/how-to/import-zotero-notes"
-  />
-  <Card
-    title="Literature notes and the managed region"
-    description="How ZotLit separates your writing from generated content."
-    href="/docs/concepts/literature-notes-and-the-managed-region"
-  />
-</Cards>
+- [Keep notes updated](/docs/how-to/keep-notes-updated) — bring a note in line after Zotero changes.
+- [Insert citations](/docs/how-to/insert-citations) — put a citation in the draft.
+- [Import Zotero notes](/docs/how-to/import-zotero-notes) — bring notes written in Zotero into the vault.

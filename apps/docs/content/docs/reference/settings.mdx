@@ -91,7 +91,7 @@ See [Configure frontmatter properties](/docs/how-to/configure-frontmatter-proper
 
 ## Literature note profiles [#profiles]
 
-Open this page from <SettingsPath page={m.settings_page_profiles()} />. A Profile's template document defines its note folder, citation style, and appearance. It can also carry a Profile Match: conditions that select the Profile automatically for new literature notes. See [Profiles](/docs/concepts/profiles) for how ZotLit selects one.
+Open this page from <SettingsPath page={m.settings_page_profiles()} />. A Profile's template document defines its note folder, citation style, and appearance. It can also carry a Profile Match: conditions that select the Profile automatically for new literature notes. See [Profiles](/docs/reference/templates/how-templates-work#profiles) for how ZotLit selects one.
 
 The first row is <UiLabel name={m.settings_profile_default_name()} />, the default Profile: <UiLabel name={m.settings_profile_default_desc()} /> Its buttons are <UiLabel name={m.settings_profile_edit()} /> and <UiLabel name={m.workbench_more_actions()} />, whose menu holds <UiLabel name={m.settings_profile_share()} />.
 
@@ -173,6 +173,21 @@ In a batch, ZotLit selects a Profile separately for each item. A shared fallback
 
 Existing notes keep their recorded Profile when Match conditions change. The changes apply to new notes.
 
+#### Profile for new notes in a batch [#batch-profiles]
+
+Every new note is created from a [profile](/docs/reference/templates/how-templates-work#profiles), which decides its name, folder, properties, and body. When your vault holds added profiles, the confirmation carries a profile control for the new notes, above the item groups. Each control governs the rows it names:
+
+- <UiLabel name={m.batch_profile_unresolved_label({ count: "…" })} /> covers
+  items that no profile matched, or that several profiles matched. Its help
+  reads <UiLabel name={m.batch_profile_unresolved_help()} />.
+- <UiLabel name={m.batch_profile_affected_label({ count: "…" })} /> covers items
+  whose matched profile is unavailable. Its help reads
+  <UiLabel name={m.batch_profile_recovery_help()} />.
+- <UiLabel name={m.batch_profile_override_all_label()} /> overrides matching for
+  every new note in the batch.
+
+A control names its profile once every row it governs agrees on one. The line under it reads <UiLabel name={m.batch_profile_source_match()} /> when Profile Match selected that profile. To change the profile for those rows, select the control and choose another; its tooltip names the rows it governs. See [Use a different template for different notes](/docs/how-to/use-different-templates) for how matching picks a profile.
+
 ### Share and import [#profile-share-import]
 
 The <UiLabel name={m.settings_profile_share()} /> dialog and import consent dialog control whether a Profile carries its Match conditions:
@@ -205,7 +220,88 @@ sub-page with one row per Zotero highlight color. Each row takes
 <UiLabel name={m.settings_note_import_highlight_custom()} />
 with an emoji of your own. The mappings apply to all Profiles.
 
-See [Import Zotero notes](/docs/how-to/import-zotero-notes) for how the mappings render.
+See [Colored highlight syntax](#colored-highlights) for how the mappings render.
+
+### Colored highlight syntax [#colored-highlights]
+
+By default, red, orange, yellow, green, blue, and purple use matching circle emoji. Magenta, gray, and plum use colored HTML marks. You can change any of these nine mappings.
+
+For <UiLabel name={m.settings_note_import_highlight_custom()} />, enter one emoji in the field below. Combined emoji such as 👩‍🔬 are supported.
+
+An emoji mapping adds the selected emoji at the start of Colored Highlight Syntax:
+
+```markdown
+==🔵Highlighted text==
+```
+
+Your theme or another plugin must support the selected emoji to render its highlight color. Choosing a custom emoji does not add that rendering support.
+
+The setting applies to highlights created in Zotero's note editor and inline annotation excerpts. Annotation excerpts keep their Zotero backlinks:
+
+```markdown
+[==🔵Highlighted text==](zotero://...)
+```
+
+Highlights with unrecognized or missing source colors remain HTML. Empty or invalid custom emoji also use HTML marks. ZotLit keeps HTML when the text contains `==` because it conflicts with the Markdown delimiter.
+
+The setting is off by default. Turning it off uses HTML marks and keeps your saved mappings.
+
+Changes affect later imports and re-imports; existing files stay unchanged until re-imported. When <UiLabel name={m.settings_note_import_annotations_template_name()} /> is on, annotation-template output stays unchanged.
+
+### Render annotations from template [#imported-annotations-template]
+
+By default, annotation paragraphs in imported notes keep the HTML that Zotero inserted: highlighted or underlined excerpts with a citation link.
+
+Turn on <SettingsPath page={m.settings_page_note_import()} setting={m.settings_note_import_annotations_template_name()} /> for the Default profile, or set `importAnnotationsAsTemplate` in a profile document. ZotLit renders those paragraphs through the Annotation Section of that profile, producing the same rich callouts used in literature notes.
+
+<Callout type="warn" title="Replace on refresh">
+  With this setting on, each annotation's text, comment, color, and page come
+  from its saved Zotero data. Image and ink excerpts are prepared during import.
+  Edits you made to that paragraph inside the imported note are replaced. This
+  is why the setting is off by default.
+</Callout>
+
+#### What is rendered
+
+Only paragraphs that still match the original Zotero structure are rendered from the template. A paragraph is left untouched when:
+
+- You typed text before the excerpt.
+- You added other elements to the paragraph (a second annotation, extra formatting).
+- The paragraph is nested inside a list item, blockquote, or table cell.
+- The annotation was deleted in Zotero and can no longer be fetched.
+
+Highlight, underline, image, and ink annotations are eligible for template rendering. Note and text annotations (which carry no excerpt) are kept as Zotero inserted them.
+
+Image and ink paragraphs use [live excerpt images](/docs/reference/excerpt-images) with both PDF readers closed. Ordinary embedded images keep the snapshots stored in the Child Note. A paragraph converted through the annotation template does not also copy its stored snapshot.
+
+Re-import selects a new image version only for that Imported Note. Other notes and older image files stay unchanged. A failed refresh keeps a verified previous image when available; otherwise it writes an explanation and source link. Other content and notes can still import if an image fails.
+
+With <UiLabel name={m.settings_attachment_import_name()} /> off, live excerpts create no new image files. The import summary counts only images requested by the template and combines the results for a batch.
+
+The existing re-import rules still apply. Batch import skips notes whose Zotero modification time has not changed, even if a live annotation changed. Use the single-note re-import command to refresh such a note. With a missing annotation or blank annotation template, ZotLit converts the stored paragraph as ordinary note content.
+
+<Callout type="warn" title="Text after the citation">
+  Text you add after the citation mark (the comment slot) is not protected.
+  Zotero places the annotation's own comment in that position, so on refresh it
+  is replaced along with the rest of the paragraph. Place notes you want to keep
+  in a separate paragraph.
+</Callout>
+
+### Citations in imported notes [#imported-note-citations]
+
+The imported note's body is the Zotero note's HTML converted to Markdown. Citations within it render through [the citation text](/docs/how-to/customize-a-template#citation-text), always as the `main` variant.
+
+Each cited reference resolves its citation key in this order:
+
+1. The live Zotero item's own citation key.
+2. The citation snapshot embedded in the Zotero note.
+3. A visible sentinel: the Zotero item key with `?` appended (e.g. `-@ABC123?` in the built-in citation text). The trailing `?` makes unresolved citations greppable in your vault.
+
+If every cited reference within a single citation is unresolvable (no citation key from any source), ZotLit keeps that citation's original HTML verbatim. Nothing is lost.
+
+### Profile of an imported note [#imported-note-profile]
+
+An imported note records the profile that imported it in its `zotlit-profile` frontmatter field (see [Imported note frontmatter](/docs/reference/templates/data#imported-note-frontmatter)). A re-import reads the field back, so the note keeps rendering through the profile that created it. When that profile no longer exists, ZotLit reports <UiLabel name={m.notice_imported_note_profile_unknown({ stamp: "…", target: "…" })} /> and offers <UiLabel name={m.profile_switch_recovery()} />.
 
 ## Citations
 
@@ -384,7 +480,7 @@ These rows support conversion with a user-installed Pandoc CLI. They are separat
 | <UiLabel name={m.settings_citation_pandoc_guide_name()} />    | None | Read-only guide action                                               | None    | None                     | Per plugin installation    |
 
 <UiLabel name={m.settings_citation_pandoc_tutorial_name()} />: Opens [Build a
-Pandoc citation workflow](/docs/tutorial/pandoc-citation-workflow) at its stable
+Pandoc citation workflow](/docs/how-to/pandoc-citation-workflow) at its stable
 URL.
 
 <UiLabel name={m.settings_citation_pandoc_files_name()} />: Save the
@@ -432,7 +528,7 @@ Open this sub-page from <SettingsPath page={m.settings_page_zotero()} setting={m
 
 | Option                                                 | Behavior                                                                                                                                                                               |
 | ------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| <UiLabel name={m.settings_db_read_mode_auto()} />      | Picks the best available mode for your platform. See [How ZotLit connects to Zotero](/docs/concepts/how-zotlit-connects-to-zotero) for details.                                        |
+| <UiLabel name={m.settings_db_read_mode_auto()} />      | Picks the best available mode for your platform. See [How ZotLit connects to Zotero](/docs/reference/zotero-connection) for details.                                                   |
 | <UiLabel name={m.settings_db_read_mode_reflink()} />   | Fast, lightweight snapshot. What <UiLabel name={m.settings_db_read_mode_auto()} /> uses on macOS and Linux filesystems that support cloning.                                           |
 | <UiLabel name={m.settings_db_read_mode_copy()} />      | Byte-for-byte copy of the database file. Works on any filesystem but slower and uses more disk space. <UiLabel name={m.settings_db_read_mode_auto()} /> does not select this mode.     |
 | <UiLabel name={m.settings_db_read_mode_immutable()} /> | Reads the database file directly. What <UiLabel name={m.settings_db_read_mode_auto()} /> falls back to when cloning is unavailable. Recent edits in Zotero may not appear immediately. |
@@ -461,6 +557,10 @@ row has no delete action, so the list is never empty.
 Switching to <UiLabel name={m.settings_library_scope_selected()} /> starts at <UiLabel name={m.settings_library_scope_personal()} />. Switching to <UiLabel name={m.settings_library_scope_all()} /> discards the list you had.
 
 ZotLit stores each selection as a stable reference: <UiLabel name={m.settings_library_scope_personal()} /> as itself, a group library by its Zotero group ID. Group names and Zotero's internal library numbers are never stored, so a renamed group keeps its place in the list and shows its current name.
+
+While more than one library contributes items, the confirmation names the library beside each status heading, so identical statuses stay apart. One contributing library keeps the plain headings.
+
+While more than one library contributes notes, the <UiLabel name={m.batch_import_title()} /> modal names the library beside each heading.
 
 #### An unavailable library [#unavailable-library]
 
@@ -567,7 +667,7 @@ Open this page from <SettingsPath page={m.settings_page_attachments()} />.
   <UiLabel name={m.settings_attachment_import_name()} /> is on.
 </Callout>
 
-Generated [excerpt images](/docs/concepts/excerpt-images) require <UiLabel name={m.settings_attachment_import_name()} />. When it is off, ZotLit creates no new excerpt files for notes. It keeps a verified existing image when possible; otherwise it writes an unavailable-image explanation and source link. The annotation view and its device cache work independently of this setting.
+Generated [excerpt images](/docs/reference/excerpt-images) require <UiLabel name={m.settings_attachment_import_name()} />. When it is off, ZotLit creates no new excerpt files for notes. It keeps a verified existing image when possible; otherwise it writes an unavailable-image explanation and source link. The annotation view and its device cache work independently of this setting.
 
 ### Approved folders
 
@@ -670,6 +770,16 @@ A file without the `zotlit-` prefix is ignored and gets no row. See [template do
 | <UiLabel name={m.settings_local_server_active_port_name()} /> | (read-only)       | Active port or status     | No listener | Server on  | None    |
 | <UiLabel name={m.settings_live_updates_hostname_name()} />    | `server.hostname` | Text                      | `127.0.0.1` | Server on  | Synced  |
 
+<Callout type="warn">
+  A large selection may exceed the length limit for an `obsidian://` link. When
+  that happens, ZotLit sends the item list over HTTP to the ZotLit server
+  running inside Obsidian. If the server is not enabled, Zotero shows an alert
+  asking you to enable it or select fewer items. You can enable the ZotLit
+  server under <SettingsPath page={m.settings_page_advanced()} /> in the{" "}
+  <UiLabel name={m.settings_advanced_local_server_heading()} /> group. See [Set
+  up live updates](/docs/how-to/set-up-live-updates).
+</Callout>
+
 The server binds to the configured hostname, which defaults to this computer's loopback address. It tries the configured port, then up to 9 higher ports, stopping at 65535. <UiLabel name={m.settings_local_server_active_port_name()} /> reports the port actually used. ZotLit Companion's notification URL must use that port.
 
 Turning off <UiLabel name={m.settings_local_server_enabled_name()} /> stops Live Update connections. <UiLabel name={m.settings_live_updates_enabled_name()} /> keeps its value and is in the [Sync with Zotero](#sync) group on <SettingsPath page={m.settings_page_zotero()} />.
@@ -724,7 +834,7 @@ excerpt images for this vault on this device. Select
 <UiLabel name={m.settings_excerpt_cache_clear_action()} /> in the confirmation
 to clear it. Saved note images and Zotero's image cache remain unchanged.
 
-The cache survives restarts and has a 256 MiB limit. ZotLit removes the least recently used entries when it needs space. Cleared images are generated again when requested. See [Cache and freshness](/docs/concepts/excerpt-images#freshness) for the PDF file checks and their limits.
+The cache survives restarts and has a 256 MiB limit. ZotLit removes the least recently used entries when it needs space. Cleared images are generated again when requested. See [Cache and freshness](/docs/reference/excerpt-images#freshness) for the PDF file checks and their limits.
 
 ## Where settings moved [#moved]
 

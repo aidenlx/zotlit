@@ -4,9 +4,11 @@ import type {
   Article,
   BlogPosting,
   BreadcrumbList,
+  FAQPage,
   Organization,
   Person,
   SoftwareApplication,
+  TechArticle,
   Thing,
   WebSite,
   WithContext,
@@ -116,6 +118,86 @@ export function changelogArticleSchema(input: {
     datePublished: input.date,
     publisher: organization,
     url: absoluteUrl(input.url),
+  };
+}
+
+/** The URL a schema names for a page: its canonical edition, absolutized. */
+function canonicalUrl(path: string): string {
+  return absoluteUrl(getPageLocaleState(path, getLocale()).canonicalPath);
+}
+
+/**
+ * A docs page as a TechArticle, the Article type schema.org gives technical
+ * documentation and how-to guides.
+ *
+ * @param modified last commit day in ISO form, when git knows one.
+ */
+export function docsArticleSchema(input: {
+  title: string;
+  description?: string;
+  modified?: string;
+  url: string;
+}): WithContext<TechArticle> {
+  const localeState = getPageLocaleState(input.url, getLocale());
+  const url = absoluteUrl(localeState.canonicalPath);
+  return {
+    "@context": "https://schema.org",
+    "@type": "TechArticle",
+    headline: input.title,
+    ...(input.description !== undefined && {
+      description: input.description,
+    }),
+    ...(input.modified !== undefined && { dateModified: input.modified }),
+    inLanguage: localeState.contentLocale,
+    publisher: organization,
+    url,
+    mainEntityOfPage: url,
+  };
+}
+
+export interface FaqEntry {
+  question: string;
+  /** Plain text, the same words the page shows under the question. */
+  answer: string;
+}
+
+export function faqPageSchema(input: {
+  url: string;
+  entries: FaqEntry[];
+}): WithContext<FAQPage> {
+  return {
+    "@context": "https://schema.org",
+    "@type": "FAQPage",
+    url: canonicalUrl(input.url),
+    mainEntity: input.entries.map((entry) => ({
+      "@type": "Question",
+      name: entry.question,
+      acceptedAnswer: { "@type": "Answer", text: entry.answer },
+    })),
+  };
+}
+
+/**
+ * A `/learn` lesson.
+ * @param modified last commit day in ISO form, when git knows one.
+ */
+export function lessonArticleSchema(input: {
+  title: string;
+  description: string;
+  modified?: string;
+  url: string;
+  /** Root-relative path of the lesson's social card. */
+  image: string;
+}): WithContext<Article> {
+  return {
+    "@context": "https://schema.org",
+    "@type": "Article",
+    headline: input.title,
+    description: input.description,
+    ...(input.modified !== undefined && { dateModified: input.modified }),
+    publisher: organization,
+    url: absoluteUrl(input.url),
+    image: absoluteUrl(input.image),
   };
 }
 

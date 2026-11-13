@@ -12,6 +12,7 @@ export const docsRoute = "/docs";
 export const changelogRoute = "/changelog";
 export const changelogFeedRoute = `${changelogRoute}/rss.xml`;
 export const blogRoute = "/blog";
+export const learnRoute = "/learn";
 
 export const gitConfig = {
   user: "aidenlx",
@@ -27,6 +28,14 @@ const docsSourceBranches = {
 /** The repository branch that publishes each documentation line. */
 export function docsSourceBranch(docsLine: DocsLine) {
   return docsSourceBranches[docsLine];
+}
+
+/**
+ * A docs page's own title — its H1, `<title>`, and every edition of it: the
+ * searcher-facing `searchTitle` when the page sets one, else the sidebar `title`.
+ */
+export function docsPageTitle(data: { title: string; searchTitle?: string }) {
+  return data.searchTitle ?? data.title;
 }
 
 /** `owner/name`, the form GitHub's API and giscus both name the repository by. */
@@ -50,6 +59,7 @@ export const ogTypes = [
   "blog",
   "changelog",
   "docs",
+  "learn",
   "workbench",
 ] as const;
 export type OgType = (typeof ogTypes)[number];

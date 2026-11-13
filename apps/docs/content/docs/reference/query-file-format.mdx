@@ -95,7 +95,7 @@ A view whose `type` and `from` do not fit shows a message in place of its rows.
 
 ## Filters [#filters]
 
-A filter is one [Filter Expression](/docs/concepts/how-zotlit-query-works#steps), or a group of filters under `and`, `or`, or `not`:
+A filter is one [Filter Expression](/docs/reference/how-queries-work#steps), or a group of filters under `and`, `or`, or `not`:
 
 ```yaml
 filters:
@@ -116,11 +116,11 @@ A filter can name the Query Context as `this.item` and `this.attachment`:
 | `attachments` | `item == this.item`                        | `indexedKey == this.attachment.indexedKey` |
 | `items`       | `indexedKey == this.item.indexedKey`       |                                            |
 
-In an embed or a query block, `this.item` is the item that the note's `zotero-key` property names. In a query file's own tab, `this` has no value. See [`this`: the paper of the note](/docs/concepts/query-files-and-query-blocks#this).
+In an embed or a query block, `this.item` is the item that the note's `zotero-key` property names. In a query file's own tab, `this` has no value. See [`this`: the paper of the note](/docs/reference/how-queries-work#this).
 
 ## Formulas [#formulas]
 
-`formulas` maps each formula name to a [Filter Expression](/docs/concepts/how-zotlit-query-works#steps). A view shows the result as the property `formula.<name>`:
+`formulas` maps each formula name to a [Filter Expression](/docs/reference/how-queries-work#steps). A view shows the result as the property `formula.<name>`:
 
 ```yaml
 formulas:
@@ -146,13 +146,13 @@ views:
 
 A view computes only the formulas that its `order` and `filters` use. A formula that uses itself through other formulas is a mistake.
 
-A formula that cannot run on the records of a view marks its property in that view only. For example, a formula `colour` with the expression `colorName` runs in an annotations view. An items view of the same file that shows `formula.colour` marks it, and its other properties stay on screen. A record on which a formula cannot compute its result shows an [Error Value](/docs/concepts/how-zotlit-query-works#error-values) in that cell.
+A formula that cannot run on the records of a view marks its property in that view only. For example, a formula `colour` with the expression `colorName` runs in an annotations view. An items view of the same file that shows `formula.colour` marks it, and its other properties stay on screen. A record on which a formula cannot compute its result shows an [Error Value](/docs/reference/how-queries-work#error-values) in that cell.
 
 ## Vault properties [#vault]
 
 A vault property, `vault.<name>`, is the value of the frontmatter key `<name>` on the paper's Literature Note. The text after `vault.` is the key as the note writes it, with its letter case and hyphens. For example, `vault.reading-status` reads the `reading-status` property of each paper's note.
 
-Vault properties work in views with `from: items`. [Properties from your Literature Notes](/docs/concepts/query-files-and-query-blocks#vault) explains how ZotLit reads them.
+Vault properties work in views with `from: items`. [Properties from your Literature Notes](/docs/reference/how-queries-work#vault) explains how ZotLit reads them.
 
 | Key          | Takes a vault property                                                      |
 | ------------ | --------------------------------------------------------------------------- |
@@ -190,7 +190,7 @@ The <UiLabel name={m.query_view_properties()} /> menu does not list these keys, 
 
 A key that you type by hand into `order`, such as `vault.tags`, still shows as a column.
 
-A key that the note's own [profile](/docs/concepts/profiles) writes with the `replace` [merge strategy](/docs/reference/templates/frontmatter#merge-strategies) is read-only in the Table, because the next note update overwrites it. The cell shows a lock icon when you point to it. Out of the box, the Default profile writes `title`, `related`, `collections`, and `citekey` this way. Keys with `keep` or `append` stay editable.
+A key that the note's own [profile](/docs/reference/templates/how-templates-work#profiles) writes with the `replace` [merge strategy](/docs/reference/templates/frontmatter#merge-strategies) is read-only in the Table, because the next note update overwrites it. The cell shows a lock icon when you point to it. Out of the box, the Default profile writes `title`, `related`, `collections`, and `citekey` this way. Keys with `keep` or `append` stay editable.
 
 ### Values that an edit writes [#vault-values]
 
@@ -297,7 +297,7 @@ ZotLit writes the view names in the app's language.
   <Card
     title="Query files and query blocks"
     description="Views, layouts, where changes save, and what this.item means."
-    href="/docs/concepts/query-files-and-query-blocks"
+    href="/docs/reference/how-queries-work"
   />
   <Card
     title="Commands"

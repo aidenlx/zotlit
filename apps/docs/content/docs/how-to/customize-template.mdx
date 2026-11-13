@@ -1,0 +1,145 @@
+---
+title: "Customize your annotations"
+searchTitle: "Show Zotero highlights as quote callouts in Obsidian"
+description: "Insert Zotero highlights into your literature note as Obsidian quote callouts that show each highlight's color, by editing the annotation template."
+---
+
+import { Steps, Step } from "fumadocs-ui/components/steps";
+import { Card, Cards } from "fumadocs-ui/components/card";
+import { Callout } from "@/components/callout";
+import { Command } from "@/components/command";
+import { SettingsPath } from "@/components/settings-path";
+import { UiLabel } from "@/components/ui-label";
+import { m } from "@/paraglide/messages.js";
+
+Change how an annotation looks when you insert it into your first literature note. You will use the Template Workbench View in Obsidian. This tutorial continues from [Create your first literature note](/learn/connect-zotero-to-obsidian).
+
+<Callout type="info" title="Before you start">
+  Use the literature note from [the first
+  tutorial](/learn/connect-zotero-to-obsidian). Its paper needs at least one
+  highlight in Zotero. If it has none, add one in the Zotero PDF reader. It
+  appears in the note's Annotations section without any other step.
+</Callout>
+
+## Change the callout type
+
+The built-in annotation format uses `[!note]` as the Obsidian callout type. You will change it to `[!quote]`, then insert an annotation into your note to see the result.
+
+<Steps>
+  <Step>
+    ### Open the Template Workbench View
+
+    Open the literature note in Obsidian. Run <Command name={m.template_workbench_open_layout()} />.
+
+    ZotLit opens the template document used by this note in a new window and selects its paper for the preview. When you customize the built-in template, ZotLit saves an editable copy in your template folder. The copy remains if you close the window without changes.
+
+    Read the shared-template guidance above the editor: The Annotation tab changes annotations you insert from now on, in every note that uses this template. Annotations you inserted earlier stay as they are.
+
+    The window shows one view with the editor on the left and the Preview panel on the right. The Fields popover stays closed until you select <UiLabel name={m.workbench_view_fields()} /> in the view header.
+
+  </Step>
+  <Step>
+    ### Open the annotation format
+
+    Select the <UiLabel name={m.workbench_tab_annotation()} /> tab. The editor shows the format used for one annotation.
+
+    The first annotation may be an ink drawing with no text, so the preview can look nearly empty. Select the search icon (<UiLabel name={m.workbench_choose_annotation()} />) in the header above the editor and pick a highlight, such as `Highlight: Identify Your Message`. The preview shows it under <UiLabel name={m.workbench_annotation_example()} />.
+
+  </Step>
+  <Step>
+    ### Change the callout type
+
+    Find `[!note]` in the annotation format and change it to `[!quote]`.
+
+    ZotLit saves the template document automatically. Check that the highlight now appears in a quote callout in the preview.
+
+    ![The Template Workbench window with the Annotation tab open. The callout line in the editor now uses the quote type, and the Preview panel on the right shows the chosen highlight in a quote callout titled Page 1](/img/tutorial/customize-template-workbench-quote.webp)
+
+  </Step>
+  <Step>
+    ### Insert the annotation into your note
+
+    Go back to the literature note in the main Obsidian window. Click in the note below the Annotations section, so the cursor sits there.
+
+    The <UiLabel name={m.annot_view_name()} /> view in the sidebar follows the active note and lists its annotations as cards. If the view is closed, run <Command name={m.command_open_annot_view_name()} />.
+
+    Right-click a highlight's card and select <UiLabel name={m.annot_view_menu_insert()} />. ZotLit inserts the annotation at the cursor as a quote callout, with the highlighted text and a citation.
+
+    ![A note with one inserted annotation in a quote callout titled Page 1, below the live Annotations section](/img/tutorial/customize-template-inserted-quote.webp)
+
+  </Step>
+</Steps>
+
+<Callout type="info" title="Why the Annotations section looks the same">
+  The live cards in the Annotations section do not use this format. It applies
+  when you insert an annotation into a note, by the menu or by a drag, and the
+  inserted copy stays as written. To have every annotation as text in the note,
+  read [Default templates](/docs/reference/templates/defaults).
+</Callout>
+
+## Add the highlight color
+
+Template fields insert data from Zotero. You will add the annotation's `colorName` field to the callout title.
+
+<Steps>
+  <Step>
+    ### Return to the annotation format
+
+    Go back to the Workbench window and stay on the <UiLabel name={m.workbench_tab_annotation()} /> tab. If you closed the window, run <Command name={m.template_workbench_open_layout()} /> from the literature note and select the tab again.
+
+  </Step>
+  <Step>
+    ### Insert the color field
+
+    Place the cursor at the end of the callout title line, after `{% endif %}`. Add a comma and a space, then type `{{` to open the template field list. Until you pick a field, the Workbench reports a syntax problem. It clears once the field is in place.
+
+    Select `colorName`. The line now contains:
+
+    ```liquid
+    [!quote] {% if zt.pageLabel and zt.pageLabel != "" %}Page [{{ zt.pageLabel }}]({{ zt.backlink }}){% else %}[Zotero]({{ zt.backlink }}){% endif %}, {{ zt.colorName }}
+    ```
+
+  </Step>
+  <Step>
+    ### Check the preview
+
+    The preview title now ends with the annotation's highlight color, such as `Page 1, blue`.
+
+  </Step>
+  <Step>
+    ### Insert another annotation
+
+    Back in the note, click below the callout you inserted. Right-click another card and select <UiLabel name={m.annot_view_menu_insert()} />.
+
+    The new callout's title now includes its highlight color. Annotations you inserted earlier keep their old title.
+
+    ![The same note with a second inserted callout whose title ends with its color](/img/tutorial/customize-template-inserted-color.webp)
+
+  </Step>
+</Steps>
+
+## Restore the built-in profile
+
+To remove these changes from the Default profile, open <SettingsPath />. Select <UiLabel name={m.settings_profile_document_restore()} /> on the <UiLabel name={m.settings_profile_document_name()} /> row, then confirm with <UiLabel name={m.settings_profile_document_restore_action()} />.
+
+ZotLit moves the custom profile document to Obsidian's configured trash. New insertions then use the built-in format, and text you already inserted stays as it is.
+
+## What's next
+
+<Cards>
+  <Card
+    title="Template Workbench View"
+    description="Learn what each editor tab controls and how previews work."
+    href="/docs/reference/template-workbench-view"
+  />
+  <Card
+    title="Explore template data"
+    description={`Use the ${m.template_data_explorer_view_name()} to inspect every available template field.`}
+    href="/docs/how-to/explore-template-data"
+  />
+  <Card
+    title="Customize a template"
+    description="Edit each part of a profile and apply it to existing notes."
+    href="/docs/how-to/customize-a-template"
+  />
+</Cards>

@@ -3,7 +3,7 @@
 @import "fumadocs-ui/css/neutral.css";
 @import "fumadocs-ui/css/preset.css";
 
-/* The four faces of the "Manuscript & Machine" type system, self-hosted from
+/* The four faces of the site's type system, self-hosted from
    Fontsource so the site serves its own font files. Each family ships one
    @font-face per unicode subset, so a reader only downloads the subset the
    page actually uses. Gelasio and Inter both load upright and italic; IBM Plex
@@ -87,58 +87,217 @@
 
 /* ZotLit brand palette — see docs/brand.md. Orange carries the interactive
    accent; navy/light ink carries structure and drives the mark. */
-/* "Manuscript & Machine" site theme — cream ground, navy ink, deep-orange
+/* "Journal" site theme — warm paper ground, near-black ink, deep-orange
    accent. Applies site-wide (including /docs) since one token system drives
-   the whole site. */
+   the whole site. --color-fd-primary is the accent text tone, which carries
+   text and the fills that carry text; --color-fd-ring is the brighter accent
+   for marks (focus rings, dots, rules). Contrast is measured in DESIGN.md.
+   @see apps/docs/DESIGN.md → Tokens */
 :root {
-  --color-fd-background: oklch(97.33% 0.0111 89.72); /* #f9f6ee */
-  --color-fd-foreground: oklch(32.45% 0.0496 254.76); /* #22354d */
-  --color-fd-card: oklch(99.39% 0.0082 91.48); /* #fffdf7 */
-  --color-fd-card-foreground: oklch(32.45% 0.0496 254.76); /* #22354d */
-  --color-fd-popover: oklch(99.39% 0.0082 91.48); /* #fffdf7 */
-  --color-fd-popover-foreground: oklch(32.45% 0.0496 254.76); /* #22354d */
-  --color-fd-border: oklch(86.42% 0.0226 89.81); /* #d8d2c2 */
-  --color-fd-muted: oklch(94.87% 0.0137 92.98); /* #f1eee4 */
-  --color-fd-muted-foreground: oklch(52.94% 0.0384 255.32); /* #5d6d82 */
-  --color-fd-secondary: oklch(94.87% 0.0137 92.98); /* #f1eee4 */
-  --color-fd-secondary-foreground: oklch(32.45% 0.0496 254.76); /* #22354d */
-  --color-fd-accent: oklch(95.04% 0.0204 62.86); /* #f9ece1 */
-  --color-fd-accent-foreground: oklch(32.45% 0.0496 254.76); /* #22354d */
-  --color-fd-primary: oklch(
-    0.54 0.17 40.45
-  ); /* orange text and filled controls meet 4.5:1 on the light surfaces */
-  --color-fd-primary-foreground: oklch(96.13% 0.0111 89.72);
-  --color-fd-ring: oklch(0.58 0.17 40.45);
+  --color-fd-background: #f7f5f0;
+  --color-fd-foreground: #1b2029;
+  --color-fd-card: #ffffff;
+  --color-fd-card-foreground: #1b2029;
+  --color-fd-popover: #ffffff;
+  --color-fd-popover-foreground: #1b2029;
+  --color-fd-border: #e3dfd6;
+  --color-fd-muted: #f0ede6;
+  --color-fd-muted-foreground: #5f6672;
+  --color-fd-secondary: #f0ede6;
+  --color-fd-secondary-foreground: #1b2029;
+  --color-fd-accent: #fbf1e6;
+  --color-fd-accent-foreground: #1b2029;
+  --color-fd-primary: #b9461a;
+  --color-fd-primary-foreground: #ffffff;
+  --color-fd-ring: #e8622c;
+  /* The shadow ring: elevation for raised surfaces. */
+  --zt-shadow-ring:
+    0 0 0 1px oklch(0 0 0 / 0.06), 0 1px 2px -1px oklch(0 0 0 / 0.06),
+    0 2px 4px 0 oklch(0 0 0 / 0.04);
+  --zt-shadow-ring-hover:
+    0 0 0 1px oklch(0 0 0 / 0.08), 0 1px 2px -1px oklch(0 0 0 / 0.08),
+    0 2px 4px 0 oklch(0 0 0 / 0.06);
   --zotlit-ink: oklch(34.62% 0.0736 256.04); /* #1e3a5f */
   --zotlit-accent: oklch(65.74% 0.1789 40.45); /* #e8622c */
+  /* The lesson check line and its "Lesson N complete" label. @see DESIGN.md → Learn */
+  --zt-check: #1f5c39;
+  --zt-check-bg: #e9f3ec;
+  --zt-check-label: #2f7d4f;
+  /* Zotero's annotation colours: domain data, the same in both schemes. They
+     appear only where they mean Zotero highlights — inside the app windows on
+     the landing's desk. */
+  --z-yellow: #ffd400;
+  --z-red: #ff6666;
+  --z-green: #5fb236;
+  --z-blue: #2ea8e5;
+  --z-purple: #a28ae5;
+  --z-magenta: #e56eee;
+  --z-orange: #f19837;
+  --z-gray: #aaaaaa;
+  /* The highlighter: the one marked phrase on a page. */
+  --zt-highlighter: color-mix(in oklab, var(--z-yellow) 48%, transparent);
+  /* The landing's research desk: the shadow its objects cast, the washi tape
+     that names each one, the reader's marks on the open paper, and Obsidian's
+     purple, which appears only inside the app windows on the desk.
+     @see apps/docs/DESIGN.md → Landing */
+  --desk-shadow:
+    0 1px 1px rgb(60 45 20 / 0.07), 0 6px 14px -6px rgb(60 45 20 / 0.2),
+    0 22px 40px -20px rgb(60 45 20 / 0.3);
+  --desk-tape: color-mix(
+    in srgb,
+    var(--color-fd-primary) 15%,
+    var(--color-fd-background)
+  );
+  --desk-hl-yellow: rgb(255 212 0 / 0.5);
+  --desk-hl-green: rgb(95 178 54 / 0.36);
+  --desk-purple: #8a5cf5;
+  --desk-selected: color-mix(in srgb, #8a5cf5 13%, var(--color-fd-card));
+  --desk-own: color-mix(in srgb, #8a5cf5 5%, var(--color-fd-card));
+  --desk-window-shadow:
+    0 30px 70px -34px rgb(0 0 0 / 0.45), 0 2px 6px -2px rgb(0 0 0 / 0.08);
 }
 
 .dark {
-  --color-fd-background: oklch(23% 0.0232 262.36); /* #171d28 */
-  --color-fd-foreground: oklch(91.65% 0.0156 257.2); /* #dde4ee */
-  --color-fd-card: oklch(26.29% 0.0271 259.99); /* #1d2532 */
-  --color-fd-card-foreground: oklch(91.65% 0.0156 257.2); /* #dde4ee */
-  --color-fd-popover: oklch(26.29% 0.0271 259.99); /* #1d2532 */
-  --color-fd-popover-foreground: oklch(91.65% 0.0156 257.2); /* #dde4ee */
-  --color-fd-border: oklch(35.31% 0.0316 257.68); /* #313c4c */
-  --color-fd-muted: oklch(31.01% 0.0288 256.84); /* #27313f */
-  --color-fd-muted-foreground: oklch(70.71% 0.0339 255.63); /* #93a2b6 */
-  --color-fd-secondary: oklch(31.01% 0.0288 256.84); /* #27313f */
-  --color-fd-secondary-foreground: oklch(91.65% 0.0156 257.2); /* #dde4ee */
-  --color-fd-accent: oklch(32.99% 0.0116 9.17); /* #3b3334 */
-  --color-fd-accent-foreground: oklch(91.65% 0.0156 257.2); /* #dde4ee */
-  --color-fd-primary: oklch(
-    0.75 0.155 45
-  ); /* lifted orange, ~7:1 vs the dark ground */
-  --color-fd-primary-foreground: oklch(
-    0.22 0.04 256
-  ); /* near-black with navy tint, ~7:1 */
-  --color-fd-ring: oklch(0.75 0.155 45);
+  --color-fd-background: #121418;
+  --color-fd-foreground: #e9e6df;
+  --color-fd-card: #1b1e24;
+  --color-fd-card-foreground: #e9e6df;
+  --color-fd-popover: #1b1e24;
+  --color-fd-popover-foreground: #e9e6df;
+  --color-fd-border: #2d3037;
+  --color-fd-muted: #23262d;
+  --color-fd-muted-foreground: #9b978f;
+  --color-fd-secondary: #23262d;
+  --color-fd-secondary-foreground: #e9e6df;
+  --color-fd-accent: #2a221d;
+  --color-fd-accent-foreground: #e9e6df;
+  --color-fd-primary: #f0793f;
+  --color-fd-primary-foreground: #121418;
+  --color-fd-ring: #f0793f;
+  --zt-shadow-ring: 0 0 0 1px oklch(1 0 0 / 0.08);
+  --zt-shadow-ring-hover: 0 0 0 1px oklch(1 0 0 / 0.13);
   --zotlit-ink: oklch(90.94% 0.022 256.73); /* #d8e2f0 */
   --zotlit-accent: oklch(70.36% 0.163 44.66); /* #f0793f */
+  --zt-check: #7cc79a;
+  --zt-check-bg: #17261d;
+  --zt-check-label: #7cc79a;
+  --zt-highlighter: color-mix(in oklab, var(--z-yellow) 30%, transparent);
+  --desk-shadow:
+    0 1px 1px rgb(0 0 0 / 0.45), 0 8px 18px -6px rgb(0 0 0 / 0.6),
+    0 26px 44px -18px rgb(0 0 0 / 0.7);
+  --desk-tape: color-mix(
+    in srgb,
+    var(--color-fd-primary) 22%,
+    var(--color-fd-card)
+  );
+  --desk-hl-yellow: rgb(255 212 0 / 0.3);
+  --desk-hl-green: rgb(95 178 54 / 0.38);
+  --desk-purple: color-mix(in srgb, #8a5cf5 78%, var(--color-fd-foreground));
+  --desk-selected: color-mix(in srgb, #8a5cf5 24%, var(--color-fd-card));
+  --desk-own: color-mix(in srgb, #8a5cf5 8%, var(--color-fd-card));
+  --desk-window-shadow:
+    0 30px 70px -34px rgb(0 0 0 / 0.7), 0 0 0 1px oklch(1 0 0 / 0.04);
 }
 
 @theme inline {
+  /* Elevation: `shadow-ring` raises a surface; `shadow-ring-hover` lifts it. */
+  --shadow-ring: var(--zt-shadow-ring);
+  --shadow-ring-hover: var(--zt-shadow-ring-hover);
+  --color-check: var(--zt-check);
+  --color-check-bg: var(--zt-check-bg);
+  --color-check-label: var(--zt-check-label);
+
+  /* The landing's motion, once on load and under `motion-safe:` only, so the
+     prerendered page and reduced motion show the final frame.
+     The desk: each object drops onto the desk at its angle (`--desk-r`); the
+     highlighter sweeps across the headline; the table's ratings fill in, the
+     cell focus lands, the citation picker pops open and the caret blinks.
+     @see apps/docs/DESIGN.md → Landing */
+  /* `backwards`, not `both`: the last keyframe equals the object's own
+     transform, so once the drop ends no fill holds the object on a
+     composited layer, and its text is drawn sharp at the desk's scale. */
+  --animate-desk-drop: desk-drop 780ms cubic-bezier(0.18, 0.82, 0.24, 1)
+    backwards;
+  --animate-desk-sweep: desk-sweep 700ms cubic-bezier(0.6, 0.1, 0.3, 1) 2300ms
+    both;
+  --animate-desk-fill: desk-fill 300ms ease-out both;
+  --animate-desk-focus: desk-focus 2400ms steps(1) 1500ms both;
+  --animate-desk-pop: desk-pop 360ms cubic-bezier(0.2, 0.8, 0.3, 1) 1900ms both;
+  --animate-desk-blink: desk-blink 1.1s steps(1) 3;
+  @keyframes desk-drop {
+    from {
+      opacity: 0;
+      transform: translateY(-38px) rotate(calc(var(--desk-r, 0deg) - 5deg))
+        scale(1.07);
+    }
+    45% {
+      opacity: 1;
+    }
+    to {
+      opacity: 1;
+      transform: rotate(var(--desk-r, 0deg));
+    }
+  }
+  @keyframes desk-sweep {
+    from {
+      background-size: 0% 0.28em;
+    }
+  }
+  @keyframes desk-fill {
+    from {
+      opacity: 0;
+      transform: translateY(3px);
+    }
+  }
+  @keyframes desk-focus {
+    from {
+      opacity: 0;
+    }
+    10% {
+      opacity: 1;
+    }
+  }
+  @keyframes desk-pop {
+    from {
+      opacity: 0;
+      transform: translateY(-4px) scale(0.97);
+    }
+  }
+  @keyframes desk-blink {
+    50% {
+      opacity: 0;
+    }
+  }
+
+  /* The table demo ("Compare your papers"): a button press, a value typed
+     into place, a popup, the cell caret, and each beat's bar in the trail. */
+  --animate-demo-press: demo-press 420ms ease-out both;
+  --animate-demo-type: demo-type 300ms ease-out 220ms both;
+  --animate-demo-pop: demo-pop 320ms ease-out both;
+  --animate-demo-blink: desk-blink 0.9s steps(1) infinite;
+  @keyframes demo-press {
+    35% {
+      transform: scale(0.84);
+    }
+  }
+  @keyframes demo-type {
+    from {
+      opacity: 0;
+      transform: translateY(0.4em);
+    }
+  }
+  @keyframes demo-pop {
+    from {
+      opacity: 0;
+      transform: translateY(6px) scale(0.985);
+    }
+  }
+  @keyframes demo-beat {
+    from {
+      transform: scaleX(0);
+    }
+  }
+
   /* shadcn controls share the site's semantic palette. */
   --color-background: var(--color-fd-background);
   --color-foreground: var(--color-fd-foreground);
@@ -170,6 +329,17 @@
   --font-serif:
     "Gelasio Variable", "Gelasio Fallback", "Iowan Old Style", Charter, Georgia,
     serif;
+}
+
+@theme {
+  /* A lesson part fades and rises 6px as it comes on screen. @see DESIGN.md → Learn */
+  --animate-lesson-in: lesson-in 220ms ease both;
+  @keyframes lesson-in {
+    from {
+      opacity: 0;
+      transform: translateY(6px);
+    }
+  }
 }
 
 /* Accepted stable-id anchor: the TOC "On this page" h3 ships with this exact

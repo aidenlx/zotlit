@@ -41,7 +41,7 @@ Before you save, these must all be true:
 
 - The first line of the file is exactly `---`, and one later `---` line closes the manifest.
 - `id` is 12 letters or digits, and no other profile document in the folder carries the same one. Profiles that share an ID are all excluded from ZotLit.
-- The note source holds at most one managed block, opened with `{% managed %}` and closed with `{% endmanaged %}`. ZotLit re-renders that block alone when you update a note, and leaves the rest of the source as you wrote it. See [Literature notes and the managed region](/docs/concepts/literature-notes-and-the-managed-region) for what an update rewrites.
+- The note source holds at most one managed block, opened with `{% managed %}` and closed with `{% endmanaged %}`. ZotLit re-renders that block alone when you update a note, and leaves the rest of the source as you wrote it. See [Literature notes and the managed region](/docs/reference/literature-notes) for what an update rewrites.
 - Exactly one `--- zotlit:annotation ---` line appears, after the note source.
 - A document with `id: default` carries neither Match conditions nor bindings.
 - The properties ZotLit writes belong in the manifest, not in a note. See [Frontmatter](/docs/reference/templates/frontmatter) for the entry forms, the merge strategies, and the reserved keys.
@@ -79,11 +79,11 @@ The Problems area also offers <UiLabel name={m.workbench_problems_copy()} />, so
   <Card
     title="Template Workbench View"
     description="The tabs, the preview, and the modes that edit a profile."
-    href="/docs/concepts/template-workbench-view"
+    href="/docs/reference/template-workbench-view"
   />
   <Card
     title="Profiles"
     description="What a profile is, and how a note keeps the one that made it."
-    href="/docs/concepts/profiles"
+    href="/docs/reference/templates/how-templates-work#profiles"
   />
 </Cards>

@@ -15,6 +15,7 @@ import { paraglideOptions } from "./paraglide.config.js";
 import { agentSkillAssets } from "./src/lib/agent-skills.js";
 import { chinesePagesPlugin } from "./src/lib/chinese-pages-plugin.js";
 import { renderHeadersFile } from "./src/lib/headers.js";
+import { learnMediaPlugin } from "./src/lib/learn-media.js";
 import { createOgCardRenderer } from "./src/lib/og-card.js";
 import { ogCards } from "./src/lib/og-cards.js";
 import { prerenderPages } from "./src/lib/prerender-pages.js";
@@ -201,6 +202,7 @@ export default defineConfig(({ command }) => ({
   },
   plugins: [
     chinesePagesPlugin(packageRoot),
+    learnMediaPlugin(packageRoot),
     fumadocsServerOnWorker(),
     paraglideVitePlugin({
       ...paraglideOptions,

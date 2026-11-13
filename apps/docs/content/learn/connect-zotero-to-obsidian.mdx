@@ -1,0 +1,166 @@
+---
+title: Connect Zotero to Obsidian and write a literature note
+description: Learn how to connect Zotero to Obsidian and create your first literature note from a paper's highlights.
+lesson: 1
+minutes: 10
+media: connect-zotero-to-obsidian
+lede: In about 10 minutes, you will connect ZotLit to your Zotero library and create a literature note for a paper, ready for your Chapter 3 notes.
+note: Zotero can stay closed. ZotLit reads your library locally on this computer and sends nothing to a server. Nothing in this lesson changes your Zotero library, and no other add-on is needed.
+map:
+  zotero:
+    title: Local Zotero library
+    items: [Paper metadata, Highlighted PDFs, Data directory]
+  arrow: to-obsidian
+  label: Reads local library records and highlights into Obsidian
+  obsidian:
+    title: Obsidian vault
+    items: [Zotero library tab, PDF viewer, Literature note]
+needs:
+  - item: Obsidian
+    detail: Version 1.14.5 or later on a desktop computer
+  - item: Zotero
+    detail: Version 10 on the same computer
+  - item: Zotero paper
+    detail: One item with a highlighted PDF
+steps:
+  - name: Install
+    title: Install ZotLit
+    alt: The Zotero library tab opens showing the Let's get started badge and four setup steps above the paper list.
+  - name: Connect
+    title: Check that ZotLit found Zotero
+    alt: Connect to Zotero displays a green check with the data folder and item count above the full paper list.
+  - name: Find
+    title: Find a paper
+    alt: A card below the paper list displays the selected item's details alongside Open PDF and Write literature note buttons.
+  - name: Read
+    title: Open the PDF
+    alt: The PDF opens in a tab showing coloured highlights alongside an annotations list of comments and tags.
+  - name: Note
+    title: Write the literature note
+    alt: The literature note opens with the notice Literature note created, displaying links and an Annotations section.
+  - name: Write
+    title: Add your own thoughts
+    alt: The literature note displays a My thoughts heading and notes written directly above the Annotations section.
+end:
+  title: Connected library and your first literature note
+  caption: A literature note with your own thoughts kept cleanly above Zotero's highlights.
+  next: Read and annotate papers directly in Obsidian.
+---
+
+import { Check, Figure, Fix, Step } from "@/components/learn/lesson-mdx";
+import { UiLabel } from "@/components/ui-label";
+import { m } from "@/paraglide/messages.js";
+
+<Step n={1}>
+
+In Obsidian, open **Settings**, select **Community plugins**, and choose **Browse**. Search for `ZotLit`. Select **Install**, then select **Enable**. If Obsidian asks before browsing, select **Turn on community plugins**.
+
+<Check>
+  A tab named <UiLabel name={m.library_view_name()} /> opens. At the top sits a
+  badge reading <UiLabel name={m.welcome_badge()} /> with four setup steps above
+  your list of papers.
+</Check>
+
+<Fix title="A notice says Obsidian's installer is too old">
+  Download Obsidian again from obsidian.md/download, install it over your
+  existing version, and enable ZotLit.
+</Fix>
+
+<Fix title="No tab opened">
+  Select the ZotLit icon in the ribbon on the left edge of Obsidian.
+</Fix>
+
+</Step>
+
+<Step n={2}>
+
+Look at the first setup step, <UiLabel name={m.welcome_step_connect_title()} />. Once you see a green check, close the setup section by selecting the × button at its top right. Leave the other three setup items as they are.
+
+<Check>
+  <UiLabel name={m.welcome_step_connect_title()} /> shows a green check
+  alongside your Zotero data folder (such as `~/Zotero`) and item count. After
+  closing the setup section, your Zotero papers fill the tab.
+</Check>
+
+<Fix title={<>The tab reads <UiLabel name={m.library_view_not_found()} /></>}>Open Zotero, go to **Settings** > **Advanced**, and check the path under **Data Directory Location**. Return to Obsidian, select <UiLabel name={m.library_view_locate()} />, and choose that folder.</Fix>
+
+</Step>
+
+<Step n={3}>
+
+Click into <UiLabel name={m.library_view_search_placeholder()} /> and type a few words from the title, such as `reproducible`. Select the paper from the search results.
+
+<Check>
+  A card opens below the list showing the title, authors, journal, and year
+  (*PLOS Computational Biology, 9(10), e1003285 · 2013*), along with two
+  buttons: <UiLabel name={m.library_view_menu_open_pdf()} /> and{" "}
+  <UiLabel name={m.library_view_menu_write_note()} />.
+</Check>
+
+<Fix title="The list is empty">
+  Return to Step 2 and confirm that{" "}
+  <UiLabel name={m.welcome_step_connect_title()} /> has a green check.
+</Fix>
+
+</Step>
+
+<Step n={4}>
+
+On the paper's card, select <UiLabel name={m.library_view_menu_open_pdf()} />. ZotLit opens the PDF directly from where Zotero stores it without making a duplicate copy.
+
+<Check>
+  The PDF opens in a new tab. Your highlights appear in their original colours,
+  with a sidebar on the right listing each highlight, comment, and tag.
+</Check>
+
+<Fix title="No highlights show">
+  Scroll to a page containing highlights. If the paper has none in Zotero yet,
+  proceed to Step 5; you will add them in Lesson 2.
+</Fix>
+
+</Step>
+
+<Step n={5}>
+
+Switch back to the <UiLabel name={m.library_view_name()} /> tab. On the paper's card, select <UiLabel name={m.library_view_menu_write_note()} />.
+
+<Check>
+  A notice reads <UiLabel name={m.notice_created_note()} /> A new note named
+  after the citation key (`sandve2013`) opens in the `literatures` folder. It
+  displays the title, links to Zotero and the PDF, and an **Annotations**
+  section listing your highlights.
+</Check>
+
+<Fix
+  title={
+    <>
+      The button reads <UiLabel name={m.library_view_menu_open_note()} />
+    </>
+  }
+>
+  A literature note already exists for this paper. Select the button to open it.
+</Fix>
+
+</Step>
+
+<Step n={6}>
+
+Click directly beneath the line containing the two links. Type a heading, such as `My thoughts`, and write how this paper supports your thesis chapter.
+
+<Check>Your text appears above the **Annotations** section.</Check>
+
+<Figure>
+
+| Note area                          | What belongs here                                     | What ZotLit does                                           |
+| :--------------------------------- | :---------------------------------------------------- | :--------------------------------------------------------- |
+| **Your text** (e.g. `My thoughts`) | Your summary, synthesis, and ideas for your draft     | Never touches or overwrites it; never sends it to Zotero   |
+| **Annotations**                    | Highlights, tags, and comments shown live from Zotero | Manages this section automatically and keeps it up to date |
+
+</Figure>
+
+<Fix title="There are no highlight cards">
+  The paper has no highlights in Zotero yet. They will appear here automatically
+  once you add one.
+</Fix>
+
+</Step>

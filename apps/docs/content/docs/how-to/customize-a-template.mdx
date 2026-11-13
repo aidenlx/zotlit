@@ -1,195 +1,82 @@
 ---
 title: "How to customize a template"
-description: "Edit a literature note profile, the citation text, or a shared partial in the Template Workbench View, and preview the result."
+searchTitle: "Customize your Obsidian literature note template"
+description: "Change what a Zotero paper's literature note holds in Obsidian: its name, folder, properties, body, and highlight format, with a live preview as you edit."
 ---
 
-import { Steps, Step } from "fumadocs-ui/components/steps";
-import { Card, Cards } from "fumadocs-ui/components/card";
+import { Accordion, Accordions } from "fumadocs-ui/components/accordion";
 import { Command } from "@/components/command";
 import { SettingsPath } from "@/components/settings-path";
 import { UiLabel } from "@/components/ui-label";
 import { m } from "@/paraglide/messages.js";
 
-Use the Template Workbench View to change a literature note's name, folder, properties, body, or annotation format, to change the text a citation inserts, or to share a piece of template text between profiles.
+1. Open <SettingsPath />. On the <UiLabel name={m.settings_profile_document_name()} /> row, select the pencil button, <UiLabel name={m.settings_profile_edit()} />.
+2. Pick a paper to preview with <UiLabel name={m.workbench_choose_item()} />.
+3. Edit in the tabs and watch the <UiLabel name={m.workbench_result_heading()} />.
+4. Edits save by themselves and apply to new notes. Run <Command inline name={m.command_update_note_name()} /> on an existing note to bring its properties up to date.
 
-A profile is the document that authors one literature note. See [Profiles](/docs/concepts/profiles) for what a profile holds and how ZotLit chooses one. If your vault still holds 2.1 template files, [Migrate from 2.1 templates](/docs/how-to/migrate-from-2.1-templates) folds them into profile documents first.
+What you edit is a **profile**: one file in your template folder (`templates` by default) that writes every literature note of its kind. The Default profile's file is `zotlit-profile.default.md`; ZotLit creates it the first time you select <UiLabel name={m.settings_profile_edit()} />. See [How templates work](/docs/reference/templates/how-templates-work).
 
 ## Edit a literature note profile
 
 ![The Template Workbench for Rougier et al. (2014), Ten Simple Rules for Better Figures: the Reading notes profile's note template in the editor on the left, the Note preview in the middle with the rendered properties, title, and annotations, and the Fields popover open at the right edge with the paper's fields in sections](/img/how-to/template-workbench-layout.webp)
 
-<Steps>
-  <Step>
-    ### Open the profile
+1. **Open the profile.** In Obsidian, open <SettingsPath />. On the <UiLabel name={m.settings_profile_document_name()} /> row, select the pencil button, tooltip <UiLabel name={m.settings_profile_edit()} />.
+   The Template Workbench View opens in its own window with the Preview panel shown, creating `zotlit-profile.default.md` in your template folder if it does not yet exist.
+2. **Choose a paper for the preview.** Select <UiLabel name={m.workbench_choose_item()} /> in the row above the panels, then pick a paper under <UiLabel name={m.workbench_recently_updated()} />, choose <UiLabel name={m.workbench_search_zotero()} />, or select a built-in example.
+   The editor tabs, Preview panel, and Fields panel show that paper.
+3. **Edit a tab.** Select a tab to edit: <UiLabel name={m.workbench_tab_note()} /> (the note body), <UiLabel name={m.workbench_tab_properties()} />, <UiLabel name={m.workbench_tab_annotation()} /> (how one highlight is written), <UiLabel name={m.workbench_tab_name_and_folder()} />, or <UiLabel name={m.workbench_tab_match()} />.
+   The <UiLabel name={m.workbench_result_heading()} /> in the Preview panel updates as you type.
+4. **Add a field from the paper.** Place your cursor in the template. Select <UiLabel name={m.workbench_view_fields()} /> in the view header, then select the insert button on a field's row, or choose <UiLabel name={m.workbench_fields_put_in_note()} /> from the row menu.
+   The field inserts at your cursor and the popover closes. (Hold Shift while selecting the insert button to keep the popover open.)
+5. **Let it save.** Edits save automatically as you work, with Obsidian's Undo and Redo.
+   New notes use your edited profile. Existing notes stay unchanged; running <Command inline name={m.command_update_note_name()} /> refreshes their properties, while <Command inline name={m.command_overwrite_note_name()} /> replaces the whole body after a confirmation.
 
-    In Obsidian, open <SettingsPath />. On the <UiLabel name={m.settings_profile_document_name()} /> row, select its pencil button, tooltipped <UiLabel name={m.settings_profile_edit()} />.
+For a full guide to every panel, pin, and setting in this view, see the [Template Workbench View reference](/docs/reference/template-workbench-view).
 
-    Customizing the built-in Default creates its document in the configured template folder before editing becomes available. If a custom document already exists, ZotLit opens it. If creation fails, use the retry action beside the error.
+<Accordions multiple>
+<Accordion title="Edit the profile of a note you already have" id="existing-note">
 
-    To edit the profile used by an existing literature note, open that note and run <Command name={m.template_workbench_open_layout()} />. The same action is in the note's file menu. ZotLit opens the Template Workbench View with that note's item selected.
+Open the literature note and run the command <Command inline name={m.template_workbench_open_layout()} />, or select <UiLabel name={m.template_workbench_open_layout()} /> from the note's file menu. The Template Workbench View opens with that note's paper already selected.
 
-    Every way opens the view in its own Obsidian window, with the Preview panel shown. If that window is already open, ZotLit brings it to the front. Select <UiLabel name={m.workbench_show_preview()} /> in the view header to hide or show the Preview panel. Select <UiLabel name={m.workbench_view_fields()} /> in the view header to open the Fields popover. See [The Preview and Fields panels](/docs/concepts/template-workbench-view#panels).
+</Accordion>
+<Accordion title="Change the text a citation inserts" id="citation-text">
 
-  </Step>
-  <Step>
-    ### Choose preview data
+- Open <SettingsPath page={m.settings_page_citations()} />. On the <UiLabel name={m.settings_citation_text_name()} /> row, select the pencil button, tooltip <UiLabel name={m.settings_citation_text_open()} /> (or run the command <Command inline name={m.command_customize_citation_text_name()} />).
+  The file `zotlit-citation.md` opens on the <UiLabel name={m.workbench_tab_citation()} /> tab. (If you have not customized it before, the row reads <UiLabel name={m.settings_template_using_default()} /> and ZotLit creates the file from the built-in text first.)
+- The <UiLabel name={m.workbench_citation_result_heading()} /> shows how your citation will look. From the pane menu, choose <UiLabel name={m.template_workbench_preview_main_citation()} /> or <UiLabel name={m.template_workbench_preview_alt_citation()} /> to test both types, or choose <UiLabel name={m.template_workbench_use_example()} /> to load built-in citation shapes.
+- One template controls both main and alternate citations; [`zt.variant`](/docs/reference/templates/data#citation-variant) identifies which one was requested. See [Fields a citation template reads](/docs/reference/templates/data#citation-templates).
+- Citations already in your notes are plain text and stay as written. Edits apply to the next citation you insert.
+- To discard your changes, select the rotate button, tooltip <UiLabel name={m.settings_template_reset()} />, on the <UiLabel name={m.settings_citation_text_name()} /> row. Confirm <UiLabel name={m.settings_citation_text_reset_confirm_title()} /> to move your file to Obsidian's trash.
 
-    If no item is selected, choose one in the Fields panel, or with <UiLabel name={m.workbench_choose_item()} /> in the row above the panels. You can try a built-in journal article, conference paper, book, or thesis example.
+</Accordion>
+<Accordion title="Use one piece of text in several profiles" id="share-a-partial">
 
-    Choose a library item under <UiLabel name={m.workbench_recently_updated()} />, or select <UiLabel name={m.workbench_search_zotero()} /> to search your Zotero library. The editor tabs, the Preview panel and the Fields panel then show that item, and the Fields panel lists its fields.
+- A **partial** is a reusable template file (`zotlit-partial.<name>.md`) that any profile or citation template can call by name.
+- To create one, open <SettingsPath page={m.settings_page_profiles()} setting={m.settings_partials_heading()} /> and select <UiLabel name={m.settings_partial_add()} />. Alternatively, select text inside the workbench editor, right-click it, and choose <UiLabel name={m.template_workbench_extract_partial()} />.
+- Call the partial in Liquid using `{% render "authors" with zt as zt %}` (typing `{% render "` lists your partials and inserts the arguments automatically). In Eta, call `<%~ include("authors", zt) %>`.
+- For details on naming and parameters, see [Calling a partial](/docs/reference/templates/syntax#calling-a-partial).
 
-    For annotation formatting, select <UiLabel name={m.workbench_choose_annotation()} />. Search annotations from the selected item or try a highlight, underline, note, text, image, or ink example. Annotation examples keep their own parent item data; the note preview keeps its selected item.
+</Accordion>
+<Accordion title="Go back to the built-in template" id="restore-built-in">
 
-    One view holds one chosen item and one chosen annotation, whichever surface you choose them from. A second Template Workbench View keeps its own choice.
+On the <UiLabel name={m.settings_profile_document_name()} /> row in <SettingsPath />, select <UiLabel name={m.settings_profile_document_restore()} />. Confirm <UiLabel name={m.settings_profile_document_restore_title()} />. ZotLit moves your profile file to Obsidian's trash, where you can recover it if needed. Existing notes keep their current content until updated.
 
-    Data used for the preview updates automatically. To load it again, select <UiLabel name={m.workbench_refresh_item()} /> from the pane menu while the Preview panel is shown. In <UiLabel name={m.workbench_preview_on_demand()} /> mode, select <UiLabel name={m.workbench_preview_run()} /> to render the preview.
+</Accordion>
+</Accordions>
 
-  </Step>
-  <Step>
-    ### Edit and preview
+## If you see something else
 
-    Use the <UiLabel name={m.workbench_tab_note()} />, <UiLabel name={m.workbench_tab_properties()} />, <UiLabel name={m.workbench_tab_annotation()} />, <UiLabel name={m.workbench_tab_match()} />, and <UiLabel name={m.workbench_tab_name_and_folder()} /> tabs to edit the profile. The Default profile does not use <UiLabel name={m.workbench_tab_match()} /> conditions.
+- **An error when ZotLit creates the document, the first time** → select the retry action beside the error message.
+- **The preview is empty or shows no paper** → select <UiLabel name={m.workbench_choose_item()} /> and choose a paper from your library or a built-in example.
+- **The preview fails** → retry the preview or pick another paper with <UiLabel name={m.workbench_choose_item()} />. You can keep editing.
+- **A note did not change after you edited the body** → run <Command inline name={m.command_update_note_name()} /> to refresh properties. If your profile has no managed block, ZotLit shows <UiLabel name={m.notice_updated_note_no_managed_block()} /> Body edits automatically reach new notes; to rebuild an existing note's body, run <Command inline name={m.command_overwrite_note_name()} />, which replaces the body after a confirmation.
+- **An Eta template does nothing** → Eta templates require the <UiLabel name={m.settings_template_js_enable_name()} /> setting to be enabled. Without it, Eta templates remain inert and do not fall back to built-in text. See [Enable JavaScript templates](/docs/how-to/enable-javascript-templates).
+- **A partial's call is marked** <UiLabel name={m.workbench_partial_missing()} /> → the partial was renamed or deleted. Edit the partial name in your template call or create the partial file again.
+- **A partial's fields come out empty** → the Liquid call is missing its data argument; write `{% render "name" with zt as zt %}`.
 
-    Check the <UiLabel name={m.workbench_result_heading()} /> in the Preview panel as you edit. To add a field, place your cursor in the template, select <UiLabel name={m.workbench_view_fields()} />, and select the insert button on a field's row, or open its row menu and select <UiLabel name={m.workbench_fields_put_in_note()} />. ZotLit puts the field at your cursor, closes the Fields popover, and returns the cursor to the editor. Hold Shift while you select the insert button to keep the Fields popover open for more fields, or [pin the Fields panel](/docs/concepts/template-workbench-view#pin-fields) to keep it beside the editor. For a list, such as the authors, select its row, choose <UiLabel name={m.workbench_fields_details_form_joined()} /> or <UiLabel name={m.workbench_fields_details_form_loop()} />, and select <UiLabel name={m.workbench_fields_insert()} />. <UiLabel name={m.workbench_advanced()} /> is a toggle: select it to edit the complete profile document as Markdown, and select it again to return to the tabs.
+## Next
 
-    On the <UiLabel name={m.workbench_tab_name_and_folder()} /> tab, the <UiLabel name={m.workbench_name_path_heading()} /> group holds the <UiLabel name={m.workbench_name_binding_folder()} />, the <UiLabel name={m.workbench_name_filename_label()} />, and a <UiLabel name={m.workbench_name_filename_result()} /> of the full path the note gets, with `.md`. A slash (`/`) in the note name makes a subfolder in the folder. For the Default profile, change the folder in <SettingsPath />. The <UiLabel name={m.workbench_tab_match()} /> tab reports <UiLabel name={m.workbench_match_result_yes()} /> or <UiLabel name={m.workbench_match_result_no()} /> for the selected item.
-
-    If the preview fails, retry or choose another item. You can continue editing the profile.
-
-  </Step>
-  <Step>
-    ### Apply the changes
-
-    The Template Workbench View uses Obsidian's automatic saving for edits, Undo, and Redo. A profile with an error remains editable and saves with its diagnostics shown in the editor.
-
-    Existing notes keep their content until you update them. Open a literature note and run <Command name={m.command_update_note_name()} /> to apply its profile.
-
-  </Step>
-</Steps>
-
-The Template Workbench View supports Liquid, Eta, and JavaScript frontmatter fields. Eta and JavaScript fields require the <UiLabel name={m.settings_template_js_enable_name()} /> gate.
-
-To return this template to its built-in form, select <UiLabel name={m.settings_profile_document_restore()} /> on the same row. ZotLit moves the file to Obsidian's configured trash. You can recover it from there; existing notes keep their content until updated.
-
-## Customize the citation text [#citation-text]
-
-The **citation text** is one template document, `zotlit-citation.md`, that renders every citation you insert. It renders both the main and the alternate citation from one source: [`zt.variant`](/docs/reference/templates/data#citation-variant) tells it which gesture asked for the citation.
-
-<Steps>
-  <Step>
-    ### Open the citation text
-
-    Open <SettingsPath page={m.settings_page_citations()} />. Find the <UiLabel name={m.settings_citation_text_name()} /> row and select its pencil button, tooltipped <UiLabel name={m.settings_citation_text_open()} />.
-
-    The row's second line shows the document's vault path, or <UiLabel name={m.settings_template_using_default()} /> while your vault holds no file. With no file, that button writes `zotlit-citation.md` from the built-in text first, then opens it.
-
-    The command <Command inline name={m.command_customize_citation_text_name()} /> opens the same document. The Template Workbench View's pane menu has the same entry.
-
-  </Step>
-  <Step>
-    ### Edit the source
-
-    The document opens in the Template Workbench View on one <UiLabel name={m.workbench_tab_citation()} /> tab. That tab is the source of the whole document, and the view offers no <UiLabel name={m.workbench_advanced()} /> toggle for it: the tab already shows everything the document holds. A caption above the editor names the document's language.
-
-    The template receives `zt.variant`, `zt.citations`, and `zt.items`. See [Citation templates](/docs/reference/templates/data#citation-templates) for the fields on each cited item.
-
-  </Step>
-  <Step>
-    ### Check the preview
-
-    <UiLabel name={m.workbench_citation_result_heading()} /> renders what you have typed, including bytes you have not saved.
-
-    Show the Preview panel to see it. While the panel is shown, the view's pane menu offers <UiLabel name={m.template_workbench_use_example()} /> with six built-in citation shapes: <UiLabel name={m.workbench_citation_example_one_item()} />, <UiLabel name={m.workbench_citation_example_two_items()} />, <UiLabel name={m.workbench_citation_example_item_with_page()} />, <UiLabel name={m.workbench_citation_example_suppressed_author()} />, <UiLabel name={m.workbench_citation_example_prefix_and_suffix()} />, and <UiLabel name={m.workbench_citation_example_annotation_citation()} />. It opens on <UiLabel name={m.workbench_citation_example_one_item()} />.
-
-    Select <UiLabel name={m.workbench_choose_item()} /> instead to preview one of your own Zotero items, by citation key alone. That clears the example.
-
-    Switch between <UiLabel name={m.template_workbench_preview_main_citation()} /> and <UiLabel name={m.template_workbench_preview_alt_citation()} /> from the same menu to check both branches of your template. The preview caption names the variant on show.
-
-  </Step>
-</Steps>
-
-Edits take effect on the next citation you insert. Existing citations in your notes are plain text and stay as written.
-
-### Restore the built-in citation text [#reset-citation-text]
-
-Once the document exists, the <UiLabel name={m.settings_citation_text_name()} /> row also carries a rotate button, tooltipped <UiLabel name={m.settings_template_reset()} />. It asks <UiLabel name={m.settings_citation_text_reset_confirm_title()} /> and then moves your document to Obsidian's configured trash, where you can recover it. New citations use the built-in text again.
-
-## Share a piece of template text between profiles [#share-a-partial]
-
-A **partial** is a template document that any other template renders by name. Write a line once, in `zotlit-partial.<name>.md`, and call it from every profile and from the citation text.
-
-### Create a partial [#create-a-partial]
-
-Three ways, all of which name the file for you:
-
-- Open <SettingsPath page={m.settings_page_profiles()} setting={m.settings_partials_heading()} /> and select <UiLabel name={m.settings_partial_add()} />.
-- Type `{% render "` or `{% include "` in a Liquid template, or `include("` in an Eta one. The completion lists every partial in your vault and ends with <UiLabel name={m.workbench_partial_new()} />. The new document opens in a split beside what you were editing.
-- Select some template text, right-click it, and choose <UiLabel name={m.template_workbench_extract_partial()} />. ZotLit moves the selection into the new document, leaves the matching call behind, and opens the new document in a split. In the template you extracted from, that is one undo step.
-
-Name a partial with letters, digits, and hyphens. ZotLit trims the name, turns each run of spaces into a hyphen, and lowercases it, so `Journal line` becomes `journal-line`. Names are one flat list for your whole vault, and two partials cannot share a name regardless of case.
-
-Five names belong to other ZotLit templates and are refused: `filename`, `note`, `annotation`, `content`, and `citation`. A file that takes one anyway registers nothing and gets a <UiLabel name={m.settings_partial_reserved_name()} /> row in settings.
-
-### Call a partial [#call-a-partial]
-
-In Liquid:
-
-```liquid
-{% render "authors" with zt as zt %}
-```
-
-In Eta:
-
-```eta
-<%~ include("authors", zt) %>
-```
-
-In Liquid, the `with zt as zt` clause is not optional. The `render` tag opens an isolated scope, so a bare `{% render "authors" %}` cannot see the caller's `zt`: every `zt` output in the partial comes out empty, and only its literal text survives. Accepting a name from the completion list writes the clause for you.
-
-Liquid's `{% include %}` tag renders a partial with access to the caller's variables, and needs no `with` clause. Use `render` when you want the partial's scope kept separate. See [Calling a partial](/docs/reference/templates/syntax#calling-a-partial) for the complete rule, and [the Eta form](/docs/reference/templates/eta-syntax#calling-a-partial) for an Eta document.
-
-### Preview and edit a partial [#preview-a-partial]
-
-In a profile's tabs, with <UiLabel name={m.workbench_advanced()} /> off, a call with a plain quoted name (Liquid `render` or `include`, Eta `include(...)`) is drawn as a **Partial Placeholder**: a compact control carrying the partial's name, the rest of the arguments as written, <UiLabel name={m.workbench_partial_preview()} />, and <UiLabel name={m.workbench_partial_edit()} />. The preview arrow opens a read-only render of that partial below the line, using the data of the slice the call sits in. Put your cursor in the call and the placeholder turns back into plain source, so you can edit the arguments.
-
-The five reserved names are never partial names, so none of them draws one: `{% render "annotation" %}` draws the annotation placeholder for the profile's annotation section, and a call on `filename`, `note`, `content`, or `citation` draws nothing. A call inside a fenced code block is prose about a call, and draws nothing either.
-
-A partial has no data of its own, so its own editor asks you which caller to render as: <UiLabel name={m.template_workbench_preview_as_note()} />, <UiLabel name={m.template_workbench_preview_as_annotation()} />, or <UiLabel name={m.template_workbench_preview_as_citation()} />, from the view's pane menu while the Preview panel is shown. It opens on Note and remembers your choice for that file.
-
-### Rename or delete a partial [#rename-a-partial]
-
-Renaming is an ordinary Obsidian file rename. ZotLit has no rename action and rewrites no calls, so every template that called the old name then marks its placeholder <UiLabel name={m.workbench_partial_missing()} />. Select that marker to read the problem in the editor's <UiLabel name={m.workbench_problems_heading()} /> area, then edit the call or create the partial yourself.
-
-To delete, open the partial's row at <SettingsPath page={m.settings_page_profiles()} setting={m.settings_partials_heading()} />, open its <UiLabel name={m.workbench_more_actions()} /> menu, and select <UiLabel name={m.settings_partial_delete()} />. ZotLit moves the file to Obsidian's configured trash and rewrites no callers.
-
-A note that ZotLit writes through a template calling a partial your vault no longer holds is not written at all. ZotLit says which partial is missing and offers <UiLabel name={m.template_workbench_open_layout()} /> to open the document holding the failing call.
-
-## See also
-
-<Cards>
-  <Card
-    title="Install the ZotLit skills"
-    description="Let an agent edit and test templates in this vault."
-    href="/docs/install-skill"
-  />
-  <Card
-    title="How templates work"
-    description="The three kinds of template document, languages, and filename matching."
-    href="/docs/concepts/how-templates-work"
-  />
-  <Card
-    title="Explore template data"
-    description="Browse available fields and copy paths into your template."
-    href="/docs/how-to/explore-template-data"
-  />
-  <Card
-    title="Configure frontmatter properties"
-    description="Add custom YAML properties derived from Zotero data."
-    href="/docs/how-to/configure-frontmatter-properties"
-  />
-  <Card
-    title="Customize your annotations"
-    description="Tutorial: guided worked example with before/after results."
-    href="/docs/tutorial/customize-template"
-  />
-</Cards>
+- [Use a different template for different notes](/docs/how-to/use-different-templates) — add a second profile, for books for example.
+- [Configure frontmatter properties](/docs/how-to/configure-frontmatter-properties) — customize literature note metadata with the Properties tab.
+- [Explore template data](/docs/how-to/explore-template-data) — browse every field available to your templates.
