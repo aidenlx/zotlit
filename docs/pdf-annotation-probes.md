@@ -185,7 +185,7 @@ Read the Live Updates receiver from `services.localServer.available`. `services.
 
 ## Four undocumented behaviours File Link Capture stands on
 
-File Link Capture ([ADR 0045](../apps/obsidian/docs/adr/0045-file-link-capture-patches-window-open.md)) reads four behaviours Obsidian documents nowhere. All four were read out of the 1.14.2 renderer bundle, `node_modules/.ob-rev-1.14.2/app.js`. **None is live-measured yet**, so they carry no verdict in the tables above; a Paired Run has to confirm them before the release. Re-verify all four against a fresh extraction whenever `minAppVersion` moves.
+File Link Capture ([ADR 0045](../apps/obsidian/docs/adr/0045-file-link-capture-patches-window-open.md)) reads four behaviours Obsidian documents nowhere. All four were read out of the 1.14.2 renderer bundle, `node_modules/.ob-rev-1.14.2/app.js`. **None is live-measured yet**, so they carry no verdict in the tables above; a Paired Run has to confirm them before the release. Re-verify all four against a fresh extraction whenever `minAppVersion` moves; all four hold in the 1.15.1 bundle, where "Open in default browser" passes `"_external"` only for a URL that Obsidian's link check accepts.
 
 | Behaviour | Where it is read | Why Capture needs it |
 | --- | --- | --- |
@@ -198,7 +198,7 @@ A change to the first two costs Capture its clicks; the link then opens in the s
 
 ## Two undocumented behaviours Mark Landing stands on
 
-Mark Landing ([ADR 0046](../apps/obsidian/docs/adr/0046-landing-on-a-mark-is-an-ephemeral-state-contract-read-at-the-leaf.md)) reads two more. Both were read out of the same 1.14.2 bundle, neither is live-measured yet, and both are re-verified whenever `minAppVersion` moves.
+Mark Landing ([ADR 0046](../apps/obsidian/docs/adr/0046-landing-on-a-mark-is-an-ephemeral-state-contract-read-at-the-leaf.md)) reads two more. Both were read out of the same 1.14.2 bundle, neither is live-measured yet, and both are re-verified whenever `minAppVersion` moves; both hold in the 1.15.1 bundle.
 
 | Behaviour | Where it is read | Why Mark Landing needs it |
 | --- | --- | --- |
