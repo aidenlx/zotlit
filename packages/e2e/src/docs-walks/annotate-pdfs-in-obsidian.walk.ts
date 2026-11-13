@@ -531,7 +531,7 @@ describe.skipIf(!reachable)(
                   { pid, region, start: below, blur: [menuBarStatus] },
                   async (shot) => {
                     // The whole Zotero window first, then in on its dialog.
-                    await shot.wait(800);
+                    await shot.wait(clipSettings().openHold * 1000);
                     shot.frame(view(dialog.window, below));
                     // The move takes 1 s; the view holds 2.5 s from there,
                     // with the glide and the press.
