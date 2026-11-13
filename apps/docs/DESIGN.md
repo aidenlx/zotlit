@@ -259,8 +259,9 @@ heading, one caption and one check line.
   Video.js UI components), loaded on demand: the page prerenders the still,
   which stays until the player arrives. Its control bar floats 10px inside
   the frame's bottom edge: a pill on the surface with the shadow ring,
-  holding a 36px round play/pause button, the seek bar (a 4px track in ink
-  at 15%, the fill and a 14px thumb in the accent through
+  holding a 36px round play/pause button, the seek bar (a 4px track in the
+  muted tone at 70%, 3:1 on the surface; the fill and a 14px thumb in the
+  accent through
   `--media-accent-color`, a 36px tall hit area, half-second arrow steps),
   the current and total time (mono 12px, muted, tabular; hidden when the
   player is under 18rem wide) and a 36px fullscreen button. The clips are
@@ -271,6 +272,8 @@ heading, one caption and one check line.
   text; Space plays or pauses and the arrow keys seek while it has focus.
   A clip plays muted and looping while it crosses the middle of the
   viewport; once the reader plays or pauses it, the reader's choice holds.
+  A clip rested by another loop while still in view plays again when that
+  loop rests. In fullscreen the whole clip shows (`object-fit: contain`).
 - **Words stay page text.** Captions, numbered-mark references and check lines
   are HTML beside the picture, so they translate, wrap and reach screen
   readers. The picture carries a text alternative that says what it shows.

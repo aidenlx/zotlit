@@ -25,7 +25,12 @@ import { Maximize, Minimize, Pause, Play } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { CSSProperties } from "react";
 
-import { endTurn, takeTurn } from "@/components/landing/loop";
+import {
+  awaitTurn,
+  endTurn,
+  stopWaiting,
+  takeTurn,
+} from "@/components/landing/loop";
 import { cn } from "@/lib/cn";
 import * as m from "@/paraglide/messages.js";
 import { getLocale } from "@/paraglide/runtime.js";
@@ -82,37 +87,52 @@ export default function RecordingPlayer({
   );
   // The reader has played or paused the clip, so its changes are announced.
   const [touched, setTouched] = useState(false);
-  // The play or pause this player asked for itself, which the reader did not.
-  const asked = useRef<"play" | "pause" | null>(null);
+  // The play and the pause this player asked for itself, which the reader did not.
+  const askedPlay = useRef(false);
+  const askedPause = useRef(false);
   const [me] = useState(() => Symbol(base));
 
   const rest = useCallback(() => {
     const v = video.current;
     if (!v || v.paused) return;
-    asked.current = "pause";
+    askedPause.current = true;
     v.pause();
   }, []);
 
   useEffect(() => {
     const v = video.current;
     if (!v || mode === "paused") return;
+    function play() {
+      if (!v) return;
+      stopWaiting(me);
+      // A loop that takes the turn while this clip is in view leaves it waiting to play again.
+      takeTurn(me, () => {
+        rest();
+        awaitTurn(me, play);
+      });
+      if (!v.paused) return;
+      askedPlay.current = true;
+      void v.play().catch(() => {
+        askedPlay.current = false;
+      });
+    }
     const observer = new IntersectionObserver(
       ([entry]) => {
         if (!entry?.isIntersecting) {
           rest();
+          stopWaiting(me);
           endTurn(me);
-        } else if (mode === "auto" && v.paused) {
-          takeTurn(me, rest);
-          asked.current = "play";
-          void v.play().catch(() => {
-            asked.current = null;
-          });
+        } else if (mode === "auto") {
+          play();
         }
       },
       mode === "auto" ? { rootMargin: "-40% 0px -40% 0px" } : undefined,
     );
     observer.observe(v);
-    return () => observer.disconnect();
+    return () => {
+      observer.disconnect();
+      stopWaiting(me);
+    };
   }, [mode, me, rest]);
 
   useEffect(
@@ -124,8 +144,8 @@ export default function RecordingPlayer({
   );
 
   function onPlay() {
-    if (asked.current === "play") {
-      asked.current = null;
+    if (askedPlay.current) {
+      askedPlay.current = false;
       return;
     }
     takeTurn(me, rest);
@@ -134,8 +154,8 @@ export default function RecordingPlayer({
   }
 
   function onPause() {
-    if (asked.current === "pause") {
-      asked.current = null;
+    if (askedPause.current) {
+      askedPause.current = false;
       return;
     }
     endTurn(me);
@@ -164,7 +184,9 @@ export default function RecordingPlayer({
             onPause={onPause}
             className={cn(
               "size-full",
-              fit === "cover" ? "object-cover" : "object-contain",
+              fit === "cover"
+                ? "object-cover [:fullscreen_&]:object-contain"
+                : "object-contain",
             )}
           >
             {webm && <source src={`${base}.webm`} type="video/webm" />}
@@ -199,7 +221,7 @@ export default function RecordingPlayer({
                   largeStep={2}
                   className="group/slider relative mx-1.5 flex h-9 min-w-0 flex-1 cursor-pointer touch-none items-center"
                 >
-                  <TimeSlider.Track className="relative h-1 w-full overflow-hidden rounded-full bg-fd-foreground/15">
+                  <TimeSlider.Track className="relative h-1 w-full overflow-hidden rounded-full bg-fd-muted-foreground/70">
                     <TimeSlider.Buffer className="absolute inset-y-0 left-0 w-(--media-slider-buffer) bg-fd-foreground/10" />
                     <TimeSlider.Fill className="absolute inset-y-0 left-0 w-(--media-slider-fill) bg-(--media-accent-color) group-data-dragging/slider:w-(--media-slider-pointer)" />
                   </TimeSlider.Track>
