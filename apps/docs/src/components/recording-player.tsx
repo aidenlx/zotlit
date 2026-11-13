@@ -26,11 +26,13 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { CSSProperties } from "react";
 
 import {
+  askTurn,
   awaitTurn,
   endTurn,
+  holdTurn,
   stopWaiting,
   takeTurn,
-} from "@/components/landing/loop";
+} from "@/components/recording-turn";
 import { cn } from "@/lib/cn";
 import * as m from "@/paraglide/messages.js";
 import { getLocale } from "@/paraglide/runtime.js";
@@ -122,10 +124,15 @@ export default function RecordingPlayer({
       if (!v) return;
       stopWaiting(me);
       // A loop that takes the turn while this clip is in view leaves it waiting to play again.
-      takeTurn(me, () => {
+      const started = askTurn(me, () => {
         rest();
         awaitTurn(me, play);
       });
+      // A clip the reader paused in view holds the turn, so this one waits for it to leave.
+      if (!started) {
+        awaitTurn(me, play);
+        return;
+      }
       if (!v.paused) return;
       askedPlay.current = true;
       void v.play().catch(() => {
@@ -185,6 +192,7 @@ export default function RecordingPlayer({
       askedPause.current = false;
       return;
     }
+    holdTurn(me);
     setTouched(true);
     setMode("paused");
   }

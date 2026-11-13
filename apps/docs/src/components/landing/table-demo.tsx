@@ -10,9 +10,9 @@
 // shows. After mount, with motion on, the demo rewinds to the collection and
 // plays while at least half of it is on screen, one cycle after another; it
 // rewinds again once it has left the screen. One loop plays at a time
-// (./loop), and a button beside the caption trail pauses it on the finished
-// frame. The 768px split (the tree, the tool labels, the three columns
-// phones leave out) is CSS, so the server and the client agree.
+// (`recording-turn`), and a button beside the caption trail pauses it on the
+// finished frame. The 768px split (the tree, the tool labels, the three
+// columns phones leave out) is CSS, so the server and the client agree.
 // @see apps/docs/DESIGN.md → Landing (Compare your papers)
 
 import {
@@ -23,9 +23,15 @@ import {
   useState,
 } from "react";
 
+import {
+  askTurn,
+  awaitTurn,
+  endTurn,
+  stopWaiting,
+  takeTurn,
+} from "@/components/recording-turn";
 import { m } from "@/paraglide/messages.js";
 
-import { endTurn, takeTurn } from "./loop";
 import { LessonLink, LoopToggle } from "./parts";
 import { DemoWindow, FINAL, Trail, makeFlip } from "./table-window";
 
@@ -71,9 +77,16 @@ function Demo() {
     setStep(FINAL);
     setFading(false);
   };
-  /** Starts a cycle from the collection. */
-  const play = () => {
-    takeTurn(me, rest);
+  /**
+   * Starts a cycle from the collection: at once on the reader's press, and on
+   * its own unless a recording the reader paused holds the turn.
+   */
+  const play = (byReader = false) => {
+    if (byReader) takeTurn(me, rest);
+    else if (!askTurn(me, rest)) {
+      awaitTurn(me, () => play());
+      return;
+    }
     setStep(0);
     setFading(false);
     setCycle((c) => c + 1);
@@ -82,7 +95,7 @@ function Demo() {
   const toggle = () => {
     if (paused) {
       setPaused(false);
-      if (inView.current) play();
+      if (inView.current) play(true);
       else setStep(0);
     } else {
       setPaused(true);
@@ -101,6 +114,7 @@ function Demo() {
     } else if (!entry.isIntersecting) {
       if (inView.current) {
         inView.current = false;
+        stopWaiting(me);
         endTurn(me);
         setActive(false);
       }
@@ -121,6 +135,7 @@ function Demo() {
     io.observe(el);
     return () => {
       io.disconnect();
+      stopWaiting(me);
       endTurn(me);
     };
   }, [me]);
