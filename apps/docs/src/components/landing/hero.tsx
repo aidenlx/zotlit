@@ -70,14 +70,14 @@ export function Hero() {
       className="relative overflow-hidden [--desk-s:1] min-[1280px]:max-[1360px]:[--desk-s:0.88] min-[1360px]:max-[1440px]:[--desk-s:0.94] min-[1800px]:[--desk-s:1.08] xl:flex xl:min-h-[max(720px,min(calc(100svh-56px-var(--fd-banner-height,0px)),calc(832px*var(--desk-s))))] xl:flex-col"
     >
       <Desk />
-      <div className="relative z-20 mx-auto flex max-w-[640px] flex-col items-center px-4 pt-9 text-center sm:px-8 xl:w-full xl:max-w-none xl:flex-1 xl:justify-center xl:px-0 xl:pt-0 xl:pb-[110px]">
+      <div className="relative z-20 mx-auto flex max-w-[640px] flex-col items-center px-4 pt-9 text-center sm:px-8 xl:w-full xl:max-w-none xl:flex-1 xl:justify-center xl:px-0 xl:pt-0 xl:pb-[170px]">
         <div className="flex w-full max-w-[640px] flex-col items-center xl:[zoom:var(--desk-s)]">
           <p className="font-mono text-[0.6875rem] font-medium tracking-[0.1em] text-fd-muted-foreground uppercase sm:text-xs sm:tracking-[0.14em]">
             {m.docs_home_eyebrow()}
           </p>
           <h1
             id="landing-title"
-            className="mt-4 font-serif text-[2.6rem] leading-[1.06] font-medium tracking-[-0.02em] text-balance text-fd-foreground sm:text-6xl"
+            className="mt-6 font-serif text-[2.6rem] leading-[1.12] font-medium tracking-[-0.02em] text-balance text-fd-foreground sm:text-6xl"
           >
             <Message
               text={m.docs_home_title({ mark: "{mark}" })}
@@ -86,10 +86,10 @@ export function Hero() {
               }}
             />
           </h1>
-          <p className="mt-5 max-w-[34rem] text-lg text-pretty text-fd-muted-foreground sm:text-xl">
+          <p className="mt-7 max-w-[34rem] text-lg text-pretty text-fd-muted-foreground sm:text-xl">
             {m.docs_home_lede()}
           </p>
-          <Actions className="mt-7" />
+          <Actions className="mt-9" />
           <p className="mt-4 text-sm text-fd-muted-foreground">
             {m.docs_home_requirements()}
           </p>

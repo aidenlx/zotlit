@@ -1,20 +1,18 @@
 // "From Zotero to finished chapter.": the research sequence as five steps in
 // a zig-zag, each with a recording of the real app beside its text.
 //
-// Each recording prerenders as its still, the poster. After mount, with
-// motion allowed, a step whose case has a clip mounts its <video> once it
-// comes near the viewport, and plays it while it crosses the middle band;
-// one loop plays at a time (./loop), and a button in its corner pauses it.
-// Reduced motion keeps the still.
+// Each recording prerenders as its still, the poster. After mount, a step
+// whose case has a clip mounts its player (`Recording`) once it comes near
+// the viewport; the player owns playback, seeking and reduced motion.
 // @see apps/docs/DESIGN.md → Landing (Workflow)
 
 import { useEffect, useRef, useState } from "react";
 
 import { DocsImage } from "@/components/docs-image";
+import { Recording as RecordingPlayer } from "@/components/recording";
 import { m } from "@/paraglide/messages.js";
 
-import { endTurn, takeTurn } from "./loop";
-import { LessonLink, LoopToggle, SectionLabel } from "./parts";
+import { LessonLink, SectionLabel } from "./parts";
 
 type Text = () => string;
 
@@ -111,16 +109,13 @@ const STEPS: readonly Step[] = [
 /** The 16:10 frame every recording fills. */
 function Recording({ id, alt }: { id: Case; alt: string }) {
   const frame = useRef<HTMLDivElement>(null);
-  const video = useRef<HTMLVideoElement>(null);
   const [near, setNear] = useState(false);
-  const [paused, setPaused] = useState(false);
   const base = `/img/landing/${id}`;
 
-  // Mount the clip once the frame comes near the viewport, with motion on.
+  // Mount the player once the frame comes near the viewport.
   useEffect(() => {
     const el = frame.current;
     if (!el || !CLIPS[id]) return;
-    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
     const io = new IntersectionObserver(
       ([entry]) => {
         if (!entry?.isIntersecting) return;
@@ -133,74 +128,34 @@ function Recording({ id, alt }: { id: Case; alt: string }) {
     return () => io.disconnect();
   }, [id]);
 
-  // Play while the clip crosses the middle band of the viewport, unless the
-  // reader paused it.
-  useEffect(() => {
-    const v = video.current;
-    if (!near || !v) return;
-    if (paused) {
-      v.pause();
-      return;
-    }
-    const me = Symbol(id);
-    const rest = () => v.pause();
-    const io = new IntersectionObserver(
-      ([entry]) => {
-        if (entry?.isIntersecting) {
-          takeTurn(me, rest);
-          void v.play().catch(() => {});
-        } else {
-          rest();
-          endTurn(me);
-        }
-      },
-      { rootMargin: "-40% 0px -40% 0px" },
-    );
-    io.observe(v);
-    return () => {
-      io.disconnect();
-      rest();
-      endTurn(me);
-    };
-  }, [near, paused, id]);
-
+  const still = (
+    <DocsImage
+      src={`${base}.webp`}
+      width={1600}
+      height={1000}
+      alt={alt}
+      loading="lazy"
+      className="size-full object-cover"
+    />
+  );
   return (
     <div
       ref={frame}
       className="relative aspect-[16/10] overflow-hidden rounded-xl border border-transparent bg-fd-card shadow-ring"
     >
       {near ? (
-        <video
-          ref={video}
-          aria-label={alt}
+        <RecordingPlayer
+          base={base}
+          webm
+          mp4
           poster={`${base}.webp`}
-          muted
-          loop
-          playsInline
-          preload="none"
-          className="size-full object-cover"
-        >
-          <source src={`${base}.webm`} type="video/webm" />
-          <source src={`${base}.mp4`} type="video/mp4" />
-        </video>
-      ) : (
-        <DocsImage
-          src={`${base}.webp`}
-          width={1600}
-          height={1000}
           alt={alt}
-          loading="lazy"
-          className="size-full object-cover"
+          fit="cover"
+          preload="metadata"
+          fallback={still}
         />
-      )}
-      {near && (
-        <LoopToggle
-          paused={paused}
-          onToggle={() => setPaused((p) => !p)}
-          pauseLabel={m.docs_home_clip_pause()}
-          playLabel={m.docs_home_clip_play()}
-          className="absolute end-3 bottom-3"
-        />
+      ) : (
+        still
       )}
     </div>
   );
@@ -227,10 +182,10 @@ function StepItem({ step, n, flip }: { step: Step; n: number; flip: boolean }) {
         <p className="font-mono text-sm font-medium tracking-[0.1em] text-fd-primary uppercase">
           {m.docs_home_step_label({ number: String(n) })}
         </p>
-        <h3 className="mt-2 font-serif text-3xl font-medium text-balance sm:text-4xl">
+        <h3 className="mt-3 font-serif text-3xl leading-[1.2] font-medium text-balance sm:text-4xl">
           {step.title()}
         </h3>
-        <p className="mt-3 text-lg text-pretty text-fd-muted-foreground">
+        <p className="mt-4 text-lg text-pretty text-fd-muted-foreground">
           {step.line()}
         </p>
         <ul className="mt-6 grid gap-4">
@@ -270,11 +225,11 @@ export function Workflow() {
           <SectionLabel>{m.docs_home_flow_label()}</SectionLabel>
           <h2
             id="landing-flow-title"
-            className="mt-3 font-serif text-3xl font-medium text-balance sm:text-5xl sm:leading-[1.06]"
+            className="mt-4 font-serif text-3xl leading-[1.2] font-medium text-balance sm:text-5xl sm:leading-[1.15]"
           >
             {m.docs_home_flow_title()}
           </h2>
-          <p className="mt-4 text-lg text-pretty text-fd-muted-foreground">
+          <p className="mt-6 text-lg text-pretty text-fd-muted-foreground">
             {m.docs_home_flow_lede()}
           </p>
         </div>

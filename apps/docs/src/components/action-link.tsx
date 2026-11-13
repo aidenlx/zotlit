@@ -26,8 +26,8 @@ export interface ActionLinkProps {
 /**
  * Square hairline-bordered link with a leading kind glyph and a trailing arrow,
  * matching the changelog's "Open release" device. `download` saves the asset;
- * `obsidian` opens an `obsidian://` deep link in the app; `external` opens a web
- * page in a new tab.
+ * `obsidian` hands an `obsidian://` deep link to the app from the same tab, so
+ * no empty tab is left behind; `external` opens a web page in a new tab.
  */
 export function ActionLink({
   href,
@@ -78,7 +78,9 @@ export function ActionLink({
           href={href}
           {...(kind === "download"
             ? { download: true }
-            : { target: "_blank", rel: "noreferrer noopener" })}
+            : kind === "external"
+              ? { target: "_blank", rel: "noreferrer noopener" }
+              : {})}
           className={linkClassName}
         >
           {content}
