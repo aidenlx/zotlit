@@ -56,7 +56,10 @@ Owned layout slots:
 - `src/components/banner.tsx` — vendored fumadocs `Banner`: `height` is a floor
   (`min-height`), so the strip wraps instead of overflowing on narrow
   viewports, and a resize-synced `--fd-banner-height` keeps sticky offsets
-  tracking the wrapped height. Consumed by `src/components/legacy-banner.tsx`.
+  tracking the wrapped height. Consumed by
+  `src/components/locale-fallback-notice.tsx`: on a `/zh-CN` page with no
+  Chinese file, the strip says English is shown and links to the English page.
+  It has no close button, since it belongs to that page.
 
 ## Tokens
 
@@ -155,8 +158,8 @@ stays legible at any size, including shrunk-down OG cards.
 On editorial and docs-chrome surfaces, apparatus labels are mono uppercase:
 
 - Home nav links
-- Landing labels ("The research sequence", "Literature review", "Step 1", the
-  desk's tape labels) and the `/learn` outcome label ("You end with")
+- The landing desk's tape labels and the `/learn` outcome label ("You end
+  with")
 - Changelog/blog dates and meta lines; version-ledger row labels
 - Docs sidebar folder + `links`-prop rows, the TOC "On this page" title, docs
   prose h4, and the command `Copy →` affordance
@@ -178,7 +181,7 @@ weight — micro-apparatus inside the sans body rather than marketing display, b
 the same mono-uppercase register.
 
 **Running prose stays in normal case**, even in chrome: full sentences read as
-text, not labels — so the v2 banner notice, tooltips, figure captions, lesson
+text, not labels — so the locale fallback strip, tooltips, figure captions, lesson
 captions and check lines, and any sentence-shaped copy keep their upright case
 and sans body voice. The Archivo wordmark likewise stays outside label
 treatment.
@@ -345,8 +348,7 @@ closing call. Sections run 1152px wide (`max-w-6xl`) with 32px side gutters
 
 - **Header and footer.** The shared home nav (see Owned layout slots) and
   the shared copyright footer.
-- **Hero.** Centred text on a research desk. A mono label ("An Obsidian
-  plugin · free and open source", 12px, 0.14em tracking, muted), the H1 "A
+- **Hero.** Centred text on a research desk. The H1 "A
   research desk for Zotero in Obsidian." (display, 2.6rem on phones, 3.75rem from 640px, at
   1.12 leading) with the highlighter on "research desk", the
   supporting line (sans 20px, muted, 34rem), **Install ZotLit** and **Start
@@ -385,18 +387,18 @@ closing call. Sections run 1152px wide (`max-w-6xl`) with 32px side gutters
   each object in one animation frame. The prerendered page and reduced
   motion show the final state.
 - **Workflow: "From Zotero to finished chapter."** On the surface at 40%.
-  A centred head: the mono label "The research sequence", the H2, and one
-  line. Then five steps — Find a paper, Read and highlight, Write the
-  literature note, Cite as you draft, Export your chapter to Word — in a zig-zag from
-  1024px around a vertical hairline, each numbered on the line by a 36px
-  circle (mono, accent text tone). Each step: "Step N" (mono uppercase,
-  accent text tone), the step title (display, 2.25rem from 640px), one
-  outcome line (sans 18px, muted), two points on hairlines (a semibold lead
-  and a muted sentence), an optional note on the quiet fill (the Better
-  BibTeX requirement), and a link to the step's lesson that names it
+  A centred head: the H2 and one line. Then five steps — Find a paper, Read
+  and highlight, Write the literature note, Cite as you draft, Export your
+  chapter to Word — in a zig-zag from 1024px around a vertical hairline, each
+  numbered on the line by a 36px circle (mono, accent text tone); below
+  1024px the list order carries the sequence. Each step: the step title
+  (display, 2.25rem from 640px), one outcome line (sans 18px, muted), two
+  points on hairlines (a semibold lead and a muted sentence), an optional
+  note on the quiet fill (the Better BibTeX requirement), and a link to the
+  step's lesson that names it
   ("Open the citation lesson →"); no two lesson links on the page share text.
   Beside it, the step's recording (see Recordings).
-- **Compare your papers.** The mono label "Literature review", the H2
+- **Compare your papers.** The H2
   "Compare your papers side by side.", one line and "Open the literature
   table lesson →" to `/learn/literature-review-table-from-zotero`. Then the
   demo, a figure: an Obsidian window (11px radius, `--desk-window-shadow`)
@@ -428,8 +430,11 @@ closing call. Sections run 1152px wide (`max-w-6xl`) with 32px side gutters
   "Private, on your computer.", "Free and open source.", "Works with Zotero
   9 and 10.".
 - **Closing call.** A band on the quiet fill: the H2 "Start your next
-  chapter with ZotLit.", one line, the two actions and the requirements
-  line, centred.
+  chapter with ZotLit." and the two actions, centred. The requirements line
+  appears once on the page, under the hero's actions.
+- **Labels.** The layout explains, at the text level of obsidian.md: no
+  apparatus labels over headings, each section an H2 with one short line,
+  each item a lead with one or two sentences.
 - **Recordings.** Each workflow step shows a recording of the real app at
   `public/img/landing/<case>` — `find`, `read`, `note`, `cite`, `word` — a
   1600 × 1000 WebP still and, where the case has one, an MP4 and a WebM
@@ -528,7 +533,21 @@ explains, and each fact appears once (see The label voice).
   once, directly above the checklist: the mono "You end with" label in the
   accent text tone and the outcome as a serif title beside the last step's
   recording from 561px (above it below). The recording rests on its poster
-  with its play button and plays only when the reader plays it.
+  with its play button and plays only when the reader plays it. While no
+  row is open, the Start button sits under the title (see Start).
+- **Start.** A new reader — no ticks, no `#n` in the address — finds every
+  row closed and the outcome in view, with one leading action under it:
+  **Start step 1** (ink fill, with an arrow). It names the step it opens,
+  so the reader knows the recording beside it changes from the result to
+  that step. Pressing it does what selecting step 1's title does: row 1
+  opens, the panel (from 1280px) turns to step 1, focus moves to row 1's
+  title, the row scrolls into view when it is out of sight, and the polite
+  live region says that step 1 is open, with its title. Being a press, it also plays
+  the step's recording at once (still under reduced motion). Whenever no
+  row is open later — the reader closed the open one — the outcome returns
+  with **Continue with step N** for the first step not ticked; once every
+  step is ticked, the outcome stands without it. The panel turns only on an
+  act of the reader: Start, a row's title, a tick, or **Go to step N**.
 - **Progress bar.** Sticky under the banner as the checklist scrolls: one
   segment per step across the column — check green when ticked, ink for
   the open row, the line colour otherwise — and the count as "3/7" in meta
@@ -551,26 +570,23 @@ explains, and each fact appears once (see The label voice).
   The body fades and rises 6px over 220 ms when it opens (none under
   reduced motion).
 - **Media panel.** From 1280px, on a running page, the lesson is a 580px
-  checklist column and, 48px beside it, a sticky panel. It opens on the
-  outcome: "You end with", the outcome as a serif title and the last
-  step's recording at rest on its poster. Once the reader reaches the
-  checklist — the page scrolls the first row into the top 35% of the
-  window, or the reader clicks inside the checklist (the first press on the
-  open row's title shows that row here and leaves it open) — the panel
-  follows the open row:
-  the step number (a check in check green once ticked) and title in serif
-  at the title size, then its recording, which plays while it crosses the
-  middle of the window. A reader with ticks saved, or one who follows a
-  link to a step, starts there. With no row open, the panel shows the
-  outcome again. The rows then show no picture of their own, so one player
+  checklist column and, 48px beside it, a sticky panel. While no row is
+  open it shows the outcome: "You end with", the outcome as a serif title,
+  the last step's recording at rest on its poster, and the Start button
+  under it. With a row open it shows that row: the step number (a check in
+  check green once ticked) and title in serif at the title size, then its
+  recording, which plays at once after Start and otherwise while it
+  crosses the middle of the window. A reader with ticks saved starts on the
+  first step not ticked, and one who follows a link to a step starts
+  there. The rows then show no picture of their own, so one player
   mounts per step. The prerendered page and a reader without JavaScript
   keep the one column, with every picture in its row.
 - **Picture.** One recording of the step in the real app, in the recording
   player (see Illustration), 10px radius, with the shadow ring, at most
   560px or 70% of the window tall. Only the open row's clip and the
-  outcome load. The open row's clip plays while it crosses the middle of
-  the window; the outcome waits for the reader's play; one plays at a
-  time. There is no zoom control: the recordings frame the action
+  outcome load. The open row's clip plays at once after Start, and
+  otherwise while it crosses the middle of the window; the outcome waits
+  for the reader's play; one plays at a time. There is no zoom control: the recordings frame the action
   themselves.
 - **Action.** Body size, each control named in semibold at the text's size;
   a link, such as the `obsidian://` shortcut in lesson 1, is underlined in

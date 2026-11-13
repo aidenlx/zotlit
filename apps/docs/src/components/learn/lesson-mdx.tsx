@@ -317,6 +317,7 @@ export function Step({ n, children }: { n: number; children: ReactNode }) {
             n={n}
             alt={meta.alt}
             active={live?.open === n && !live.wide}
+            playNow={live?.launched === n}
           />
         </div>
         {check}
@@ -333,7 +334,7 @@ export function Step({ n, children }: { n: number; children: ReactNode }) {
 }
 
 /** Moves focus to row `n`'s title, or to the end, once the row it left has closed. */
-function focusPart(n: number, total: number) {
+export function focusPart(n: number, total: number) {
   requestAnimationFrame(() => {
     const id = n > total ? "done" : `step-${n}-toggle`;
     document.getElementById(id)?.focus({ preventScroll: true });

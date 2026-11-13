@@ -60,6 +60,8 @@ export interface RecordingPlayerProps {
   preload: "auto" | "metadata";
   /** Plays on its own while it crosses the middle of the viewport; false rests it on its poster until the reader plays it. */
   autoplay?: boolean;
+  /** The reader asked for this clip with a press elsewhere, so it plays at once, as if they had pressed play (not under reduced motion). */
+  playNow?: boolean;
 }
 
 const buttonClass =
@@ -78,18 +80,18 @@ export default function RecordingPlayer({
   fit,
   preload,
   autoplay = true,
+  playNow = false,
 }: RecordingPlayerProps) {
   const video = useRef<HTMLVideoElement>(null);
   // This mounts after hydration only, so the preference is safe to read here.
-  // A clip that waits for the reader rests on its poster, as under reduced motion.
-  const [still] = useState(
-    () =>
-      !autoplay ||
-      window.matchMedia("(prefers-reduced-motion: reduce)").matches,
+  const [reduced] = useState(
+    () => window.matchMedia("(prefers-reduced-motion: reduce)").matches,
   );
+  // A clip that waits for the reader rests on its poster, as under reduced motion.
+  const still = reduced || (!autoplay && !playNow);
   // "auto" plays mid-viewport, "manual" plays from the reader's press until it leaves view, "paused" stays still.
-  const [mode, setMode] = useState<"auto" | "manual" | "paused">(
-    still ? "paused" : "auto",
+  const [mode, setMode] = useState<"auto" | "manual" | "paused">(() =>
+    still ? "paused" : playNow ? "manual" : "auto",
   );
   // The reader has played or paused the clip, so its changes are announced.
   const [touched, setTouched] = useState(false);
@@ -156,6 +158,17 @@ export default function RecordingPlayer({
     },
     [me, rest],
   );
+
+  // A clip asked for by a press plays once it mounts, and takes the turn.
+  useEffect(() => {
+    const v = video.current;
+    if (!v || !playNow || reduced) return;
+    takeTurn(me, rest);
+    askedPlay.current = true;
+    void v.play().catch(() => {
+      askedPlay.current = false;
+    });
+  }, [playNow, reduced, me, rest]);
 
   function onPlay() {
     if (askedPlay.current) {

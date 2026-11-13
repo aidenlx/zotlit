@@ -26,7 +26,7 @@ import {
 import { m } from "@/paraglide/messages.js";
 
 import { endTurn, takeTurn } from "./loop";
-import { LessonLink, LoopToggle, SectionLabel } from "./parts";
+import { LessonLink, LoopToggle } from "./parts";
 import { DemoWindow, FINAL, Trail, makeFlip } from "./table-window";
 
 /** The beats: [ms from the cycle start, step]. */
@@ -187,10 +187,9 @@ export function TableDemo() {
     >
       <div className="mx-auto max-w-6xl px-4 sm:px-8">
         <div className="max-w-2xl">
-          <SectionLabel>{m.docs_home_table_label()}</SectionLabel>
           <h2
             id="landing-table-title"
-            className="mt-4 font-serif text-3xl leading-[1.2] font-medium text-balance sm:text-5xl sm:leading-[1.15]"
+            className="font-serif text-3xl leading-[1.2] font-medium text-balance sm:text-5xl sm:leading-[1.15]"
           >
             {m.docs_home_table_title()}
           </h2>

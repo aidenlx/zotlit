@@ -137,6 +137,45 @@ export function readNotices(vaultId: string): Promise<string[]> {
 }
 
 /**
+ * Keep every notice on screen from now on, for a clip whose check is a
+ * notice: a notice that leaves the page is put back where it was, until the
+ * next screencast stops. A clip of several shots holds the notice from before
+ * the action in another app that shows it.
+ */
+export async function holdNotices(vaultId: string): Promise<void> {
+  await obRun(vaultId, ({ page }) => {
+    // A notice that leaves the page is put back where it was.
+    const held = new Set<Element>();
+    const observer = new MutationObserver((records) => {
+      for (const record of records)
+        for (const node of record.removedNodes) {
+          if (
+            !(node instanceof Element) ||
+            !(node.matches(".notice") || node.querySelector(".notice"))
+          )
+            continue;
+          // Undo the fade and the slide up that hide it.
+          for (const n of [node, ...node.querySelectorAll(".notice")])
+            if (n instanceof HTMLElement) {
+              n.style.transition = "none";
+              n.style.opacity = "1";
+              n.style.marginTop = "";
+            }
+          // A container that leaves next holds the notice again, and is
+          // put back in turn.
+          record.target.appendChild(node);
+          held.add(node);
+        }
+    });
+    observer.observe(document.body, { childList: true, subtree: true });
+    page.scratch.docsWalkReleaseNotices = () => {
+      observer.disconnect();
+      for (const node of held) node.remove();
+    };
+  });
+}
+
+/**
  * Close the Zotero library tab's setup section, as the reader did with its ×
  * in Lesson 1: the walk writes the setting that × writes.
  */
@@ -258,8 +297,16 @@ export interface DocsWalk extends AsyncDisposable {
 
 /** The shots of a clip that {@link DocsWalk.recordClip} records, in order. */
 export interface ClipShots {
-  /** A screencast of the walk's Obsidian window, with the drawn pointer. */
-  obsidian<T>(actions: () => Promise<T>): Promise<T>;
+  /**
+   * A screencast of the walk's Obsidian window, with the drawn pointer. With
+   * `notices`, the layer of the clip's name is captured with its notices as
+   * soon as `actions` end, as {@link DocsWalk.record} does; a notice that
+   * shows before the shot starts stays on screen through {@link holdNotices}.
+   */
+  obsidian<T>(
+    actions: () => Promise<T>,
+    options?: { notices?: boolean },
+  ): Promise<T>;
   /** The page content of the clean browser, with its drawn pointer. */
   browser<T>(
     browser: DocsBrowser,
@@ -381,6 +428,29 @@ export async function openDocsWalk(
     ]);
   };
 
+  /**
+   * Capture the layer `name` with its notices now, while a recording runs:
+   * the notice lasts a few seconds, less than the clip's rest and its end.
+   * The image leaves the drawn pointer out.
+   */
+  const shootNotices = async (name: string) => {
+    if (!captureRequested()) return;
+    await obRun(vaultId, () => {
+      for (const el of document.querySelectorAll<HTMLElement>(
+        "[data-docs-walk-pointer]",
+      ))
+        el.style.visibility = "hidden";
+    });
+    await shoot(name, true);
+    taken.add(name);
+    await obRun(vaultId, () => {
+      for (const el of document.querySelectorAll<HTMLElement>(
+        "[data-docs-walk-pointer]",
+      ))
+        el.style.visibility = "";
+    });
+  };
+
   const owned = stack.move();
   return {
     vaultId,
@@ -423,57 +493,11 @@ export async function openDocsWalk(
       if (notices)
         // The notice the step checks stays on screen to the clip's end, so
         // the clip rests on it.
-        await obRun(vaultId, ({ page }) => {
-          // A notice that leaves the page is put back where it was.
-          const held = new Set<Element>();
-          const observer = new MutationObserver((records) => {
-            for (const record of records)
-              for (const node of record.removedNodes) {
-                if (
-                  !(node instanceof Element) ||
-                  !(node.matches(".notice") || node.querySelector(".notice"))
-                )
-                  continue;
-                // Undo the fade and the slide up that hide it.
-                for (const n of [node, ...node.querySelectorAll(".notice")])
-                  if (n instanceof HTMLElement) {
-                    n.style.transition = "none";
-                    n.style.opacity = "1";
-                    n.style.marginTop = "";
-                  }
-                // A container that leaves next holds the notice again, and is
-                // put back in turn.
-                record.target.appendChild(node);
-                held.add(node);
-              }
-          });
-          observer.observe(document.body, { childList: true, subtree: true });
-          page.scratch.docsWalkReleaseNotices = () => {
-            observer.disconnect();
-            for (const node of held) node.remove();
-          };
-        });
+        await holdNotices(vaultId);
       let result: Awaited<ReturnType<typeof actions>>;
       try {
         result = await actions();
-        if (notices && captureRequested()) {
-          // The notice lasts a few seconds, less than the clip's rest and
-          // its end; the image leaves the drawn pointer out.
-          await obRun(vaultId, () => {
-            for (const el of document.querySelectorAll<HTMLElement>(
-              "[data-docs-walk-pointer]",
-            ))
-              el.style.visibility = "hidden";
-          });
-          await shoot(name, true);
-          taken.add(name);
-          await obRun(vaultId, () => {
-            for (const el of document.querySelectorAll<HTMLElement>(
-              "[data-docs-walk-pointer]",
-            ))
-              el.style.visibility = "";
-          });
-        }
+        if (notices) await shootNotices(name);
         await new Promise((r) => setTimeout(r, settings.rest * 1000));
       } finally {
         await stopRecording(vaultId, frames, settings);
@@ -520,12 +544,13 @@ export async function openDocsWalk(
         return join(frames, dir);
       };
       const result = await run({
-        async obsidian(actions) {
+        async obsidian(actions, { notices = false } = {}) {
           const dir = shot("obsidian");
           await mkdir(dir, { recursive: true });
           await startRecording(vaultId, dir, settings);
           try {
             const value = await actions();
+            if (notices) await shootNotices(name);
             await new Promise((r) => setTimeout(r, settings.rest * 1000));
             return value;
           } finally {

@@ -5,7 +5,7 @@ description: |
   Use after editing plugin UI or behavior to confirm the change works in the real app, when
   debugging why something looks wrong at runtime, or when another skill says "verify in Obsidian."
   Also use when the user asks to test, check, run, or screenshot the plugin, or to inspect
-  Obsidian with DevTools (CDP) — windows or the main process.
+  desktop Obsidian with CDP, iOS with Safari Web Inspector, or Android with adb and CDP.
 ---
 
 # Debug Loop
@@ -13,7 +13,13 @@ description: |
 Drive the running Obsidian app to verify plugin changes against real rendered state. The DOM
 is the source of truth.
 
-Make every CLI call through `packages/scripts/scripts/obsidian-cli.ts` (written
+**iOS** — for a real iPhone, follow [ios.md](ios.md) to attach to the active Obsidian
+WebView and run probes from the Mac.
+
+**Android** — follow [android.md](android.md) to set up a standalone emulator or attach
+to Obsidian on a USB device, then run WebView probes from the Mac.
+
+On desktop, make every Obsidian CLI call through `packages/scripts/scripts/obsidian-cli.ts` (written
 `obsidian-cli.ts` below), run from the repo root. It takes the `obsidian` binary's arguments
 and prints its output, and it always sees the end of a reply — the binary can miss it on macOS
 and wait until killed.

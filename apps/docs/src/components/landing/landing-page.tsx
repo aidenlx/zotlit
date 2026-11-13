@@ -52,13 +52,7 @@ function Closing() {
         >
           {m.docs_home_close_title()}
         </h2>
-        <p className="mt-6 max-w-xl text-lg text-pretty text-fd-muted-foreground">
-          {m.docs_home_close_line()}
-        </p>
         <Actions className="mt-8" />
-        <p className="mt-4 text-sm text-fd-muted-foreground">
-          {m.docs_home_requirements()}
-        </p>
       </div>
     </section>
   );

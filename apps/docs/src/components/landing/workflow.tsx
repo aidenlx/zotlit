@@ -12,7 +12,7 @@ import { DocsImage } from "@/components/docs-image";
 import { Recording as RecordingPlayer } from "@/components/recording";
 import { m } from "@/paraglide/messages.js";
 
-import { LessonLink, SectionLabel } from "./parts";
+import { LessonLink } from "./parts";
 
 type Text = () => string;
 
@@ -179,10 +179,7 @@ function StepItem({ step, n, flip }: { step: Step; n: number; flip: boolean }) {
           flip ? "max-w-xl lg:order-1 lg:justify-self-end" : "max-w-xl"
         }
       >
-        <p className="font-mono text-sm font-medium tracking-[0.1em] text-fd-primary uppercase">
-          {m.docs_home_step_label({ number: String(n) })}
-        </p>
-        <h3 className="mt-3 font-serif text-3xl leading-[1.2] font-medium text-balance sm:text-4xl">
+        <h3 className="font-serif text-3xl leading-[1.2] font-medium text-balance sm:text-4xl">
           {step.title()}
         </h3>
         <p className="mt-4 text-lg text-pretty text-fd-muted-foreground">
@@ -222,10 +219,9 @@ export function Workflow() {
     >
       <div className="mx-auto max-w-6xl px-4 sm:px-8">
         <div className="mx-auto max-w-2xl text-center">
-          <SectionLabel>{m.docs_home_flow_label()}</SectionLabel>
           <h2
             id="landing-flow-title"
-            className="mt-4 font-serif text-3xl leading-[1.2] font-medium text-balance sm:text-5xl sm:leading-[1.15]"
+            className="font-serif text-3xl leading-[1.2] font-medium text-balance sm:text-5xl sm:leading-[1.15]"
           >
             {m.docs_home_flow_title()}
           </h2>

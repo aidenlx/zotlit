@@ -2848,6 +2848,17 @@
   "docs_learn_you_need": "You need",
   "docs_learn_step_label": "Step {number} of {total}",
   "docs_learn_step_name": "Step {number} of {total}: {title}",
+  "docs_learn_start_step": [
+    {
+      "declarations": ["input number", "input begun"],
+      "selectors": ["begun"],
+      "match": {
+        "begun=yes": "Continue with step {number}",
+        "begun=*": "Start step {number}"
+      }
+    }
+  ],
+  "docs_learn_say_opened": "Step {number} is open: {title}.",
   "docs_learn_fix_heading": "If you see something else",
   "docs_learn_ask_none_of_these": "None of these. Ask in the community →",
   "docs_learn_ask": "Ask in the community →",
@@ -2896,8 +2907,6 @@
   "docs_not_found_title": "Page not found",
   "docs_not_found_description": "That page has moved or never existed. Start from the {link}.",
   "docs_not_found_docs": "documentation",
-  "docs_legacy_banner": "You’re reading the ZotLit v2 docs. Still on v1?",
-  "docs_legacy_docs_link": "Read the v1 docs",
   "docs_license": "AGPL-3.0 Licensed",
   "docs_companion_release": "Companion {version} released alongside.",
   "docs_release_channel_prerelease": "Pre-release",

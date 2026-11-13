@@ -9,7 +9,7 @@ import {
 // Literature Note, and the hover that shows its entry. Wherever a Citation does
 // not open as a link, a plain click on its widget stays the editor's own and
 // places the caret in the source the widget hides.
-import { RangeSetBuilder, StateEffect } from "@codemirror/state";
+import { Prec, RangeSetBuilder, StateEffect } from "@codemirror/state";
 import type { EditorState, Extension } from "@codemirror/state";
 import {
   Decoration,
@@ -179,11 +179,15 @@ function markDecorations(
   };
 }
 
-/** What the decoration pass produced, kept apart so the widgets can be atomic. */
+/**
+ * What the decoration pass produced. The widgets stand apart because cursor
+ * motion treats them as atoms and because they draw at a higher precedence
+ * than the marks.
+ */
 interface CitekeyDecorations {
-  /** The marks and the widgets together, which is what the editor draws. */
-  all: DecorationSet;
-  /** The widgets alone, which cursor motion treats as atoms. */
+  /** The citekey marks over source text that stays visible. */
+  marks: DecorationSet;
+  /** The widgets that replace whole Citations. */
   widgets: DecorationSet;
   /** The complete visible request this pass read. */
   citekeys: readonly string[];
@@ -205,8 +209,12 @@ export function citekeyEditorExtension(
 ): Extension {
   return ViewPlugin.fromClass(
     class CitekeyEditorPlugin {
+      /** The citekey marks, drawn at the plugin's own precedence. */
       decorations: DecorationSet = Decoration.none;
-      /** The widget ranges, which {@link EditorView.atomicRanges} reads. */
+      /**
+       * The widget ranges, which {@link EditorView.atomicRanges} reads and a
+       * higher-precedence decoration source draws.
+       */
       widgets: DecorationSet = Decoration.none;
       #editClick: { from: number; x: number; y: number } | null = null;
       readonly #lookup;
@@ -477,19 +485,30 @@ export function citekeyEditorExtension(
           edited: this.#editedDocument(view),
           resolveCitekey: this.#resolve,
         });
-        this.decorations = built.all;
+        this.decorations = built.marks;
         this.widgets = built.widgets;
         this.#lookup.set({ citekeys: built.citekeys });
       }
     },
     {
       decorations: (plugin) => plugin.decorations,
-      // Cursor motion steps over a widget in one go, and backspace removes the
-      // Citation it hides whole, rather than entering text that is not shown.
-      provide: (plugin) =>
-        EditorView.atomicRanges.of(
-          (view) => view.plugin(plugin)?.widgets ?? Decoration.none,
-        ),
+      provide: (plugin) => {
+        const widgets = (view: EditorView): DecorationSet =>
+          view.plugin(plugin)?.widgets ?? Decoration.none;
+        return [
+          // Cursor motion steps over a widget in one go, and backspace removes
+          // the Citation it hides whole, rather than entering text that is not
+          // shown.
+          EditorView.atomicRanges.of(widgets),
+          // Live Preview reads a Citation next to another bracket, such as
+          // `[@a] [@b]`, as link syntax and hides its brackets with replaces of
+          // its own, which start where the widget starts. CodeMirror then draws
+          // the widget on a full render, but on a redraw of the widget alone it
+          // draws the higher-precedence empty replace over the whole Citation.
+          // Ranking the widgets above Live Preview makes every draw show them.
+          Prec.high(EditorView.decorations.of(widgets)),
+        ];
+      },
       eventHandlers: {
         click(event, view) {
           if (event.button !== 0) return false;
@@ -706,7 +725,7 @@ function buildDecorations(
     resolveCitekey: ResolveCitekey;
   },
 ): CitekeyDecorations {
-  const all = new RangeSetBuilder<Decoration>();
+  const marks = new RangeSetBuilder<Decoration>();
   const widgets = new RangeSetBuilder<Decoration>();
   const { state } = view;
   const marksOf = CITEKEY_MARKS[handlers.navigationEnabled() ? "open" : "edit"];
@@ -754,14 +773,14 @@ function buildDecorations(
         }
       }
 
-      const marks = stateCitekeyMarks(
+      const stated = stateCitekeyMarks(
         marksOutside(citekeyMarks(line.text, isRuledOut), replaced),
         (citekey) => {
           visibleCitekeys.add(citekey);
           return citekeyState(resolveCitekey(citekey));
         },
       );
-      for (const mark of marks) {
+      for (const mark of stated) {
         placed.push({
           from: line.from + mark.start,
           to: line.from + mark.end,
@@ -774,13 +793,12 @@ function buildDecorations(
       // gives the builder the sorted, non-overlapping ranges it requires.
       placed.sort((a, b) => a.from - b.from);
       for (const { from, to, decoration, replaces } of placed) {
-        all.add(from, to, decoration);
-        if (replaces) widgets.add(from, to, decoration);
+        (replaces ? widgets : marks).add(from, to, decoration);
       }
     }
   }
   return {
-    all: all.finish(),
+    marks: marks.finish(),
     widgets: widgets.finish(),
     citekeys: [...visibleCitekeys],
   };

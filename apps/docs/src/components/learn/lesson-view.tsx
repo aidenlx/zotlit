@@ -2,13 +2,15 @@
 // lesson body, and the end. See DESIGN.md → Learn.
 //
 // The page prerenders every step open, in order, so search engines and readers
-// without JavaScript get the whole lesson. Once it runs, one row is open at a
-// time: the row the URL hash names (`#3`), or the first one not ticked. Ticks
+// without JavaScript get the whole lesson. Once it runs, at most one row is
+// open: the row the URL hash names (`#3`), or the first one not ticked for a
+// reader who began. A new reader starts with every row closed, on the
+// outcome, until they press Start or open a row themselves. Ticks
 // are saved per step for this browser, and the course page reads them. Until
 // the page runs, CSS alone opens the row the hash targets — see `preHydration`.
 
 import { Link, useLocation, useNavigate } from "@tanstack/react-router";
-import { Check } from "lucide-react";
+import { ArrowRight, Check } from "lucide-react";
 import {
   useEffect,
   useLayoutEffect,
@@ -23,8 +25,10 @@ import * as m from "@/paraglide/messages.js";
 
 import {
   bodyClass,
+  buttonClass,
   displayClass,
   focusClass,
+  focusPart,
   labelClass,
   metaClass,
   titleClass,
@@ -33,7 +37,7 @@ import {
   firstOpenStep,
   LessonContext,
   nextOpenStep,
-  partFromHash,
+  openOnLoad,
   readProgress,
   saveTicks,
 } from "./lesson-state";
@@ -78,12 +82,6 @@ function prefersReducedMotion() {
 // Tailwind's `xl`, from which the lesson shows its media panel.
 const wideQuery = "(min-width: 80rem)";
 
-/**
- * How far down the window the checklist's first row must rise, once the page
- * has scrolled, before the panel turns from the outcome to the open step.
- */
-const reachedLine = 0.35;
-
 /** Whether the window is `xl` wide; false while the page prerenders. */
 function useWide() {
   return useSyncExternalStore(
@@ -112,15 +110,14 @@ export function LessonView({
   const [ready, setReady] = useState(false);
   const [ticks, setTicks] = useState<ReadonlySet<number>>(new Set());
   const [open, setOpen] = useState<number | null>(null);
-  // The reader has reached the checklist, so the panel follows the open row.
-  const [engaged, setEngaged] = useState(false);
+  // The row the reader opened with Start, whose recording plays at once.
+  const [launched, setLaunched] = useState<number | null>(null);
   const [progress, setProgress] = useState<Record<string, LessonProgress>>({});
   const [say, setSay] = useState("");
   // The hash this page wrote itself, which the hash effect leaves alone.
   const written = useRef<string | null>(null);
   // The row to bring into view after the next render.
   const reveal = useRef<number | null>(null);
-  const list = useRef<HTMLOListElement>(null);
 
   // Runs before paint, so a client-side visit — which never ran the inline
   // script below — does not show every row open for a frame.
@@ -134,53 +131,18 @@ export function LessonView({
     const saved = all[lesson.slug]?.ticks ?? [];
     setProgress(all);
     setTicks(new Set(saved));
-    // A reader who began, or who follows a link to a step, is already at work.
-    const part = partFromHash(window.location.hash, total);
-    setEngaged(saved.length > 0 || (part >= 1 && part <= total));
     setReady(true);
-  }, [lesson.slug, total]);
+  }, [lesson.slug]);
 
-  // From `xl`, the panel shows the outcome until the reader reaches the
-  // checklist: scrolls its first row above the line, or clicks inside it.
-  // The observer reports the rows once it starts and whenever one crosses the
-  // line, which also covers a restored scroll; the scroll listener covers a
-  // row that starts above the line. A page that has not scrolled has not
-  // been read yet.
-  useEffect(() => {
-    const rows = list.current;
-    if (!ready || !wide || engaged || !rows) return;
-    function reached() {
-      const first = document.getElementById("1");
-      if (
-        window.scrollY > 0 &&
-        first &&
-        first.getBoundingClientRect().top < window.innerHeight * reachedLine
-      )
-        setEngaged(true);
-    }
-    const observer = new IntersectionObserver(reached, {
-      rootMargin: `0px 0px -${Math.round((1 - reachedLine) * 100)}% 0px`,
-    });
-    for (const row of rows.children) observer.observe(row);
-    window.addEventListener("scroll", reached, { passive: true });
-    return () => {
-      observer.disconnect();
-      window.removeEventListener("scroll", reached);
-    };
-  }, [ready, wide, engaged]);
-
-  // The hash names the open row; with none, the first row not ticked opens.
+  // The hash names the open row; with none, a reader who began finds the
+  // first row not ticked open, and a new reader finds every row closed.
   useLayoutEffect(() => {
     if (!ready) return;
     if (written.current === hash) return;
     written.current = null;
-    const part = partFromHash(hash, total);
-    if (part >= 1 && part <= total) setOpen(part);
-    else if (part === 0) {
-      // Storage holds the latest ticks, so this effect need not run on each tick.
-      const saved = readProgress()[lesson.slug]?.ticks ?? [];
-      setOpen(firstOpenStep(saved, total) ?? null);
-    } else setOpen(null);
+    // Storage holds the latest ticks, so this effect need not run on each tick.
+    const saved = readProgress()[lesson.slug]?.ticks ?? [];
+    setOpen(openOnLoad(hash, saved, total));
   }, [hash, total, ready, lesson.slug]);
 
   useEffect(() => {
@@ -203,7 +165,7 @@ export function LessonView({
   /** Opens row `n`, or closes every row, and brings `into` view: a row, or the end. */
   function show(n: number | null, into: number | null = n) {
     setOpen(n);
-    setEngaged(true);
+    setLaunched(null);
     reveal.current = into;
     const next = n === null ? "" : String(n);
     written.current = next;
@@ -244,6 +206,38 @@ export function LessonView({
     return after;
   }
 
+  /**
+   * Start, or "Continue with step N": opens the first row not ticked, exactly
+   * as selecting its title does, and plays its recording at once.
+   */
+  function start() {
+    const n = firstOpenStep(ticks, total);
+    if (n === undefined) return;
+    setSay(
+      m.docs_learn_say_opened({
+        number: n,
+        title: lesson.steps[n - 1]?.title ?? "",
+      }),
+    );
+    show(n);
+    setLaunched(n);
+    focusPart(n, total);
+  }
+  const next = ready && open === null ? firstOpenStep(ticks, total) : undefined;
+  const startButton = next !== undefined && (
+    <button
+      type="button"
+      onClick={start}
+      className={cn(buttonClass, "justify-self-start")}
+    >
+      {m.docs_learn_start_step({
+        number: next,
+        begun: ticks.size > 0 ? "yes" : "no",
+      })}
+      <ArrowRight aria-hidden strokeWidth={2.25} className="size-4" />
+    </button>
+  );
+
   const state: LessonState = {
     media: lesson.media,
     steps: lesson.steps,
@@ -252,14 +246,10 @@ export function LessonView({
           open,
           ticks,
           tick,
-          // The first press on the open row, before the panel follows the
-          // rows, shows its recording in the panel rather than closing it.
-          toggle: (n) =>
-            wide && !engaged && open === n
-              ? setEngaged(true)
-              : show(open === n ? null : n),
+          toggle: (n) => show(open === n ? null : n),
           go: (n) => (n > total ? show(null, n) : show(n)),
           wide,
+          launched,
         }
       : null,
   };
@@ -282,7 +272,9 @@ export function LessonView({
       >
         <div className="grid grid-cols-[minmax(0,1fr)] content-start gap-8">
           <Opener lesson={lesson} />
-          <Outcome lesson={lesson} active={ready && !wide} />
+          <Outcome lesson={lesson} active={ready && !wide}>
+            {startButton}
+          </Outcome>
           <div>
             <div
               data-lesson-bar=""
@@ -324,24 +316,19 @@ export function LessonView({
             <p aria-live="polite" className="sr-only">
               {say}
             </p>
-            <ol
-              ref={list}
-              // Bubbles up after the row's own handlers, so a toggle still
-              // reads the panel's state from before the click.
-              onClick={() => wide && setEngaged(true)}
-              className="mt-2"
-            >
-              {children}
-            </ol>
+            <ol className="mt-2">{children}</ol>
           </div>
           {(!ready || allDone) && <End lesson={lesson} progress={progress} />}
         </div>
         {ready && wide && (
           <MediaPanel
             lesson={lesson}
-            open={engaged ? open : null}
+            open={open}
             ticks={ticks}
-          />
+            launched={launched}
+          >
+            {startButton}
+          </MediaPanel>
         )}
       </div>
     </LessonContext>
@@ -389,16 +376,20 @@ function Opener({ lesson }: { lesson: LessonViewData }) {
 }
 
 /**
- * Below `xl`, the result once, above the checklist: its title and the last
- * step's recording at rest. From `xl` a running page shows it in the panel.
+ * Below `xl`, the result once, above the checklist: its title, the Start
+ * button while no row is open, and the last step's recording at rest. From
+ * `xl` a running page shows it in the panel.
  */
 function Outcome({
   lesson,
   active,
+  children,
 }: {
   lesson: LessonViewData;
   /** The page runs without the panel, so the recording can mount. */
   active: boolean;
+  /** The Start button, while no row is open. */
+  children: ReactNode;
 }) {
   const total = lesson.steps.length;
   const last = lesson.steps[total - 1];
@@ -419,6 +410,7 @@ function Outcome({
         >
           {lesson.end.title}
         </p>
+        {children && <div className="mt-2.5">{children}</div>}
       </div>
       <StepPicture
         media={lesson.media}
@@ -432,19 +424,26 @@ function Outcome({
 }
 
 /**
- * From `xl`: the outcome until the reader reaches the checklist, then the
- * open row's recording beside it. The outcome rests on its poster; the open
- * row's recording plays while it crosses the middle of the window.
+ * From `xl`: the open row's recording beside the checklist, or, while no row
+ * is open, the outcome at rest over the Start button. The open row's
+ * recording plays at once after Start, and otherwise while it crosses the
+ * middle of the window.
  */
 function MediaPanel({
   lesson,
   open,
   ticks,
+  launched,
+  children,
 }: {
   lesson: LessonViewData;
   /** The row to show, or null for the outcome. */
   open: number | null;
   ticks: ReadonlySet<number>;
+  /** The row the reader opened with Start. */
+  launched: number | null;
+  /** The Start button, while no row is open. */
+  children: ReactNode;
 }) {
   const total = lesson.steps.length;
   const step = open === null ? undefined : lesson.steps[open - 1];
@@ -478,7 +477,13 @@ function MediaPanel({
             )}
             <span className="min-w-0">{step.title}</span>
           </p>
-          <StepPicture media={lesson.media} n={open} alt={step.alt} active />
+          <StepPicture
+            media={lesson.media}
+            n={open}
+            alt={step.alt}
+            active
+            playNow={launched === open}
+          />
         </>
       ) : (
         last && (
@@ -503,6 +508,7 @@ function MediaPanel({
               active
               autoplay={false}
             />
+            {children}
           </>
         )
       )}
