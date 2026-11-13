@@ -332,6 +332,7 @@ export const layerBibliographyRender = Layer.effect(
         );
         return { entries, hasEntryMarkers };
       },
+      Effect.scoped,
       Effect.tapError((error) =>
         Effect.logWarning("Cannot format the bibliography").pipe(
           Effect.annotateLogs({ error }),
@@ -361,6 +362,7 @@ export const layerBibliographyRender = Layer.effect(
         );
         return rendered;
       },
+      Effect.scoped,
       Effect.tapError((error) =>
         Effect.logWarning("Cannot format the citations").pipe(
           Effect.annotateLogs({ error }),
