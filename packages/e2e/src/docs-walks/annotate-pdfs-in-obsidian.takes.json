@@ -728,6 +728,60 @@
       ]
     }
   },
+  "step-6": {
+    "recordedAt": "2026-11-13T03:22:23.064680908Z",
+    "step": "Lesson 2: Read and annotate a paper in Obsidian > step 6: open the same PDF in Zotero; the same highlight is there",
+    "recipe": {
+      "build": "pnpm exec turbo run build:dev --filter=@zotlit/obsidian --filter=@zotlit/zotero",
+      "record": "DOCS_WALK_RECORD=1 DOCS_WALK_ONLY=step-6 pnpm --filter @zotlit/e2e docs-walk src/docs-walks/annotate-pdfs-in-obsidian.walk.ts"
+    },
+    "env": {
+      "DOCS_WALK_ONLY": "step-6",
+      "DOCS_WALK_RECORD": "1"
+    },
+    "versionGateBypass": false,
+    "recorder": {
+      "commit": "9bf4c443b8a6844ba050fd2b6458934e27a37f2c",
+      "edited": true
+    },
+    "apps": {
+      "obsidian": "1.15.1 (installer 1.15.1)",
+      "obsidianPin": "1.15.1 (installer 1.15.1)",
+      "zotero": "10.0"
+    },
+    "vaultCase": "docs",
+    "window": {
+      "width": 1440,
+      "height": 860
+    },
+    "source": "zotero-window",
+    "frames": ".scratch/docs-walks/annotate-pdfs-in-obsidian/step-6.mov",
+    "settings": {
+      "camera": true,
+      "zoom": 2,
+      "openHold": 0.7,
+      "lead": 0.15,
+      "ease": 0.6,
+      "minEase": 0.35,
+      "central": 0.6,
+      "padding": 32,
+      "opening": 1,
+      "rest": 1.5,
+      "glide": 0.6,
+      "typing": 1,
+      "width": 1440,
+      "fps": 30,
+      "posterQuality": 82,
+      "vp9Crf": 42,
+      "h264Crf": 32
+    },
+    "duration": 7.6,
+    "outputs": {
+      "apps/docs/public/img/learn/annotate-pdfs-in-obsidian/step-6.webm": 1159524,
+      "apps/docs/public/img/learn/annotate-pdfs-in-obsidian/step-6.mp4": 863701,
+      "apps/docs/public/img/learn/annotate-pdfs-in-obsidian/step-6.poster.webp": 176806
+    }
+  },
   "step-7": {
     "recordedAt": "2026-11-12T17:23:33.033293945Z",
     "step": "Lesson 2: Read and annotate a paper in Obsidian > step 7: open your literature note from Lesson 1; the new highlight is in the Annotations section, with no update",

@@ -19,6 +19,8 @@ const RECORDER = [
   "packages/e2e/src/docs-walks/docs-walk.ts",
   "packages/e2e/src/docs-walks/camera.ts",
   "packages/e2e/src/docs-walks/clip-encode.ts",
+  "packages/e2e/src/docs-walks/docs-browser.ts",
+  "packages/e2e/src/docs-walks/macos-desktop.ts",
 ];
 
 /** One recorded clip. */
@@ -41,8 +43,11 @@ export interface Take {
   apps: { obsidian: string; obsidianPin: string; zotero: string };
   vaultCase: string;
   window: { width: number; height: number };
-  /** A CDP screencast of Obsidian, or a macOS capture of a Zotero window. */
-  source: "obsidian-screencast" | "zotero-window";
+  /**
+   * A CDP screencast of Obsidian, a macOS capture of a Zotero window, or a
+   * sequence of shots from several apps cut into one clip.
+   */
+  source: "obsidian-screencast" | "zotero-window" | "sequence";
   /** Where the raw frames or movie were saved, out of git. */
   frames: string;
   /** The clip settings it was recorded and cut with. */
@@ -57,6 +62,13 @@ export interface Take {
     events: CameraEvent[];
     keyframes: CameraTrack["keyframes"];
   };
+  /** A sequence's shots, in order: each one's folder, action log and track. */
+  shots?: {
+    dir: string;
+    viewport: { width: number; height: number };
+    events: CameraEvent[];
+    keyframes: CameraTrack["keyframes"];
+  }[];
 }
 
 /** What a take shares with every other take of the run. */
@@ -122,7 +134,8 @@ export function takeRecipe(
   return {
     build:
       "pnpm exec turbo run build:dev --filter=@zotlit/obsidian --filter=@zotlit/zotero",
-    record: `DOCS_WALK_RECORD=1 DOCS_WALK_ONLY=${name} pnpm --filter @zotlit/e2e docs-walk src/docs-walks/${slug}.walk.ts`,
+    // A clip with real desktop input records only under DOCS_WALK_NATIVE=1.
+    record: `${process.env.DOCS_WALK_NATIVE === "1" ? "DOCS_WALK_NATIVE=1 " : ""}DOCS_WALK_RECORD=1 DOCS_WALK_ONLY=${name} pnpm --filter @zotlit/e2e docs-walk src/docs-walks/${slug}.walk.ts`,
     ...(frames && {
       recut: `node packages/e2e/src/docs-walks/clip-encode.ts ${relative(root, frames)} ${relative(root, out)}`,
     }),
