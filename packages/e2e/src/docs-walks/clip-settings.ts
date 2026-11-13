@@ -1,7 +1,7 @@
 // The settings of a docs-walk clip: how it is recorded and how its camera
 // cuts it. Every value has its default here. A run overrides them with
 // `DOCS_WALK_CLIP` (a JSON object) or `DOCS_WALK_CLIP_FILE` (a JSON file),
-// for example `DOCS_WALK_CLIP='{"zoom":1.6,"rest":2.5}'`; a walk sets its own
+// for example `DOCS_WALK_CLIP='{"zoom":1.2,"rest":2.5}'`; a walk sets its own
 // defaults through `openDocsWalk({ clip })`. Each take records the settings
 // it used. See packages/e2e/AGENTS.md, "Docs walks".
 
@@ -10,8 +10,10 @@ import { readFileSync } from "node:fs";
 export interface ClipSettings {
   /** Whether the camera frames each action; off keeps the whole window. */
   camera: boolean;
-  /** The zoom that frames a click or typing. */
+  /** The highest zoom of a shot; most shots keep the whole window. */
   zoom: number;
+  /** How long a shot holds after its move, at least, in s. */
+  hold: number;
   /** How long the opening shot of the whole window holds, at least, in s. */
   openHold: number;
   /** How long before a click the camera arrives, in s. */
@@ -24,10 +26,16 @@ export interface ClipSettings {
   central: number;
   /** The margin kept around an element or a look region, in CSS px. */
   padding: number;
+  /** The context a shot keeps around a click or a typing field, in CSS px. */
+  context: number;
   /** The still start before the first action, in s. */
   opening: number;
   /** How long the clip rests on the result after the last action, in s. */
   rest: number;
+  /** How long the encoder holds the first frame before the clip, in s. */
+  openPad: number;
+  /** How long the encoder holds the last frame after the clip, in s. */
+  endPad: number;
   /** How long the pointer takes to glide to a target, in s. */
   glide: number;
   /** The typing pace, as a multiple of a person's pace. */
@@ -45,15 +53,19 @@ export interface ClipSettings {
 
 export const defaultClipSettings: ClipSettings = {
   camera: true,
-  zoom: 2,
-  openHold: 0.7,
-  lead: 0.15,
-  ease: 0.6,
-  minEase: 0.35,
-  central: 0.6,
+  zoom: 1.4,
+  hold: 2.5,
+  openHold: 1.5,
+  lead: 0.5,
+  ease: 1,
+  minEase: 0.6,
+  central: 1,
   padding: 32,
+  context: 160,
   opening: 1,
   rest: 1.5,
+  openPad: 0.8,
+  endPad: 1,
   glide: 0.6,
   typing: 1,
   width: 1440,
@@ -83,4 +95,44 @@ export function clipSettings(base: Partial<ClipSettings> = {}): ClipSettings {
     if (!(key in defaultClipSettings))
       throw new Error(`unknown clip setting ${key}`);
   return settings;
+}
+
+/** The settings of the cut: the camera and the pads, not the recording. */
+const cutKeys = [
+  "zoom",
+  "hold",
+  "openHold",
+  "lead",
+  "ease",
+  "minEase",
+  "central",
+  "context",
+  "padding",
+  "openPad",
+  "endPad",
+] as const satisfies readonly (keyof ClipSettings)[];
+
+/** The cut settings among `settings`. */
+export function cutSettings(
+  settings: Partial<ClipSettings>,
+): Partial<ClipSettings> {
+  return Object.fromEntries(
+    Object.entries(settings).filter(([key]) =>
+      (cutKeys as readonly string[]).includes(key),
+    ),
+  );
+}
+
+/**
+ * The settings to cut a recorded clip again with: the recording's own
+ * settings from `recorded`, and the cut settings of this run
+ * ({@link clipSettings}), so a new cut follows today's camera.
+ */
+export function recutSettings(recorded: Partial<ClipSettings>): ClipSettings {
+  const cut = cutSettings(recorded);
+  return clipSettings(
+    Object.fromEntries(
+      Object.entries(recorded).filter(([key]) => !(key in cut)),
+    ),
+  );
 }

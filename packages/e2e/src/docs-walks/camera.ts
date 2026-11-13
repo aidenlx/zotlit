@@ -53,21 +53,41 @@ export interface CameraPlanInput {
 export type CameraPlanOptions = Partial<
   Pick<
     ClipSettings,
-    "zoom" | "openHold" | "lead" | "ease" | "minEase" | "central" | "padding"
+    | "zoom"
+    | "hold"
+    | "openHold"
+    | "lead"
+    | "ease"
+    | "minEase"
+    | "central"
+    | "context"
+    | "padding"
   >
 >;
 
 const defaults: Required<CameraPlanOptions> = {
   zoom: defaultClipSettings.zoom,
+  hold: defaultClipSettings.hold,
   openHold: defaultClipSettings.openHold,
   lead: defaultClipSettings.lead,
   ease: defaultClipSettings.ease,
   minEase: defaultClipSettings.minEase,
   central: defaultClipSettings.central,
+  context: defaultClipSettings.context,
   padding: defaultClipSettings.padding,
 };
 
-/** Plan the camera track of a clip from its action log. */
+/** A zoom in narrows the view to this share of its width or less. */
+const ZOOM_IN = 0.8;
+
+/**
+ * Plan the camera track of a clip from its action log. The camera prefers
+ * the whole window and moves seldom: each shot holds at least `hold` after
+ * its move, and frames every action that comes before the next move could
+ * arrive. It zooms in, to `zoom` at most, only on a group of actions that
+ * the current view shows and that a tighter shot can hold; when an action
+ * falls outside the view, it widens to a view of both.
+ */
 export function planCamera(
   input: CameraPlanInput,
   options: CameraPlanOptions = {},
@@ -79,56 +99,71 @@ export function planCamera(
   let current = full;
   /** The earliest time the next move may start. */
   let free = o.openHold;
+  /** When the last move arrived. */
+  let arrived = 0;
+  /** The end of the last action the current shot shows. */
+  let busy = 0;
 
-  const events = input.events
-    .filter((e) => e.kind !== "park")
+  const actions = input.events
+    .flatMap((e) => frame(e, input.viewport, o) ?? [])
     .toSorted((a, b) => a.t - b.t);
-  for (const event of events) {
-    const shot = frame(event, input.viewport, o);
-    if (!shot) continue;
-    const ratio = shot.view.w / current.w;
-    if (
-      ratio <= 1 &&
-      ratio >= 0.75 &&
-      inside(shot.focus, centre(current, o.central))
-    )
+  for (const [i, next] of actions.entries()) {
+    const start = Math.max(free, busy, next.by - o.ease);
+    const length = Math.min(o.ease, Math.max(o.minEase, next.by - start));
+    const arrive = start + length;
+    // The shot holds `hold`, so it shows every action due before the move
+    // after it could arrive.
+    const group = actions
+      .slice(i)
+      .filter((a) => a.by < arrive + o.hold + o.ease);
+    const shot = fit(group.map((a) => a.frame).reduce(union), input.viewport, [
+      1,
+      o.zoom,
+    ]);
+    const shown = inside(next.need, centre(current, o.central));
+    const view = !shown
+      ? // Out of view: a view of both, rather than a pan at the zoom.
+        fit(union(current, shot), input.viewport, [1, o.zoom])
+      : // A zoom in takes its whole `ease`, before the action.
+        shot.w <= ZOOM_IN * current.w && next.by - start >= o.ease
+        ? shot
+        : undefined;
+    if (!view || sameView(view, current)) {
+      busy = Math.max(busy, next.end);
       continue;
-    if (sameView(shot.view, current)) continue;
-
-    // A click is met `lead` before it; a look region is framed from its call.
-    const arriveBy =
-      event.kind === "look" ? event.t + o.ease : event.t - o.lead;
-    const far =
-      current.w < W &&
-      Math.abs(shot.view.w - current.w) < 1 &&
-      distance(shot.view, current) > current.w;
-    const start = Math.max(free, arriveBy - (far ? 2 : 1) * o.ease);
-    if (far && arriveBy - start >= 2 * o.minEase) {
-      // A far shot at the same zoom: out to a view of both, then in.
-      const step = Math.min(o.ease, (arriveBy - start) / 2);
-      const wide = fit(union(current, shot.view), input.viewport, [
-        1,
-        W / current.w,
-      ]);
-      keyframes.push(
-        { t: start, view: current },
-        { t: start + step, view: wide },
-        { t: start + 2 * step, view: shot.view },
-      );
-      free = start + 2 * step;
-    } else {
-      const length = Math.min(o.ease, Math.max(o.minEase, arriveBy - start));
-      keyframes.push(
-        { t: start, view: current },
-        { t: start + length, view: shot.view },
-      );
-      free = start + length;
     }
-    current = shot.view;
+    keyframes.push({ t: start, view: current }, { t: arrive, view });
+    current = view;
+    arrived = arrive;
+    free = arrive + o.hold;
+    busy = next.end;
   }
   // The last shot holds to the end: the clip's rest on the result.
-  keyframes.push({ t: Math.max(input.duration, free), view: current });
+  keyframes.push({ t: Math.max(input.duration, arrived), view: current });
   return { keyframes };
+}
+
+/**
+ * How long the encoder holds the last frame of a clip `duration` s long cut
+ * with `track`: `endPad`, or longer, so the shot after the last move rests
+ * `hold` at least.
+ */
+export function closingPad(
+  track: CameraTrack,
+  duration: number,
+  { endPad, hold }: Pick<ClipSettings, "endPad" | "hold">,
+): number {
+  const keys = track.keyframes;
+  let arrival: number | undefined;
+  for (let i = 1; i < keys.length; i++)
+    if (
+      keys[i]!.t > keys[i - 1]!.t &&
+      !sameView(keys[i - 1]!.view, keys[i]!.view)
+    )
+      arrival = keys[i]!.t;
+  return arrival === undefined
+    ? endPad
+    : Math.max(endPad, hold - (duration - arrival));
 }
 
 /** The view of `track` at `t` clip seconds. */
@@ -152,40 +187,72 @@ export function viewAt(track: CameraTrack, t: number): Rect {
   return keys.at(-1)!.view;
 }
 
+/** An action the camera follows, as {@link planCamera} plans it. */
+interface Action {
+  t: number;
+  /** When the camera is to arrive: `lead` before a click or typing. */
+  by: number;
+  /** When the action ends. */
+  end: number;
+  /** The area that must show in the view. */
+  need: Rect;
+  /** The area a shot of the action frames: `need` with its context. */
+  frame: Rect;
+}
+
 /**
- * The view that frames `event` and the area that must show in it, or
- * nothing for an event the camera does not follow.
+ * The action that `event` is to the camera, or nothing for an event the
+ * camera does not follow. Every area is clipped to the window.
  */
 function frame(
   event: CameraEvent,
   viewport: CameraPlanInput["viewport"],
   o: Required<CameraPlanOptions>,
-): { view: Rect; focus: Rect } | undefined {
+): Action | undefined {
+  const whole = { x: 0, y: 0, w: viewport.width, h: viewport.height };
+  const clip = (r: Rect) => meet(r, whole) ?? whole;
   switch (event.kind) {
     case "park":
       return undefined;
     case "look": {
-      const focus = pad(event.rect, event.padding ?? o.padding);
-      return { view: fit(focus, viewport, [1, o.zoom]), focus };
+      // A look region is framed from its call, as the walk chose it.
+      const need = clip(pad(event.rect, event.padding ?? o.padding));
+      return {
+        t: event.t,
+        by: event.t + o.ease,
+        end: event.t,
+        need,
+        frame: need,
+      };
     }
     case "point": {
       // A small box about the click; the element too, when it fits the zoom.
       const mark = pad({ x: event.x, y: event.y, w: 0, h: 0 }, 48);
       const element = event.rect && pad(event.rect, o.padding);
-      const focus =
+      const need = clip(
         element && fits(union(element, mark), viewport, o.zoom)
           ? union(element, mark)
-          : mark;
-      return { view: fit(focus, viewport, [o.zoom, o.zoom]), focus };
+          : mark,
+      );
+      return {
+        t: event.t,
+        by: event.t - o.lead,
+        end: event.t,
+        need,
+        frame: clip(pad(need, o.context)),
+      };
     }
     case "type":
     case "keys": {
-      // Typing frames its field at the zoom, or wider for a wide field; only
-      // the part of the field inside the window counts.
-      const whole = { x: 0, y: 0, w: viewport.width, h: viewport.height };
-      const rect = (event.rect && meet(event.rect, whole)) ?? whole;
-      const focus = pad(rect, o.padding);
-      return { view: fit(focus, viewport, [1, o.zoom]), focus };
+      // Only the part of the field inside the window counts.
+      const need = clip(pad(event.rect ?? whole, o.padding));
+      return {
+        t: event.t,
+        by: event.t - o.lead,
+        end: event.end,
+        need,
+        frame: clip(pad(need, o.context)),
+      };
     }
   }
 }
@@ -256,13 +323,6 @@ function union(a: Rect, b: Rect): Rect {
 
 function pad(r: Rect, by: number): Rect {
   return { x: r.x - by, y: r.y - by, w: r.w + 2 * by, h: r.h + 2 * by };
-}
-
-function distance(a: Rect, b: Rect): number {
-  return Math.hypot(
-    a.x + a.w / 2 - (b.x + b.w / 2),
-    a.y + a.h / 2 - (b.y + b.h / 2),
-  );
 }
 
 function sameView(a: Rect, b: Rect): boolean {

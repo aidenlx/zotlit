@@ -9,8 +9,9 @@
 //
 // writes <out>.webm, <out>.mp4 and <out>.poster.webp, with the planned track
 // unless a track file, or `whole` for the whole window, is named. The
-// settings are those the clip was recorded with, under the overrides of
-// `DOCS_WALK_CLIP` and `DOCS_WALK_CLIP_FILE` (see clip-settings.ts).
+// recording's own settings are those the clip was recorded with; the camera
+// and the pads are those of this run, today's defaults under the overrides
+// of `DOCS_WALK_CLIP` and `DOCS_WALK_CLIP_FILE` (see clip-settings.ts).
 
 import { execFile } from "node:child_process";
 import { access, link, mkdir, readFile, rm, writeFile } from "node:fs/promises";
@@ -18,9 +19,9 @@ import { join } from "node:path";
 import { promisify } from "node:util";
 import sharp from "sharp";
 
-import { planCamera, viewAt } from "./camera.ts";
+import { closingPad, planCamera, viewAt } from "./camera.ts";
 import type { CameraEvent, CameraTrack } from "./camera.ts";
-import { clipSettings } from "./clip-settings.ts";
+import { recutSettings } from "./clip-settings.ts";
 import type { ClipSettings } from "./clip-settings.ts";
 
 const execFileAsync = promisify(execFile);
@@ -115,8 +116,12 @@ async function readShot(dir: string) {
  * the final frame `<out>.poster.webp`, at their real timing, through the
  * camera track: `track` when given, `"whole"` for the whole window
  * throughout, or the plan of the clip's `camera.json`. `settings` default to
- * those the clip was recorded with, under this run's overrides; with the
- * camera off, the clip keeps the whole window and has no poster. The track
+ * the recording's own settings with this run's camera and pads
+ * ({@link recutSettings}); with the camera off, the clip keeps the whole
+ * window and has no poster. The first image holds `openPad` before the clip
+ * and the last `endPad` after it, or longer, so the shot after the last move
+ * rests `hold` ({@link closingPad}); the track's times stay those of the
+ * frames. The track
  * used is written to `dir/track.json` and answered with the clip's log.
  * A `dir` with a `sequence.json` is a clip of several shots
  * ({@link ClipSequence}); it answers the track and log of its last shot.
@@ -155,9 +160,10 @@ export async function encodeClip(
   let image = 0;
   let last: Awaited<ReturnType<typeof bakeShot>> | undefined;
   let s: ClipSettings | undefined;
+  let lastDuration = 0;
   for (const shot of shots) {
     const read = await readShot(shot.dir);
-    s ??= settings ?? clipSettings(read.log.settings);
+    s ??= settings ?? recutSettings(read.log.settings ?? {});
     const { width: W, height: H } = read.log.viewport;
     // The clip is `width` px wide at most, at the first shot's ratio, in
     // even px.
@@ -165,6 +171,8 @@ export async function encodeClip(
       const first = await sharp(join(shot.dir, read.shown[0]!.file)).metadata();
       const outW = Math.min(s.width, first.width);
       size = { outW, outH: 2 * Math.round((outW * H) / W / 2) };
+      // The clip's first ticks are the open pad, after the shots.
+      tick = Math.round(s.openPad * s.fps);
     }
     const used =
       shot.track === "whole" || !s.camera
@@ -193,7 +201,22 @@ export async function encodeClip(
     });
     tick = last.tick;
     image = last.image;
+    // The shot's length in whole ticks, as baked.
+    lastDuration = Math.max(1, Math.round(read.duration * s.fps)) / s.fps;
   }
+  // The open pad holds the clip's first image, and the end pad its last,
+  // long enough that the closing shot rests `hold`.
+  for (let n = 0; n < Math.round(s!.openPad * s!.fps); n++)
+    await link(
+      join(baked, "b00000.png"),
+      join(baked, `t${String(n).padStart(5, "0")}.png`),
+    );
+  const endPad = closingPad(last!.track, lastDuration, s!);
+  for (let n = 0; n < Math.ceil(endPad * s!.fps - 1e-6); n++)
+    await link(
+      join(baked, last!.lastFile),
+      join(baked, `t${String(tick++).padStart(5, "0")}.png`),
+    );
   await encodeBoth(
     {
       input: [
@@ -353,8 +376,13 @@ export async function encodeMovie(
 ): Promise<void> {
   const crop = inset > 0 ? `crop=iw-${2 * inset}:ih-${2 * inset},` : "";
   const filter = `${crop}scale='min(${s.width},iw)':-2:flags=lanczos`;
+  // The open pad holds the first frame, and the end pad the last.
+  const pads = `tpad=start_mode=clone:start_duration=${s.openPad}:stop_mode=clone:stop_duration=${s.endPad}`;
   await encodeBoth(
-    { input: ["-y", "-i", movie], filter: `${filter},format=yuv420p` },
+    {
+      input: ["-y", "-i", movie],
+      filter: `${filter},${pads},format=yuv420p`,
+    },
     out,
     s,
   );

@@ -487,7 +487,13 @@ export async function openDocsWalk(
       await writeTake(takes, name, {
         recordedAt: Temporal.Now.instant().toString(),
         step: expect.getState().currentTestName ?? "",
-        recipe: takeRecipe(root, { slug: options.slug, name, out, frames }),
+        recipe: takeRecipe(root, {
+          slug: options.slug,
+          name,
+          out,
+          frames,
+          clip: options.clip,
+        }),
         ...(await runFacts()),
         source: "obsidian-screencast",
         frames: relative(root, frames),
@@ -550,7 +556,13 @@ export async function openDocsWalk(
       await writeTake(takes, name, {
         recordedAt: Temporal.Now.instant().toString(),
         step: expect.getState().currentTestName ?? "",
-        recipe: takeRecipe(root, { slug: options.slug, name, out, frames }),
+        recipe: takeRecipe(root, {
+          slug: options.slug,
+          name,
+          out,
+          frames,
+          clip: options.clip,
+        }),
         ...(await runFacts()),
         source: "sequence",
         frames: relative(root, frames),
@@ -630,7 +642,12 @@ export async function openDocsWalk(
       await writeTake(takes, name, {
         recordedAt: Temporal.Now.instant().toString(),
         step: expect.getState().currentTestName ?? "",
-        recipe: takeRecipe(root, { slug: options.slug, name, out }),
+        recipe: takeRecipe(root, {
+          slug: options.slug,
+          name,
+          out,
+          clip: options.clip,
+        }),
         ...(await runFacts()),
         source: "zotero-window",
         frames: relative(root, movie),
