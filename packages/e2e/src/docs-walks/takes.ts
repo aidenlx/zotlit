@@ -163,7 +163,7 @@ export async function outputSizes(
   out: string,
 ): Promise<Record<string, number>> {
   const sizes: Record<string, number> = {};
-  for (const ext of ["webm", "mp4", "poster.webp"]) {
+  for (const ext of ["mp4", "poster.webp"]) {
     const file = `${out}.${ext}`;
     const size = await stat(file).then(
       (s) => s.size,

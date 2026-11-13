@@ -322,7 +322,7 @@ describe("Help Links", () => {
   // The docs site of the test build is https://zotlit.aidenlx.site.
   const page = (label: string, url: string) => [label, url, [[url]]];
   const HELP_LINKS = [
-    page("Getting started", "https://zotlit.aidenlx.site/docs"),
+    page("Getting started", "https://zotlit.aidenlx.site/learn"),
     page("Chat & discuss", "https://zotlit.aidenlx.site/community"),
     page("Star on GitHub", "https://github.com/aidenlx/zotlit"),
     page("Templates", "https://zotlit.aidenlx.site/docs/reference/templates"),

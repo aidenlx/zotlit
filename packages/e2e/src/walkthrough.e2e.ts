@@ -1310,14 +1310,14 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
           );
         press(row("Citations"), "Citations");
         const tutorial = !!row(
-          "Pandoc citation tutorial",
+          "Pandoc citation workflow",
         )?.querySelector<HTMLButtonElement>("button");
         const changed = [];
         for (const [name, key] of controls) {
           const initial = tab.getControlValue(key);
           for (const expected of [!initial, initial]) {
             const tutorialButton = row(
-              "Pandoc citation tutorial",
+              "Pandoc citation workflow",
             )!.querySelector<HTMLButtonElement>("button");
             press(
               row(name)!.querySelector<HTMLElement>(".checkbox-container"),
@@ -1328,7 +1328,7 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
                 value: tab.getControlValue(key),
                 refreshed:
                   row(
-                    "Pandoc citation tutorial",
+                    "Pandoc citation workflow",
                   )!.querySelector<HTMLButtonElement>("button") !==
                   tutorialButton,
               }),
