@@ -7,7 +7,9 @@
 
 import type { ReactNode } from "react";
 
+import { textLinkClass } from "@/components/learn/action-classes";
 import { Message } from "@/components/message";
+import { cn } from "@/lib/cn";
 import { m } from "@/paraglide/messages.js";
 import { localizeHref } from "@/paraglide/runtime.js";
 
@@ -85,7 +87,10 @@ function AnswerLink({ path, children }: { path: string; children: string }) {
   return (
     <a
       href={localizeHref(path)}
-      className="rounded-sm font-medium text-fd-primary underline decoration-fd-primary/40 underline-offset-4 hover:decoration-fd-primary focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fd-primary"
+      className={cn(
+        textLinkClass,
+        "font-medium focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fd-primary",
+      )}
     >
       {children}
     </a>

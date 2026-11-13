@@ -1,4 +1,5 @@
 // @vitest-environment happy-dom
+import type { ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
@@ -386,7 +387,8 @@ describe("a lesson's recordings", () => {
 // picture a search visitor sees on arrival, so it loads at once and every
 // step picture below it waits until it nears the window.
 describe("the prerendered page's pictures", () => {
-  it("loads the outcome first and leaves every step picture lazy", async () => {
+  /** The lesson page as the prerender writes it, parsed. */
+  async function prerender(view: LessonViewData, body: ReactNode) {
     const { renderToString } = await import("react-dom/server");
     const {
       RouterContextProvider,
@@ -395,23 +397,29 @@ describe("the prerendered page's pictures", () => {
       createRouter,
     } = await import("@tanstack/react-router");
     const { LessonView } = await import("./lesson-view");
-    const { Step } = await import("./lesson-mdx");
     const router = createRouter({
       history: createMemoryHistory({
-        initialEntries: [`/learn/${lesson.slug}`],
+        initialEntries: [`/learn/${view.slug}`],
       }),
       routeTree: createRootRoute(),
     });
-
     const html = renderToString(
       <RouterContextProvider router={router}>
-        <LessonView lesson={lesson}>
-          <Step n={1}>Open the PDF from its card.</Step>
-          <Step n={2}>Allow editing in Zotero.</Step>
-        </LessonView>
+        <LessonView lesson={view}>{body}</LessonView>
       </RouterContextProvider>,
     );
-    const page = new DOMParser().parseFromString(html, "text/html");
+    return new DOMParser().parseFromString(html, "text/html");
+  }
+
+  it("loads the outcome first and leaves every step picture lazy", async () => {
+    const { Step } = await import("./lesson-mdx");
+    const page = await prerender(
+      lesson,
+      <>
+        <Step n={1}>Open the PDF from its card.</Step>
+        <Step n={2}>Allow editing in Zotero.</Step>
+      </>,
+    );
     const outcome = page.querySelector(`${outcomeScope} img`);
     const steps = [...page.querySelectorAll("img")].filter(
       (image) => image !== outcome,
@@ -433,32 +441,13 @@ describe("the prerendered page's pictures", () => {
   });
 
   it("ends on the Go further guides, each linked by its title", async () => {
-    const { renderToString } = await import("react-dom/server");
-    const {
-      RouterContextProvider,
-      createMemoryHistory,
-      createRootRoute,
-      createRouter,
-    } = await import("@tanstack/react-router");
-    const { LessonView } = await import("./lesson-view");
-    const router = createRouter({
-      history: createMemoryHistory({
-        initialEntries: [`/learn/${lesson.slug}`],
-      }),
-      routeTree: createRootRoute(),
-    });
     const guide = {
       title: "Edit or delete Zotero highlights from Obsidian",
       href: "/docs/how-to/edit-pdf-annotations",
       when: "when you want to change a highlight color.",
     };
 
-    const html = renderToString(
-      <RouterContextProvider router={router}>
-        <LessonView lesson={{ ...lesson, further: [guide] }}>{null}</LessonView>
-      </RouterContextProvider>,
-    );
-    const page = new DOMParser().parseFromString(html, "text/html");
+    const page = await prerender({ ...lesson, further: [guide] }, null);
     const list = page.querySelector('nav[aria-labelledby="lesson-further"]');
 
     expect(list?.querySelector("h2")?.textContent).toBe(

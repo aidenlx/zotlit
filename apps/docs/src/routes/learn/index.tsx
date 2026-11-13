@@ -239,7 +239,16 @@ function StartHere({
           id="learn-start"
           className={cn(bodyClass, "font-semibold text-pretty")}
         >
-          {lesson.title}
+          <Link
+            to="/learn/$lesson"
+            params={{ lesson: lesson.slug }}
+            className={cn(
+              "rounded-sm underline-offset-4 hover:underline",
+              focusClass,
+            )}
+          >
+            {lesson.title}
+          </Link>
         </h2>
         <Meta lesson={lesson} progress={progress} />
         <div className="mt-1">

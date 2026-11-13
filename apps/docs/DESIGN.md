@@ -526,7 +526,8 @@ explains, and each fact appears once (see The label voice).
   Lesson N** button (ink fill) once the reader has progress. Then lesson 1
   as a raised card with a 4px accent bar on its leading edge — the chore as
   a serif title, the lesson's title under it (sans semibold at body size,
-  the card's heading), the minutes, the start button and the result picture
+  the card's heading) as a link to the lesson, underlined on hover, the
+  minutes, the start button and the result picture
   beside it from 561px (above it below); its place and width say "start
   here". Once lesson 1 is done, the card becomes a strip on the check tint:
   a check disc, the chore and an **Open it again** link. Then the section

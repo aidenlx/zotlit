@@ -27,6 +27,7 @@ import { cn } from "@/lib/cn";
 import * as m from "@/paraglide/messages.js";
 import { localizeHref } from "@/paraglide/runtime.js";
 
+import { textLinkClass } from "./action-classes";
 import {
   bodyClass,
   buttonClass,
@@ -587,7 +588,8 @@ function End({
           to="/learn"
           className={cn(
             metaClass,
-            "justify-self-start rounded-sm py-1.5 font-semibold text-fd-primary underline decoration-fd-primary/40 underline-offset-4 hover:decoration-fd-primary",
+            textLinkClass,
+            "justify-self-start py-1.5 font-semibold",
             focusClass,
           )}
         >
@@ -653,10 +655,7 @@ function GoFurther({ further }: { further: FurtherLink[] }) {
           <li key={href} className={cn(bodyClass, "text-pretty")}>
             <a
               href={localizeHref(href)}
-              className={cn(
-                "rounded-sm font-semibold text-fd-primary underline decoration-fd-primary/40 underline-offset-4 hover:decoration-fd-primary",
-                focusClass,
-              )}
+              className={cn(textLinkClass, "font-semibold", focusClass)}
             >
               {title}
             </a>
