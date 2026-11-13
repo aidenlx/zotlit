@@ -20,8 +20,14 @@ import type {
   DocsBrowser,
   DocsBrowserPage,
 } from "@e2e/docs-walks/docs-browser.ts";
-import { recordDesktop } from "@e2e/docs-walks/macos-desktop.ts";
+import { bringToFront, recordDesktop } from "@e2e/docs-walks/macos-desktop.ts";
 import type { DesktopShot } from "@e2e/docs-walks/macos-desktop.ts";
+import {
+  arrowStyle,
+  pointerGlide,
+  pointerLook,
+  ringStyle,
+} from "@e2e/docs-walks/pointer-look.ts";
 import {
   outputSizes,
   takeRecipe,
@@ -56,9 +62,9 @@ declare module "../page-helpers.ts" {
      * with it before a click, and types through it at a person's pace.
      */
     docsWalkPointer?: DocsWalkPointer;
-    /** Ends the screencast that {@link DocsWalk.record} started. */
     /** Hides the notices a recording held on screen, and stops holding. */
     docsWalkReleaseNotices?: () => void;
+    /** Ends the screencast that {@link DocsWalk.record} started. */
     docsWalkStopRecording?: () => Promise<{
       frames: RecordedFrame[];
       camera: CameraLog;
@@ -209,10 +215,27 @@ export function recordRequested(name?: string): boolean {
   return !name || !only || only.split(",").includes(name);
 }
 
+/**
+ * Whether the run needs every Desktop Slot: it captures, or it records. A
+ * recording brings Zotero to the front, hides Obsidian, and can send real
+ * pointer and key input, so no other run may use the desktop meanwhile. The
+ * global setup cannot tell which steps record, so every recording run takes
+ * the hold.
+ */
+export function exclusiveHoldRequested(): boolean {
+  return captureRequested() || recordRequested();
+}
+
 export interface DocsWalkOptions {
-  /** The docs page's slug; names the layout folder and the capture folder. */
+  /**
+   * The walk's name: its file name, which can differ from the lesson's page
+   * slug. Names the layout, camera and capture folders and the take record.
+   */
   slug: string;
-  /** The folder under `apps/docs/public/img/` that receives the images. */
+  /**
+   * The folder under `apps/docs/public/img/` that receives the images and
+   * clips: `learn/<slug>` for a lesson.
+   */
   collection: string;
   /** @default "demo" */
   vaultCase?: string;
@@ -250,7 +273,7 @@ export interface DocsWalk extends AsyncDisposable {
   compose(name: string): Promise<void>;
   /**
    * Run `actions`, the reader's actions of one step, and record them as the
-   * clip `name`: `<name>.webm` and `<name>.mp4` beside the step's image. The
+   * clip `name`: `<name>.mp4` beside the step's image. The
    * window shows a drawn pointer while it records, and the clip rests on the
    * result. A camera planned from the pointer's actions, or the track
    * `<slug>.camera/<name>.json` beside the walk, frames each part of the
@@ -613,7 +636,7 @@ export async function openDocsWalk(
     },
     async recordZotero(name, title, actions) {
       const pointAt = (window: string, element: string) =>
-        zoteroPointer(zotero, window, element);
+        zoteroPointer(zotero, { window, element }, settings);
       if (!recordRequested(name))
         return actions(
           async () => {},
@@ -623,13 +646,13 @@ export async function openDocsWalk(
       const pid = await zotero.json<number>("Services.appinfo.processID");
       const movie = join(captures, `${name}.mov`);
       await rm(movie, { force: true });
-      // Zotero comes to the front and raises the window itself.
-      await activate(pid);
+      // Zotero comes to the front and raises the window itself. macOS window
+      // capture records a window as black while its app is behind.
+      await bringToFront(pid);
       await zotero.json<boolean>(
         `(()=>{const t=new RegExp(${JSON.stringify(title.source)});for(const w of Services.wm.getEnumerator(null))if(t.test(w.document.title)){w.focus();return true;}return false;})()`,
       );
-      await new Promise((r) => setTimeout(r, 800));
-      const target = await zoteroWindow(pid, title);
+      const target = await raisedZoteroWindow(pid, title);
       // A capture of a dialog window records black, so a dialog records as
       // its screen area, with its rounded corners cut away.
       const dialog = target.layer > 0;
@@ -641,6 +664,9 @@ export async function openDocsWalk(
         { stdio: "ignore" },
       );
       const ended = new Promise((r) => capture.once("exit", r));
+      // No signal is known that tells when `screencapture -v` starts to
+      // record, so this waits. A desktop probe must check whether the
+      // `.mov` appears when the recording starts.
       await new Promise((r) => setTimeout(r, 800));
       let stopped = false;
       const stop = async () => {
@@ -727,9 +753,13 @@ async function startRecording(
   dir: string,
   settings: ClipSettings,
 ): Promise<void> {
+  const { glideMs, transitionMs } = pointerGlide(settings);
   await obRun(
     vaultId,
-    async ({ page }, { dir, opening, glideMs, typing, lookMs }) => {
+    async (
+      { page },
+      { dir, opening, glideMs, arrowCss, ringCss, typing, lookMs, look },
+    ) => {
       const fs = require("fs") as typeof import("node:fs");
       const path = require("path") as typeof import("node:path");
       fs.mkdirSync(dir, { recursive: true });
@@ -768,14 +798,12 @@ async function startRecording(
       const pointer = document.body.createDiv({
         attr: { "data-docs-walk-pointer": "" },
       });
-      pointer.style.cssText = `position:fixed;left:0;top:0;z-index:2147483647;pointer-events:none;transition:transform ${Math.max(0, glideMs - 50)}ms cubic-bezier(.4,0,.2,1);`;
-      pointer.innerHTML =
-        '<svg width="22" height="26" viewBox="0 0 22 26" style="display:block;filter:drop-shadow(0 1px 2px rgba(0,0,0,.35))"><path d="M2 1.5v20.2l5.3-5.1 3.4 7.8 3.4-1.5-3.3-7.6 7.4-.2z" fill="#111" stroke="#fff" stroke-width="1.6" stroke-linejoin="round"/></svg>';
+      pointer.style.cssText = arrowCss;
+      pointer.innerHTML = look.arrow;
       const ring = document.body.createDiv({
         attr: { "data-docs-walk-pointer": "" },
       });
-      ring.style.cssText =
-        "position:fixed;left:0;top:0;width:28px;height:28px;margin:-14px 0 0 -14px;border-radius:50%;border:2px solid hsl(var(--interactive-accent-hsl));background:hsla(var(--interactive-accent-hsl),.18);z-index:2147483646;pointer-events:none;opacity:0;";
+      ring.style.cssText = `position:fixed;left:0;top:0;${ringCss}opacity:0;`;
       const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
       const start = {
         x: Math.round(window.innerWidth * 0.55),
@@ -792,14 +820,11 @@ async function startRecording(
       const mark = async (x: number, y: number) => {
         ring.style.left = `${x}px`;
         ring.style.top = `${y}px`;
-        ring.animate(
-          [
-            { opacity: 1, transform: "scale(.5)" },
-            { opacity: 0, transform: "scale(1.4)" },
-          ],
-          { duration: 450, easing: "ease-out" },
-        );
-        await wait(150);
+        ring.animate(look.ringKeyframes, {
+          duration: look.ringMs,
+          easing: "ease-out",
+        });
+        await wait(look.markMs);
       };
       const typeKeys = async (
         text: string,
@@ -969,7 +994,13 @@ async function startRecording(
     {
       dir,
       opening: settings.opening * 1000,
-      glideMs: settings.glide * 1000,
+      glideMs,
+      arrowCss: arrowStyle(transitionMs),
+      ringCss: ringStyle({
+        border: "hsl(var(--interactive-accent-hsl))",
+        fill: "hsla(var(--interactive-accent-hsl),.18)",
+      }),
+      look: pointerLook,
       typing: settings.typing,
       // With the camera off, a look moves nothing, so it does not wait.
       lookMs: settings.camera ? settings.ease * 1000 : 0,
@@ -1031,41 +1062,50 @@ async function zoteroWindow(
 }
 
 /**
- * Bring the app of process `pid` to the front. macOS window capture records
- * a window as black while its app is behind.
+ * {@link zoteroWindow} once the raised window is in front of every other
+ * app's window: it asks again for up to 2 s.
+ * @throws the last error of {@link zoteroWindow} when the window is still
+ * missing or covered after 2 s.
  */
-async function activate(pid: number): Promise<void> {
-  await execFileAsync("osascript", [
-    "-l",
-    "JavaScript",
-    "-e",
-    `ObjC.import("AppKit"); $.NSRunningApplication.runningApplicationWithProcessIdentifier(${pid}).activateWithOptions(1); ""`,
-  ]);
+async function raisedZoteroWindow(
+  pid: number,
+  title: RegExp,
+): ReturnType<typeof zoteroWindow> {
+  for (let tries = 1; ; tries++) {
+    try {
+      return await zoteroWindow(pid, title);
+    } catch (error) {
+      if (tries >= 20) throw error;
+      await new Promise((r) => setTimeout(r, 100));
+    }
+  }
 }
 
 /**
  * Draw a pointer in the Zotero window `window` (an expression) and glide it
  * to the element `element` (an expression over that window, `w`), with a
- * click mark there.
+ * click mark there, in the look and at the glide of the other shots.
  */
 async function zoteroPointer(
   zotero: ZoteroRdp,
-  window: string,
-  element: string,
+  { window, element }: { window: string; element: string },
+  settings: ClipSettings,
 ): Promise<void> {
   if (!recordRequested()) return;
+  const { transitionMs, glideMs } = pointerGlide(settings);
+  const { arrow, ringKeyframes, ringMs, markMs } = pointerLook;
   await zotero.json<boolean>(`(async()=>{const w=${window};const d=w.document;
     const ns='http://www.w3.org/1999/xhtml';const wait=(ms)=>new Promise(r=>w.setTimeout(r,ms));
     let p=d.querySelector('[data-docs-walk-pointer="arrow"]');
     if(!p){p=d.createElementNS(ns,'div');p.setAttribute('data-docs-walk-pointer','arrow');
-      p.style.cssText='position:fixed;left:0;top:0;z-index:2147483647;pointer-events:none;transition:transform 550ms cubic-bezier(.4,0,.2,1);transform:translate('+Math.round(w.innerWidth*0.5)+'px,'+Math.round(w.innerHeight*0.25)+'px)';
-      p.innerHTML='<svg xmlns="http://www.w3.org/2000/svg" width="22" height="26" viewBox="0 0 22 26" style="display:block"><path d="M2 1.5v20.2l5.3-5.1 3.4 7.8 3.4-1.5-3.3-7.6 7.4-.2z" fill="#111" stroke="#fff" stroke-width="1.6" stroke-linejoin="round"/></svg>';
+      p.style.cssText=${JSON.stringify(arrowStyle(transitionMs))}+'transform:translate('+Math.round(w.innerWidth*0.5)+'px,'+Math.round(w.innerHeight*0.25)+'px)';
+      p.innerHTML=${JSON.stringify(arrow)};
       d.documentElement.appendChild(p);await wait(300);}
     const e=${element};const b=e.getBoundingClientRect();
     const x=Math.round(b.left+b.width/2),y=Math.round(b.top+b.height/2);
-    p.style.transform='translate('+x+'px,'+y+'px)';await wait(650);
+    p.style.transform='translate('+x+'px,'+y+'px)';await wait(${glideMs});
     const r=d.createElementNS(ns,'div');r.setAttribute('data-docs-walk-pointer','ring');
-    r.style.cssText='position:fixed;left:'+x+'px;top:'+y+'px;width:28px;height:28px;margin:-14px 0 0 -14px;border-radius:50%;border:2px solid #7c5cff;background:rgba(124,92,255,.18);z-index:2147483646;pointer-events:none;';
-    d.documentElement.appendChild(r);r.animate([{opacity:1,transform:'scale(.5)'},{opacity:0,transform:'scale(1.4)'}],{duration:450,easing:'ease-out',fill:'forwards'});
-    await wait(200);return true;})()`);
+    r.style.cssText='position:fixed;left:'+x+'px;top:'+y+'px;'+${JSON.stringify(ringStyle())};
+    d.documentElement.appendChild(r);r.animate(${JSON.stringify(ringKeyframes)},{duration:${ringMs},easing:'ease-out',fill:'forwards'});
+    await wait(${markMs});return true;})()`);
 }

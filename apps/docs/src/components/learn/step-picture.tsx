@@ -76,8 +76,6 @@ export function StepPicture({
           // A player starts in its autoplay mode, so a change of mode remounts it.
           key={`${entry.base}:${autoplay}`}
           base={entry.base}
-          webm={entry.clip.webm}
-          mp4={entry.clip.mp4}
           poster={entry.still.src}
           alt={alt}
           fit="contain"

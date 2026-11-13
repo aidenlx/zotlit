@@ -16,6 +16,8 @@ export default defineConfig({
       scanChinesePages(import.meta.dirname),
     ),
     __LEARN_MEDIA__: JSON.stringify(scanLearnMedia(import.meta.dirname)),
+    // Tests play the clips from their site paths, as the dev server does.
+    __MEDIA_URLS__: "{}",
   },
   test: testDefaults,
   resolve: {
