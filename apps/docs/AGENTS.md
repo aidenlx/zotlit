@@ -101,6 +101,8 @@ Custom MDX components (`src/components/`) are imported per-page in the `.mdx`, n
 
 Give any heading that is a deep-link target (linked from another page, a changelog entry, or an issue reply as `/path#anchor`) a stable custom anchor via fumadocs' `[#slug]` syntax, e.g. `## Section title [#bulk]`. The auto-generated slug tracks the heading text, so rewording it silently breaks inbound links; a short custom id does not. Reference: https://www.fumadocs.dev/docs/markdown#toc-settings
 
+An old anchor whose heading is gone keeps working through an empty `<span id="old-id" />` at the start of the paragraph or list item that now holds its content, so the live heading ids stay as they are. For content inside an `<Accordion>`, put the span just before that `<Accordion>`, inside `<Accordions>`, with `data-accordion-value` set to the accordion's title: the reader lands on its header, and `<Accordions>` opens it once the page runs. A span inside the closed panel cannot be scrolled to.
+
 **Images:** Render JSX images through [`DocsImage`](src/components/docs-image.tsx) or `@unpic/react`. Put screenshots under `public/img/<collection>/` as `.webp`, reference them with root-relative `/img/...` paths, and convert source images with `cwebp`. Keep the pipeline aligned across [`source.config.ts`](source.config.ts) for MDX metadata and [the deploy workflow](../../.github/workflows/docs-deploy.yml) for Git LFS checkout.
 
 Adding a page type to the social (OG) cards: add its entry to `ogTypes` in [`src/lib/shared.ts`](src/lib/shared.ts), give it a card in [`src/lib/og-cards.ts`](src/lib/og-cards.ts), and name it on the page's `pageHead({ card: { type: "<type>", … } })` (see [`src/lib/seo.ts`](src/lib/seo.ts)).

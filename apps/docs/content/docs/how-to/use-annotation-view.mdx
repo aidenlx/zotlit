@@ -19,7 +19,11 @@ Before you pull highlights into your notes, try the guided lesson [Annotate Zote
 
 ## Pull highlights into a note [#pull-into-note]
 
-1. Open the command palette and run <Command inline name={m.command_open_annot_view_name()} />, or select the highlighter icon in the ribbon. The <UiLabel name={m.annot_view_name()} /> panel opens in the right sidebar.
+1. <span id="open-the-annotation-view" />
+   Open the command palette and run
+   <Command inline name={m.command_open_annot_view_name()} />, or select the
+   highlighter icon in the ribbon. The <UiLabel name={m.annot_view_name()} />
+   panel opens in the right sidebar.
 2. Open the paper's literature note, or open its PDF in an Obsidian tab. The panel shows a card for each of the paper's annotations. The panel follows the tab you are in (<UiLabel name={m.annot_view_mode_active_tab()} /> mode).
 3. If the note you write in is not that paper's literature note, open the menu at the top of the panel and select <UiLabel name={m.annot_view_mode_pin_current_item()} />. The panel stays on this paper when you switch to your draft.
 4. Open the note, then drag a card from the panel to the place in the note where the highlight should go. The highlight appears at that place. An image or ink annotation takes a moment while ZotLit prepares its image, then inserts the link. One Undo removes the whole insert.
@@ -27,6 +31,7 @@ Before you pull highlights into your notes, try the guided lesson [Annotate Zote
 To insert without dragging: put the cursor in the note, right-click the card (or open its <UiLabel name={m.annot_view_more_tooltip()} /> menu) and select <UiLabel name={m.annot_view_menu_insert()} />.
 
 <Accordions multiple>
+<span id="choose-what-the-view-follows" data-accordion-value="Choose what the panel follows" />
 <Accordion title="Choose what the panel follows" id="follow">
 
 Open the menu at the top of the panel (the paper's title with a down arrow). Its first group is headed <UiLabel name={m.annot_view_header_menu_label()} />.

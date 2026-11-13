@@ -22,9 +22,17 @@ If you have never cited a paper in Obsidian, start with [How to cite in Obsidian
 
    ![A thesis chapter with "[@" typed at the end of a paragraph, and the citation suggester below it listing the two papers the chapter already cites, each marked "Cited in this note"](/img/how-to/citation-suggester-cited-in-note.webp)
 
-2. Keep typing words from the title or author to narrow the list. The list ranks papers by how well they match, and any paper the note already cites keeps its <UiLabel name={m.citation_suggester_cited_in_note()} /> mark.
+2. <span id="search-and-select" />
+   Keep typing words from the title or author to narrow the list. The list ranks
+   papers by how well they match, and any paper the note already cites keeps its
+   <UiLabel name={m.citation_suggester_cited_in_note()} /> mark.
 3. Select the paper and press `Enter`. The citation appears in your note (for example, `[@smith2024]`), followed by a space, with your cursor placed after the space.
-4. For the author-in-text form, press `Shift+Enter` instead of `Enter`, or end your search with `/` and press `Enter`. The note receives `@smith2024`. The hint row at the bottom of the list confirms `↵` <UiLabel name={m.instruction_insert_citation()} />, and `/ ↵` and `⇧↵` <UiLabel name={m.instruction_insert_alternate_citation()} />.
+4. <span id="insert-the-alternate-citation-optional" />
+   For the author-in-text form, press `Shift+Enter` instead of `Enter`, or end
+   your search with `/` and press `Enter`. The note receives `@smith2024`. The
+   hint row at the bottom of the list confirms `↵`
+   <UiLabel name={m.instruction_insert_citation()} />, and `/ ↵` and `⇧↵`
+   <UiLabel name={m.instruction_insert_alternate_citation()} />.
 
 <Accordions multiple>
 <Accordion title="From the command palette" id="command-palette">
@@ -66,7 +74,11 @@ Use this format when the citation must function as an Obsidian link to the paper
 
 ## If you see something else
 
-- **Nothing happens when I type `@` alone:** A bare `@` opens the suggester only when <UiLabel name={m.settings_citation_at_trigger_name()} /> is turned on in <SettingsPath page={m.settings_page_citations()} /> (off by default). Type `[@` instead, or turn that setting on.
+- <span id="suggester-settings" />
+  **Nothing happens when I type `@` alone:** A bare `@` opens the suggester only
+  when <UiLabel name={m.settings_citation_at_trigger_name()} /> is turned on in
+  <SettingsPath page={m.settings_page_citations()} /> (off by default). Type
+  `[@` instead, or turn that setting on.
 - **No list opens at all, even for `[@`:** <UiLabel name={m.settings_citation_suggester_name()} /> is turned off. Open <SettingsPath page={m.settings_page_citations()} /> and turn it back on.
 - **My search stops at the first space after `@`:** When using a bare `@`, type `_` instead of a space (for example, `@machine_learning` matches "machine learning"). Normal spaces work as expected after `[@`.
 - **Notice: "Selected item has no citation key: \{key\}."** The paper has an empty Citation Key field in Zotero. Add a citation key to the item in Zotero, then insert it again.
