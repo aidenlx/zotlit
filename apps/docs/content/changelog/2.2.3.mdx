@@ -1,0 +1,41 @@
+---
+version: "2.2.3"
+companion: "2.2.3"
+date: "2026-11-14"
+description: "Literature notes from PDFs, new guided lessons, Obsidian 1.15.1 requirement"
+---
+
+import { Command } from "@/components/command";
+import { UiLabel } from "@/components/ui-label";
+import { m } from "@/paraglide/messages.js";
+
+This release brings literature note actions to the PDF reader, adds guided lessons to the documentation, and fixes bugs across reader links, citations, and popovers. ZotLit Companion 2.2.3 ships with it and has no changes of its own, so Companion 2.2.0 to 2.2.2 keep working.
+
+## Breaking Changes
+
+### Obsidian 1.15.1 or later
+
+ZotLit 2.2.3 needs Obsidian 1.15.1 or later (before: 1.14.5). The installer minimum stays 1.13.4. On Obsidian 1.14.5 to 1.15.0, ZotLit stays at 2.2.2 and does not update until you update Obsidian. See [Which Zotero and Obsidian versions ZotLit works with](/docs/answers/zotero-and-obsidian-versions).
+
+## What's New
+
+### Write or open the literature note from the PDF
+
+When a Zotero PDF that belongs to a paper is open in Obsidian, a button at the top right of the PDF tab reads <UiLabel name={m.library_view_menu_write_note()} />, or <UiLabel name={m.library_view_menu_open_note()} /> when the note exists. The label updates when you write or delete the note. The same entry is in the tab's More options menu, and there is a new command, <Command inline name={m.command_open_pdf_literature_note_name()} />.
+
+The note opens in a split beside the PDF, and a tab that already shows the note comes forward. A PDF that is not part of a Zotero paper gets no button. See [Lesson 1](/learn/connect-zotero-to-obsidian).
+
+### New guided lessons
+
+The documentation now starts with six short lessons at [/learn](/learn): connect Zotero and write a first literature note, annotate PDFs, cite as you write, export to Word with citations, make a literature review table, and track what you have read. The <UiLabel name={m.welcome_docs_getting_started()} /> tile in ZotLit's Welcome view now opens these lessons, and help links in ZotLit point at the new pages.
+
+## Bug Fixes
+
+- With <UiLabel name={m.settings_reader_open_file_links_name()} /> or <UiLabel name={m.settings_reader_open_annotation_links_name()} /> turned off, the page link on an annotation still opened the PDF in Obsidian across the annotation view, query blocks, the Reading Card, and the Query View. It now opens the annotation in Zotero, as the setting says. See [Open an item's PDF in Obsidian](/docs/how-to/open-pdf-in-obsidian#file-links).
+- On Obsidian 1.15.1, menus and popovers in a separate Obsidian window opened empty or closed at once (for example the query view menu, the filter popover, and the highlight popup). They work again.
+- In Live Preview, a citation next to another one, such as `[@a] [@b]`, sometimes disappeared. It now stays visible. See [Insert citations](/docs/how-to/insert-citations).
+- An export to Word started right after Zotero opened could wait forever. ZotLit now stops after 30 seconds and asks you to wait until Zotero is ready and try again. See [Export a note with citations](/docs/how-to/export-note-with-citations).
+- In a narrow Library View, the Reading Card's <UiLabel name={m.library_view_menu_open_pdf()} /> and <UiLabel name={m.library_view_menu_write_note()} /> buttons could sit below the end of the tab, out of reach. The tab now scrolls to show them. See [Browse your library in the Library View](/docs/how-to/use-library-view).
+- Saving the <UiLabel name={m.library_view_recent()} /> list with <UiLabel name={m.annot_view_save_as_query_file()} /> named the file <UiLabel name={m.library_view_recent()} />. It is now named <UiLabel name={m.query_file_untitled()} />.
+- The highlight popup stayed on top when you opened another tab. It now hides with the PDF and comes back with it, keeping the comment you typed. See [How to edit PDF annotations in Obsidian](/docs/how-to/edit-pdf-annotations).
+- After you selected <UiLabel name={m.settings_citation_engine_uninstall()} /> for the <UiLabel name={m.settings_citation_engine_name()} /> while a draft with citations was open, the setting could offer <UiLabel name={m.settings_citation_engine_retry()} /> instead of <UiLabel name={m.settings_citation_engine_install()} />. It now shows <UiLabel name={m.settings_citation_engine_install()} />. The same fix applies to the Chinese word segmenter download.
