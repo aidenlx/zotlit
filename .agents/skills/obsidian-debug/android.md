@@ -46,11 +46,9 @@ when `adb -s <serial> shell getprop sys.boot_completed` returns `1`.
    `http://localhost`. The onboarding page can expose the WebView before a vault exists.
 4. **Probe.** For a CLI client, send `Runtime.evaluate` with `awaitPromise: true`
    and `returnByValue: true`. Record the returned value or `exceptionDetails`.
-   For storage, follow the [OPFS and SQLite checks](ios.md#storage-probes).
-5. **Relaunch.** For an app persistence check, keep the isolated data after the
-   initial write. Run `adb -s <serial> shell am force-stop md.obsidian` and relaunch
-   Obsidian. Get its new PID, remove the old forward, and attach to the new socket.
-   Confirm that the new process reads the expected data and remove the test directory.
+5. **Relaunch.** If the bug requires a cold start, run
+   `adb -s <serial> shell am force-stop md.obsidian` and reopen Obsidian. Remove
+   the old forward, get the new PID, and attach again before repeating the probe.
 6. **Clean up.** Close the CDP client and run
    `adb -s <serial> forward --remove tcp:9224`. Report the app and WebView versions,
    test results, and whether the target was an emulator or a physical device.

@@ -30,28 +30,6 @@
    Report the settled value or the error. Delete the temporary global and exit the shell
    with Ctrl+D.
 
-   ```js
-   void (async () => { try { await navigator.storage.getDirectory(); globalThis.__zotlitOpfsProbe = { opened: true }; } catch (error) { globalThis.__zotlitOpfsProbe = { error: String(error) }; } })()
-   JSON.stringify(globalThis.__zotlitOpfsProbe)
-   delete globalThis.__zotlitOpfsProbe
-   ```
-
-## Storage probes
-
-An open OPFS root shows API access. To verify storage, create a UUID-named test directory
-and run a Blob module worker on the Obsidian origin. Open a `SyncAccessHandle`, write
-known bytes, flush and close. Terminate the worker. Start a fresh worker and check that
-it reads the exact bytes from the same file. Close both handles, revoke the Blob URL,
-and remove the test directory. Report the device and app versions, origin, operation
-results, and cleanup.
-
-For SQLite-WASM, record the SQLite version, VFS name and database integrity check after
-reopen. If injecting a Vite worker as a Blob, supply the WASM bytes and a `locateFile`
-override. Root-relative asset URLs can fail to resolve from the Blob URL. If a large
-inspector evaluation stalls, reconnect and send small chunks. The iPhone trial sent
-1,800-character ASCII chunks. Worker reopen checks persistence across workers. WebView
-reload, app relaunch, and installed asset loading each require their own check.
-
 ## CLI cache in a restricted workspace
 
 If `pymobiledevice3` fails when it creates its cache under the Mac home directory, use a
