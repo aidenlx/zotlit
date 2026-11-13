@@ -1,8 +1,8 @@
 {
   "id": "zotlit",
   "name": "ZotLit",
-  "version": "2.2.2",
-  "minAppVersion": "1.14.5",
+  "version": "2.2.3",
+  "minAppVersion": "1.15.1",
   "description": "Your Zotero research desk in Obsidian: browse and query your library, read and annotate PDFs, take literature notes, cite as you write, and export to Word with a formatted reference list.",
   "author": "AidenLx",
   "authorUrl": "https://github.com/aidenlx",
