@@ -286,6 +286,10 @@ heading, one caption and one check line.
   it. Once the reader plays or pauses a clip, the reader's choice holds.
   A clip rested by another loop while still in view plays again when that
   loop rests. In fullscreen the whole clip shows (`object-fit: contain`).
+  Each clip is one H.264 MP4, which every browser the site targets plays.
+  A deployed build plays the clips from the media store,
+  `zotlit-media.aidenlx.site`, which answers byte-range requests; the stills
+  come from the site, so the first paint needs no second origin.
 - **Words stay page text.** Captions, numbered-mark references and check lines
   are HTML beside the picture, so they translate, wrap and reach screen
   readers. The picture carries a text alternative that says what it shows.
@@ -434,8 +438,8 @@ closing call. Sections run 1152px wide (`max-w-6xl`) with 32px side gutters
   each item a lead with one or two sentences.
 - **Recordings.** Each workflow step shows a recording of the real app at
   `public/img/landing/<case>` — `find`, `read`, `note`, `cite`, `word` — a
-  1600 × 1000 WebP still and, where the case has one, an MP4 and a WebM
-  clip; `CLIPS` in `workflow.tsx` names the cases with a clip. The frame is
+  1600 × 1000 WebP still and, where the case has one, an MP4 clip;
+  `CLIPS` in `workflow.tsx` names the cases with a clip. The frame is
   16:10 (`object-fit: cover`), 12px radius, on the surface with the shadow
   ring. The page prerenders the still. After mount, the recording player
   (see Illustration) mounts once its frame comes within 300px of the

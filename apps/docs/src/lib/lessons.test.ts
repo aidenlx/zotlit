@@ -12,7 +12,8 @@ import { join, resolve } from "node:path";
 import * as v from "valibot";
 import { describe, expect, it } from "vitest";
 
-import { mp4Size, scanLearnMedia, webpSize } from "./learn-media";
+import { scanLearnMedia, webpSize } from "./learn-media";
+import { mp4Size } from "./media-store";
 
 import { learnSchema } from "#content-config";
 

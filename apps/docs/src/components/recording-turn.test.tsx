@@ -79,8 +79,6 @@ async function mountRecordingAndDemo() {
       <>
         <RecordingPlayer
           base="/img/landing/find"
-          webm
-          mp4
           poster="/img/landing/find.webp"
           alt="Finding a paper"
           fit="cover"

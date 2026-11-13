@@ -68,7 +68,7 @@ With ZotLit [installed](https://zotlit.aidenlx.site/docs/install-zotlit), open t
 
 When you have something to say about a paper, run the [create-note command](https://zotlit.aidenlx.site/docs/how-to/create-and-open-notes). ZotLit writes a Markdown note shaped by your template: frontmatter, headings, highlights, and your own notes, ready to link.
 
-New here? Follow the [first-note tutorial →](https://zotlit.aidenlx.site/docs/tutorial/first-note)
+New here? Follow the [first-note lesson →](https://zotlit.aidenlx.site/learn/connect-zotero-to-obsidian)
 
 ## Disclosures
 

@@ -2,8 +2,9 @@
 // a page script cannot reach: a menu in the macOS menu bar and the macOS file
 // dialog. Each click first checks that the app it is meant for is in front,
 // so input never lands in another app. These shots need the desktop to
-// themselves: run them only in an unattended window, with the other apps
-// hidden (see packages/e2e/AGENTS.md, "Docs walks").
+// themselves: a recording run takes an Exclusive Hold of every Desktop Slot,
+// and runs only in an unattended window, with the other apps hidden (see
+// packages/e2e/AGENTS.md, "Docs walks").
 
 import { execFile, spawn } from "node:child_process";
 import { mkdir, readdir, rm, writeFile } from "node:fs/promises";
@@ -210,11 +211,36 @@ export async function recordDesktop<T>(
       `crop=${region.w * scale}:${region.h * scale}:${region.x * scale}:${region.y * scale},settb=1/1000`,
       ...["-copyts", "-enc_time_base", "1/1000", "-fps_mode", "passthrough"],
       ...["-c:v", "libx264", "-preset", "ultrafast", "-crf", "8"],
+      ...["-progress", "pipe:1"],
       movie,
     ],
-    { stdio: ["pipe", "ignore", "ignore"] },
+    { stdio: ["pipe", "pipe", "ignore"] },
   );
   const ended = new Promise((r) => capture.once("exit", r));
+  // ffmpeg reports its progress about every 0.5 s; the first report with a
+  // frame shows that it records. The pipe is read to the end, so ffmpeg
+  // never blocks on it.
+  const recording = new Promise<void>((resolve, reject) => {
+    const timer = setTimeout(
+      () => reject(new Error("ffmpeg recorded no frame of the screen in 10 s")),
+      10000,
+    );
+    let report = "";
+    let started = false;
+    capture.stdout.on("data", (chunk: Buffer) => {
+      if (started) return;
+      report += chunk.toString();
+      if (/^frame=[1-9]/m.test(report)) {
+        started = true;
+        clearTimeout(timer);
+        resolve();
+      }
+    });
+    capture.once("exit", () => {
+      clearTimeout(timer);
+      reject(new Error("ffmpeg ended before it recorded the screen"));
+    });
+  });
   const now = () => Temporal.Now.instant().epochMilliseconds / 1000;
   const events: (CameraEvent & { t: number })[] = [];
   const views: { t: number; view: Rect; cut: boolean }[] = [];
@@ -267,8 +293,7 @@ export async function recordDesktop<T>(
   let result: { value: T } | undefined;
   let failure: unknown;
   try {
-    // ffmpeg takes a moment to start.
-    await new Promise((r) => setTimeout(r, 1000));
+    await recording;
     await new Promise((r) => setTimeout(r, s.opening * 1000));
     result = { value: await actions(shot) };
     if (endAt === undefined)

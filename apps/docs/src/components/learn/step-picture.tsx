@@ -76,8 +76,6 @@ export function StepPicture({
           // A change of `autoplay` reaches the mounted player, which keeps a play or pause the reader chose.
           key={entry.base}
           base={entry.base}
-          webm={entry.clip.webm}
-          mp4={entry.clip.mp4}
           poster={entry.still.src}
           alt={alt}
           fit="contain"

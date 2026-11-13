@@ -852,7 +852,7 @@ describe.skipIf(!reachable)(
 
     it("step 5: open the same PDF in Zotero; the same highlight is there", async () => {
       const title = await walk.zotero.json<string>(
-        `(async()=>{const w=Zotero.getMainWindow();w.resizeTo(1440,900);w.focus();await new Promise(r=>setTimeout(r,800));return w.document.title;})()`,
+        `(()=>{const w=Zotero.getMainWindow();w.resizeTo(1440,900);return w.document.title;})()`,
       );
       const shown = await walk.recordZotero("step-5", exactly(title), () =>
         walk.zotero.json<{

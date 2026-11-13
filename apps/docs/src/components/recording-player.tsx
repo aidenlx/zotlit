@@ -49,10 +49,8 @@ const { Player } = createPlayer({
 });
 
 export interface RecordingPlayerProps {
-  /** The clip's path without its extension. */
+  /** The path of the clip's MP4 without its extension. */
   base: string;
-  webm: boolean;
-  mp4: boolean;
   poster: string;
   /** What the recording shows, which names the player. */
   alt: string;
@@ -66,6 +64,9 @@ export interface RecordingPlayerProps {
   playNow?: boolean;
 }
 
+/** The URL a clip plays from: the media store's in a deployed build, the site path otherwise. @see src/lib/media-store.ts */
+const videoSrc = (path: string) => __MEDIA_URLS__[path] ?? path;
+
 const buttonClass =
   "group/button grid size-9 shrink-0 cursor-pointer place-items-center rounded-full text-fd-foreground transition-[background-color,scale] duration-150 ease-out hover:bg-fd-muted focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fd-ring motion-safe:active:scale-[0.96]";
 
@@ -75,8 +76,6 @@ const iconClass =
 
 export default function RecordingPlayer({
   base,
-  webm,
-  mp4,
   poster,
   alt,
   fit,
@@ -225,8 +224,7 @@ export default function RecordingPlayer({
                 : "object-contain",
             )}
           >
-            {webm && <source src={`${base}.webm`} type="video/webm" />}
-            {mp4 && <source src={`${base}.mp4`} type="video/mp4" />}
+            <source src={videoSrc(`${base}.mp4`)} type="video/mp4" />
           </Video>
           <Controls.Root>
             <Controls.Content className="pointer-events-none absolute inset-x-2.5 bottom-2.5 transition-opacity duration-150 ease-out not-data-visible:not-has-focus-visible:opacity-0">
