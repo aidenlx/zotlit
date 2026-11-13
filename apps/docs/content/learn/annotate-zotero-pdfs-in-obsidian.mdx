@@ -4,14 +4,14 @@ description: Make Zotero highlights in Obsidian and see them appear in your Zote
 lesson: 2
 minutes: 10
 media: annotate-pdfs-in-obsidian
-lede: You will end this lesson with a highlight and comment made in Obsidian that appears both in Zotero and in your literature note.
+lede: Highlight a PDF in Obsidian and see the annotation in Zotero and your literature note.
 chore: I copy highlights into my notes by hand
 today:
   - highlight in Zotero
   - copy each highlight into your note
   - add the page number by hand
   - do it again for every new highlight
-instead: Highlight the PDF in Obsidian. A card for the highlight appears in your literature note.
+instead: Highlight the PDF in Obsidian to add a card to your literature note.
 needs:
   - item: Lesson 1
     detail: Completed literature note
@@ -34,8 +34,8 @@ steps:
     alt: The literature note shows the new highlight card automatically added under the Annotations section.
 end:
   title: A new highlight and comment in your note
-  caption: You can now highlight PDFs in Obsidian and see every annotation appear in your literature note.
-  next: Cite your papers and insert page numbers while drafting in Obsidian.
+  caption: You can now highlight PDFs in Obsidian and see annotations in your literature note.
+  next: Cite papers and insert page numbers in Obsidian.
 ---
 
 import { Check, Fix, Step } from "@/components/learn/lesson-mdx";
@@ -44,11 +44,10 @@ import { m } from "@/paraglide/messages.js";
 
 <Step n={1}>
 
-In the <UiLabel name={m.library_view_name()} /> tab, select Sandve et al. 2013, then select <UiLabel name={m.library_view_menu_open_pdf()} /> on its card.
+In <UiLabel name={m.library_view_name()} />, select Sandve et al. 2013, then <UiLabel name={m.library_view_menu_open_pdf()} /> on its card.
 
 <Check>
-  The PDF opens. The annotation tools at the top right of the PDF are dimmed,
-  and the sidebar heading reads{" "}
+  The PDF opens with dimmed annotation tools, and the sidebar reads{" "}
   <UiLabel name={m.annot_view_header_following_active_tab()} /> ·{" "}
   <UiLabel name={m.annot_view_header_reading_only()} />.
 </Check>
@@ -57,27 +56,26 @@ In the <UiLabel name={m.library_view_name()} /> tab, select Sandve et al. 2013, 
 
 <Step n={2}>
 
-Select the heading of the sidebar on the right. In the menu, select <UiLabel name={m.capability_enable_editing()} />. You give this permission once on each computer.
+Select the sidebar heading, then <UiLabel name={m.capability_enable_editing()} />.
 
 <Check>
-  The PDF toolbar reads <UiLabel name={m.capability_authorizing()} />. Zotero
-  shows a dialog asking whether ZotLit for Obsidian may change the Zotero
-  library, with the buttons **Deny**, **Always Allow**, and **Allow**.
+  The PDF toolbar reads <UiLabel name={m.capability_authorizing()} />, and
+  Zotero displays a dialog with **Always Allow**.
 </Check>
 
 </Step>
 
 <Step n={3}>
 
-In the Zotero dialog, select **Always Allow**.
+In the dialog, select **Always Allow**.
 
 <Check>
-  In Obsidian, the notice <UiLabel name={m.notice_zotero_editing_enabled()} />{" "}
-  appears. The annotation tools are in colour.
+  The notice <UiLabel name={m.notice_zotero_editing_enabled()} /> appears, and
+  the tools appear in colour.
 </Check>
 
 <Fix title="The tools stay dimmed">
-  You chose **Allow**. Do step 2 again and choose **Always Allow**.
+  Repeat Step 2 and select **Always Allow**.
 </Fix>
 
 </Step>
@@ -87,7 +85,7 @@ In the Zotero dialog, select **Always Allow**.
 Drag across a sentence in the PDF.
 
 <Check>
-  A small toolbar appears under the selection, with{" "}
+  A toolbar appears under the selection with{" "}
   <UiLabel name={m.pdf_toolbar_highlight()} />,{" "}
   <UiLabel name={m.pdf_toolbar_underline()} />, four colours, and{" "}
   <UiLabel name={m.annot_view_card_add_comment()} />.
@@ -97,11 +95,11 @@ Drag across a sentence in the PDF.
 
 <Step n={5}>
 
-Select <UiLabel name={m.annot_view_card_add_comment()} />, type a comment for Chapter 3, then select <UiLabel name={m.pdf_toolbar_highlight()} /> under the comment.
+Select <UiLabel name={m.annot_view_card_add_comment()} />, type a comment for Chapter 3, and select <UiLabel name={m.pdf_toolbar_highlight()} />.
 
 <Check>
-  The passage turns yellow. A card for it appears in the sidebar on the right,
-  with the page, the passage, and the comment.
+  The passage turns yellow, and a card showing the page, excerpt, and comment
+  appears in the sidebar.
 </Check>
 
 </Step>
@@ -110,20 +108,14 @@ Select <UiLabel name={m.annot_view_card_add_comment()} />, type a comment for Ch
 
 Switch to Zotero and open the same PDF.
 
-<Check>
-  The highlight and its comment are there. Each highlight is saved in the Zotero
-  library, so Zotero and Obsidian show the same one.
-</Check>
+<Check>The PDF in Zotero shows the same yellow highlight and comment.</Check>
 
 </Step>
 
 <Step n={7}>
 
-Switch back to Obsidian and open the literature note for Sandve et al. 2013 from Lesson 1.
+In Obsidian, open the note for Sandve et al. 2013.
 
-<Check>
-  The **Annotations** section has a new card for the highlight. You ran no
-  update.
-</Check>
+<Check>The **Annotations** section shows a new card for the highlight.</Check>
 
 </Step>

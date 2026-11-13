@@ -4,7 +4,7 @@ description: Export your Obsidian draft to a Word document with formatted citati
 lesson: 4
 minutes: 5
 media: export-to-word-with-a-bibliography
-lede: At the end of this lesson, you will have a Word file of your draft with every citation formatted in the style you choose and a reference list at the end, ready to send to your supervisor.
+lede: Export your draft to Word with formatted citations and a bibliography.
 chore: I rebuild my references in Word
 today:
   - copy the chapter into Word
@@ -13,7 +13,7 @@ today:
 instead: Run the Export note with citations command.
 needs:
   - item: Lesson 3
-    detail: A draft with citations and the citation engine
+    detail: Draft with citations and citation engine
   - item: Zotero
     detail: Open on this computer
 steps:
@@ -29,8 +29,8 @@ steps:
     alt: The exported Word file open, showing formatted citations like (Sandve et al., 2013, p. 2) and a References list.
 end:
   title: A Word draft with formatted citations and bibliography
-  caption: You can now export your drafts to Word with formatted citations and a complete reference list.
-  next: Lesson 5 shows how to track what you have read.
+  caption: You can now export drafts to Word with formatted citations and references.
+  next: Track papers you have read in your library.
 ---
 
 import { Check, Fix, Step } from "@/components/learn/lesson-mdx";
@@ -40,19 +40,19 @@ import { m } from "@/paraglide/messages.js";
 
 <Step n={1}>
 
-Review your draft. Remove any lines meant only for you, such as a to-do list, because everything in the note goes into the Word file.
+Remove lines meant only for you, such as a to-do list, because everything in the note exports to Word.
 
-<Check>The draft contains only what you want to send to your supervisor.</Check>
+<Check>The draft contains only what you want in the Word file.</Check>
 
 </Step>
 
 <Step n={2}>
 
-With the draft open, press Ctrl+P (Cmd+P on a Mac) and run <Command inline name={m.command_pandoc_export_name()} />.
+Press Ctrl+P (Cmd+P on Mac) and run <Command inline name={m.command_pandoc_export_name()} />.
 
 <Check>
-  The dialog <UiLabel name={m.pandoc_export_title()} /> opens, and{" "}
-  <UiLabel name={m.pandoc_export_format_name()} /> is set to{" "}
+  The dialog <UiLabel name={m.pandoc_export_title()} /> opens with{" "}
+  <UiLabel name={m.pandoc_export_format_name()} /> set to{" "}
   <UiLabel name={m.pandoc_export_format_docx()} />.
 </Check>
 
@@ -60,7 +60,7 @@ With the draft open, press Ctrl+P (Cmd+P on a Mac) and run <Command inline name=
 
 <Step n={3}>
 
-Open <UiLabel name={m.pandoc_export_style_name()} /> and choose the style your supervisor or journal asks for, such as **APA Style 7th edition**. The note does not change; this style applies to this export only.
+In <UiLabel name={m.pandoc_export_style_name()} />, choose **APA Style 7th edition**.
 
 <Check>
   The line under the setting reads{" "}
@@ -72,18 +72,17 @@ Open <UiLabel name={m.pandoc_export_style_name()} /> and choose the style your s
 </Check>
 
 <Fix title="The style is not in the list">
-  The list shows the styles installed in Zotero. Install the style in Zotero,
-  then open the dialog again.
+  Install the style in Zotero and reopen the dialog.
 </Fix>
 
 </Step>
 
 <Step n={4}>
 
-Select <UiLabel name={m.pandoc_export_confirm()} />. ZotLit creates the Word file and places the reference list after the last line under the heading **References** without you having to write one.
+Select <UiLabel name={m.pandoc_export_confirm()} />.
 
 <Check>
-  After a few seconds, the notice appears:{" "}
+  The notice appears:{" "}
   <UiLabel
     name={m.notice_pandoc_export_done({
       file: "Chapter 3 - Presenting the results.docx",
@@ -96,11 +95,11 @@ Select <UiLabel name={m.pandoc_export_confirm()} />. ZotLit creates the Word fil
 
 <Step n={5}>
 
-The Word file sits in the same folder as your draft, with the same name. Obsidian's file list does not show Word files, so open that folder in Finder (Mac) or File Explorer (Windows), and open the file.
+In Finder (Mac) or File Explorer (Windows), open the Word file in the draft’s folder.
 
 <Check>
-  Each citation is formatted, for example **(Sandve et al., 2013, p. 2)**, and a
-  **References** list at the end has one entry for each paper cited.
+  The Word file shows formatted citations such as **(Sandve et al., 2013, p.
+  2)** and a **References** list.
 </Check>
 
 </Step>
