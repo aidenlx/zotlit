@@ -59,6 +59,11 @@ type LiteratureNoteOptions =
       readonly source: "interactive";
       readonly item?: Item;
       readonly paneType: PaneType | boolean;
+      /**
+       * Bring a tab that already shows the note forward, in place of opening
+       * it in `paneType`. An open with no pane always does this.
+       */
+      readonly reuseOpen?: boolean;
     };
 
 /** Open an existing Literature Note or create one through Profile selection. */
@@ -82,7 +87,10 @@ export const openLiteratureNote = Effect.fn("LiteratureNoteNavigation.open")(
     const workspace = yield* Workspace;
     const noteFeature = yield* NoteFeature;
     const open = Effect.fnUntraced(function* (file: TFile) {
-      if (options.source === "interactive" && !options.paneType) {
+      if (
+        options.source === "interactive" &&
+        (!options.paneType || options.reuseOpen)
+      ) {
         const existing = (yield* workspace.leavesOfType("markdown")).find(
           (leaf) =>
             leaf.view instanceof MarkdownView && leaf.view.file === file,

@@ -20,6 +20,7 @@ import {
 import { activeTab, pdfOpened } from "./e2e-run-helpers.ts";
 import type { ActiveTab } from "./e2e-run-helpers.ts";
 import { registerEndToEndRunHooks, run } from "./e2e-run-lifecycle.ts";
+import { pressPromptKey, selectSuggestion } from "./e2e-run-note-helpers.ts";
 import * as suite from "./e2e-run-suite-helpers.ts";
 import { obRun, obRunUntil } from "./obsidian-cli.ts";
 import { readUntil, waitFor } from "./obsidian-cli.ts";
@@ -1497,5 +1498,208 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       stacked: true,
       inView: { pdf: true, note: true },
     });
+  }, 180000);
+
+  it("writes the paper's literature note from its PDF view's header action through Profile selection, opens it beside the PDF, then names the action Open literature note and brings the same tab forward on the next press, the command and More options offering the same", async () => {
+    const paper = annotationItem;
+    const pdfPath = annotationAttachment.path!;
+    const saved = await obRun(
+      run.vaultId,
+      async ({ app }, { key }) => {
+        const note = app.vault
+          .getMarkdownFiles()
+          .find(
+            (file) =>
+              app.metadataCache.getFileCache(file)?.frontmatter?.[
+                "zotero-key"
+              ] === key,
+          )!;
+        return {
+          layout: JSON.stringify(app.workspace.getLayout()),
+          path: note.path,
+          source: await app.vault.read(note),
+        };
+      },
+      { key: paper.key },
+    );
+    await using cleanup = new AsyncDisposableStack();
+    cleanup.defer(async () => {
+      await obRun(
+        run.vaultId,
+        async ({ app }, { saved, key }) => {
+          for (const file of app.vault.getMarkdownFiles())
+            if (
+              app.metadataCache.getFileCache(file)?.frontmatter?.[
+                "zotero-key"
+              ] === key
+            )
+              await app.vault.delete(file);
+          await app.vault.create(saved.path, saved.source);
+          await app.workspace.changeLayout(JSON.parse(saved.layout));
+        },
+        { saved, key: paper.key },
+      );
+    });
+
+    // The paper has no literature note yet, and its PDF is the only tab.
+    await obRun(
+      run.vaultId,
+      async ({ app, zotlit }, { path, attachmentKey }) => {
+        await app.vault.delete(app.vault.getFileByPath(path)!);
+        for (const leaf of [
+          ...app.workspace.getLeavesOfType("pdf"),
+          ...app.workspace.getLeavesOfType("markdown"),
+        ])
+          leaf.detach();
+        await zotlit.services.bridge.runPromise(
+          zotlit.services.targetOpener.open(
+            { kind: "attachment", attachmentKey },
+            false,
+          ),
+        );
+      },
+      { path: saved.path, attachmentKey: annotationAttachment.key },
+    );
+    await pdfOpened(run.vaultId, pdfPath);
+
+    /** The header action's label, once it stands; `null` while it is hidden. */
+    const actionLabel = (expected: string) =>
+      obRunUntil(
+        run.vaultId,
+        async ({ page }, { path, labels }) => {
+          const action = [
+            ...page
+              .pdfView(path)!
+              .containerEl.querySelectorAll<HTMLElement>(".view-action"),
+          ].find((el) => labels.includes(el.getAttribute("aria-label") ?? ""));
+          return action && action.style.display !== "none"
+            ? action.getAttribute("aria-label")
+            : null;
+        },
+        {
+          path: pdfPath,
+          labels: [
+            run.m.library_view_menu_write_note(),
+            run.m.library_view_menu_open_note(),
+          ],
+        },
+        {
+          what: `the PDF view's header action to read ${expected}`,
+          ready: (label) => label === expected,
+        },
+      );
+    const pressAction = (label: string) =>
+      obRun(
+        run.vaultId,
+        async ({ app, page }, { path, label }) => {
+          const view = page.pdfView(path)!;
+          app.workspace.setActiveLeaf(view.leaf, { focus: true });
+          page.press(
+            view.containerEl.querySelector<HTMLElement>(
+              `.view-action[aria-label="${label}"]`,
+            ),
+            label,
+          );
+        },
+        { path: pdfPath, label },
+      );
+    /** The tabs that show the paper's note, and whether the PDF stays on screen beside them. */
+    const panes = () =>
+      obRun(
+        run.vaultId,
+        async ({ app, page }, { path, key }) => {
+          const pdf = page.pdfView(path)!;
+          const notes = (
+            app.workspace.getLeavesOfType("markdown") as (WorkspaceLeaf & {
+              view: MarkdownView;
+            })[]
+          ).filter(
+            (leaf) =>
+              leaf.view.file &&
+              app.metadataCache.getFileCache(leaf.view.file)?.frontmatter?.[
+                "zotero-key"
+              ] === key,
+          );
+          return {
+            notes: notes.length,
+            noteShown: notes.every((leaf) => leaf.view.containerEl.isShown()),
+            besidePdf: notes.every((leaf) => leaf.parent !== pdf.leaf.parent),
+            pdfShown: pdf.containerEl.isShown(),
+            noteActive: notes.some((leaf) => leaf === app.workspace.activeLeaf),
+          };
+        },
+        { path: pdfPath, key: paper.key },
+      );
+
+    const write = run.m.library_view_menu_write_note();
+    const open = run.m.library_view_menu_open_note();
+    expect(await actionLabel(write)).toBe(write);
+    await pressAction(write);
+    await selectSuggestion(run.vaultId, run.m.modal_profile_preselected());
+    await pressPromptKey(run.vaultId, "Enter");
+    expect(await actionLabel(open)).toBe(open);
+    const written = {
+      notes: 1,
+      noteShown: true,
+      besidePdf: true,
+      pdfShown: true,
+      noteActive: true,
+    };
+    expect(
+      await waitFor(async () => isDeepStrictEqual(await panes(), written)),
+    ).toBe(true);
+
+    // A second press brings the same tab forward and opens no other.
+    await pressAction(open);
+    expect(
+      await waitFor(async () => isDeepStrictEqual(await panes(), written)),
+    ).toBe(true);
+
+    // The command stands on the PDF view and, like the action, brings the same
+    // tab forward.
+    expect(
+      await obRun(
+        run.vaultId,
+        async ({ app, page }, { path }) => {
+          app.workspace.setActiveLeaf(page.pdfView(path)!.leaf, {
+            focus: true,
+          });
+          return app.commands.executeCommandById(
+            "zotlit:open-pdf-literature-note",
+          );
+        },
+        { path: pdfPath },
+      ),
+    ).toBe(true);
+    await waitFor(async () => isDeepStrictEqual(await panes(), written));
+    expect(await panes()).toEqual(written);
+
+    // More options on the PDF view offers it under the same name.
+    expect(
+      await obRun(
+        run.vaultId,
+        async ({ app, page }, { path }) => {
+          const view = page.pdfView(path)!;
+          app.workspace.setActiveLeaf(view.leaf, { focus: true });
+          page.press(
+            view.containerEl.querySelector<HTMLElement>(
+              '.view-action[aria-label="More options"]',
+            ),
+            "More options",
+          );
+          await page.menuReady();
+          const titles = [
+            ...activeDocument.body.querySelectorAll(
+              ":scope > .menu .menu-item-title",
+            ),
+          ].map((el) => el.textContent);
+          activeDocument.body.dispatchEvent(
+            new KeyboardEvent("keydown", { key: "Escape", bubbles: true }),
+          );
+          return titles;
+        },
+        { path: pdfPath },
+      ),
+    ).toContain(open);
   }, 180000);
 });
