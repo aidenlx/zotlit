@@ -656,8 +656,10 @@ describe.skipIf(!reachable)(
             const last = rects.at(-1)!;
             if (pointer) {
               // The reader presses at the passage's start and drags to its end.
-              await pointer.pointAt(x, y);
-              await pointer.park(last.right, last.top + last.height / 2);
+              await pointer.drag(
+                { x, y },
+                { x: last.right, y: last.top + last.height / 2 },
+              );
             }
             const pressed = page.fire("pointerdown", x, y);
             getSelection()!.removeAllRanges();

@@ -3,9 +3,11 @@
 //
 // Every picture prerenders its still, so a reader without JavaScript gets
 // every picture. Only an active picture mounts its player (`Recording`), so
-// only its clip loads; a picture with autoplay off shows the still with a play
-// button until the reader plays it. The still is the step's poster when the
-// build found one, the step's screenshot otherwise.
+// only its clip loads; it plays on its own while it crosses the middle of the
+// window, in a loop or once. The still is the step's poster when the build
+// found one, the step's screenshot otherwise.
+
+import type { ReactNode } from "react";
 
 import { DocsImage } from "@/components/docs-image";
 import { Recording } from "@/components/recording";
@@ -29,7 +31,8 @@ export function StepPicture({
   n,
   alt,
   active,
-  autoplay = true,
+  loop = true,
+  endActions,
   playNow = false,
   thumb = false,
 }: {
@@ -38,8 +41,14 @@ export function StepPicture({
   alt: string;
   /** The page runs and wants this step's recording. */
   active: boolean;
-  /** The recording plays on its own while it crosses the middle of the window. */
-  autoplay?: boolean;
+  /**
+   * The recording plays in a loop; false plays it once and ends on its last
+   * frame, dimmed, under a replay button.
+   * @default true
+   */
+  loop?: boolean;
+  /** Controls the dimmed last frame shows beside the replay button. */
+  endActions?: ReactNode;
   /** The reader asked for this step with a press, so its recording plays at once. */
   playNow?: boolean;
   /** A card's picture: the still in a window-shaped frame, cropped from its top. */
@@ -73,14 +82,14 @@ export function StepPicture({
     >
       {active && entry.clip && !thumb ? (
         <Recording
-          // A change of `autoplay` reaches the mounted player, which keeps a play or pause the reader chose.
           key={entry.base}
           base={entry.base}
           poster={entry.still.src}
           alt={alt}
           fit="contain"
-          preload={autoplay ? "auto" : "metadata"}
-          autoplay={autoplay}
+          preload="auto"
+          loop={loop}
+          endActions={endActions}
           playNow={playNow}
           fallback={still}
         />

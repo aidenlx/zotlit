@@ -25,12 +25,25 @@ export type CameraEvent =
   | { kind: "point"; t: number; x: number; y: number; rect?: Rect }
   /** A pointer move without a click. The camera does not follow it. */
   | { kind: "park"; t: number; x: number; y: number }
+  /**
+   * A press at `from` at `t`, a drag, and a release at `to` at `end`. The
+   * camera shows both ends in one view from `lead` before the press to the
+   * release.
+   */
+  | { kind: "drag"; t: number; end: number; from: Spot; to: Spot }
   /** Typing from `t` to `end` into the input `rect`. */
   | { kind: "type"; t: number; end: number; rect: Rect }
   /** Typing from `t` to `end`, with the caret or focused element in `rect`. */
   | { kind: "keys"; t: number; end: number; rect?: Rect }
   /** A region to frame without a pointer move, such as a step's result. */
   | { kind: "look"; t: number; rect: Rect; padding?: number };
+
+/** A point of a pointer action in CSS px, on the element `rect` when there is one. */
+export interface Spot {
+  x: number;
+  y: number;
+  rect?: Rect;
+}
 
 /**
  * The view at each keyframe, in clip seconds. Between two keyframes with
@@ -107,8 +120,34 @@ export function planCamera(
   const actions = input.events
     .flatMap((e) => frame(e, input.viewport, o) ?? [])
     .toSorted((a, b) => a.t - b.t);
+  /** The end of the last drag, before which the view stands. */
+  let held = 0;
+
+  /**
+   * Widen the shot in view at `deadline` to also hold `view`, and take out
+   * each move that arrives after `deadline`.
+   */
+  const fold = (view: Rect, deadline: number) => {
+    let area = view;
+    while (keyframes.length > 1 && keyframes.at(-1)!.t > deadline) {
+      area = union(area, keyframes.at(-1)!.view);
+      keyframes.splice(-2);
+    }
+    const last = keyframes.at(-1)!;
+    last.view = fit(union(last.view, area), input.viewport, [1, o.zoom]);
+    current = last.view;
+    arrived = last.t;
+  };
+
   for (const [i, next] of actions.entries()) {
-    const start = Math.max(free, busy, next.by - o.ease);
+    const shown = inside(next.need, centre(current, o.central));
+    // A widening keeps the current shot in view, so a drag's move need not
+    // wait for the actions in it to end.
+    const start = Math.max(
+      free,
+      next.still && !shown ? held : busy,
+      next.by - o.ease,
+    );
     const length = Math.min(o.ease, Math.max(o.minEase, next.by - start));
     const arrive = start + length;
     // The shot holds `hold`, so it shows every action due before the move
@@ -120,7 +159,6 @@ export function planCamera(
       1,
       o.zoom,
     ]);
-    const shown = inside(next.need, centre(current, o.central));
     const view = !shown
       ? // Out of view: a view of both, rather than a pan at the zoom.
         fit(union(current, shot), input.viewport, [1, o.zoom])
@@ -128,7 +166,17 @@ export function planCamera(
         shot.w <= ZOOM_IN * current.w && next.by - start >= o.ease
         ? shot
         : undefined;
-    if (!view || sameView(view, current)) {
+    const moves = view !== undefined && !sameView(view, current);
+    if (next.still && (moves ? arrive : arrived) > next.by) {
+      // A drag's view is in place `lead` before the press: a move that would
+      // arrive later goes into the shot before it.
+      fold(moves ? view : current, next.by);
+      busy = Math.max(busy, next.end);
+      held = next.end;
+      continue;
+    }
+    if (next.still) held = next.end;
+    if (!moves) {
       busy = Math.max(busy, next.end);
       continue;
     }
@@ -223,6 +271,8 @@ interface Action {
   need: Rect;
   /** The area a shot of the action frames: `need` with its context. */
   frame: Rect;
+  /** A drag: its view stands from `by` to `end`. */
+  still?: true;
 }
 
 /**
@@ -251,20 +301,30 @@ function frame(
       };
     }
     case "point": {
-      // A small box about the click; the element too, when it fits the zoom.
-      const mark = pad({ x: event.x, y: event.y, w: 0, h: 0 }, 48);
-      const element = event.rect && pad(event.rect, o.padding);
-      const need = clip(
-        element && fits(union(element, mark), viewport, o.zoom)
-          ? union(element, mark)
-          : mark,
-      );
+      const need = clip(pointArea(event, viewport, o));
       return {
         t: event.t,
         by: event.t - o.lead,
         end: event.t,
         need,
         frame: clip(pad(need, o.context)),
+      };
+    }
+    case "drag": {
+      // Both ends with their context must show, at a lower zoom when the
+      // ends lie far apart.
+      const ends = union(
+        pointArea(event.from, viewport, o),
+        pointArea(event.to, viewport, o),
+      );
+      const need = clip(pad(clip(ends), o.context));
+      return {
+        t: event.t,
+        by: event.t - o.lead,
+        end: event.end,
+        need,
+        frame: need,
+        still: true,
       };
     }
     case "type":
@@ -280,6 +340,22 @@ function frame(
       };
     }
   }
+}
+
+/**
+ * The area a click or a drag's end at `s` must show: a small box about the
+ * point, and the element too when both fit the zoom.
+ */
+function pointArea(
+  s: Spot,
+  viewport: CameraPlanInput["viewport"],
+  o: Required<CameraPlanOptions>,
+): Rect {
+  const mark = pad({ x: s.x, y: s.y, w: 0, h: 0 }, 48);
+  const element = s.rect && pad(s.rect, o.padding);
+  return element && fits(union(element, mark), viewport, o.zoom)
+    ? union(element, mark)
+    : mark;
 }
 
 /**

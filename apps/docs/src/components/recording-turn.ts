@@ -1,7 +1,8 @@
 // The site's loop rule: at most one loop plays at a time — a lesson or landing
 // recording, or the landing's table demo. A loop that starts takes the turn
 // and rests the one that held it, except that a recording the reader paused
-// keeps the turn from automatic starts while it stays in view.
+// keeps the turn from automatic starts while it stays in view. A recording
+// that plays once ends its turn at its end.
 // @see apps/docs/DESIGN.md → Motion (Loops)
 
 let holder: symbol | null = null;

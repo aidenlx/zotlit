@@ -232,10 +232,9 @@ Values follow the `better-ui` skill.
   landing recording or the landing's table demo: a recording runs while it
   crosses the middle band of the viewport, and the demo while half of it is
   on screen. A loop starts on its own only where the
-  reader is already looking at it: a recording that shows an outcome rather
-  than the step at hand (a lesson's result) rests on its poster with its
-  play button until the reader plays it. Each loop rests elsewhere, and a loop that starts rests the one that
-  played. A recording plays in the recording player, whose play button
+  reader is already looking at it. Each loop rests elsewhere, and a loop that starts rests the one that
+  played. A lesson's outcome loops; a lesson step's recording plays once,
+  and at its end gives its turn back, so a loop it rested starts again. A recording plays in the recording player, whose play button
   pauses it; a recording the reader paused holds the turn while it stays in
   view, so no other loop starts behind the pause, and the loop that wanted
   to start plays once the paused one leaves view. The reader's own play,
@@ -253,8 +252,8 @@ map, a before/after pair or a small table over prose; keep the words to a
 heading, one caption and one check line.
 
 - **Lessons show recordings.** Each `/learn` step shows a short recording of
-  the real app doing that step: about 3–8 seconds, looping, resting on the
-  result. Reduced motion shows the last frame. The clip's final frame,
+  the real app doing that step: about 3–8 seconds, played once, ending on
+  the result. Reduced motion shows the last frame. The clip's final frame,
   framed on the result, is its poster; the step's screenshot stands in until
   a poster exists. The reader then does the step once,
   in their own Obsidian, so a lesson ends with a working setup on their own
@@ -280,10 +279,21 @@ heading, one caption and one check line.
   active, and fades out over 150 ms during playback; keyboard focus brings
   it back. The player is a focusable group named by the recording's alt
   text; Space plays or pauses and the arrow keys seek while it has focus.
-  A clip plays muted and looping while it crosses the middle of the
-  viewport; a page can turn this off for a clip (`autoplay={false}`), which
-  then rests on its poster, as under reduced motion, until the reader plays
-  it. Once the reader plays or pauses a clip, the reader's choice holds.
+  A clip plays muted while it crosses the middle of the viewport, in a loop
+  by default. A page can have a clip play once (`loop={false}`): at its end
+  it stops on its last frame under a scrim (black at 55%) with a **Replay**
+  button at the centre (the secondary action: 44px tall, the surface with
+  the shadow ring, a Lucide rotate icon), after any actions the page adds
+  (`endActions`); on the scrim their focus ring is white (4.7:1 or more on
+  the dimmed frame). The control bar leaves while the end shows, so this
+  Replay is the only one. In a player under 20rem (320px) wide, as in
+  phone windows up to about 400px, Replay keeps its icon in a 44px square,
+  its name read but not shown, so
+  it shares one row with the page's action. It gives its turn back, and
+  plays again only on the reader's press, not when it comes back into
+  view. Once the reader plays or pauses a clip, the reader's choice holds.
+  A clip asked for with a press elsewhere (`playNow`, such as Start) plays
+  at once, or once it comes into view when it mounts below the fold.
   A clip rested by another loop while still in view plays again when that
   loop rests. In fullscreen the whole clip shows (`object-fit: contain`).
   Each clip is one H.264 MP4, which every browser the site targets plays.
@@ -538,8 +548,8 @@ explains, and each fact appears once (see The label voice).
 - **Outcome.** Below 1280px, and on the prerendered page, the result shows
   once, directly above the checklist: the mono "You end with" label in the
   accent text tone and the outcome as a serif title beside the last step's
-  recording from 561px (above it below). The recording rests on its poster
-  with its play button and plays only when the reader plays it. While no
+  recording from 561px (above it below). The recording plays on its own in
+  a loop while it crosses the middle of the window. While no
   row is open, the Start button sits under the title (see Start).
 - **Start.** A new reader — no ticks, no `#n` in the address — finds every
   row closed and the outcome in view, with one leading action under it:
@@ -578,25 +588,30 @@ explains, and each fact appears once (see The label voice).
 - **Media panel.** From 1280px, on a running page, the lesson is a 580px
   checklist column and, 48px beside it, a sticky panel. While no row is
   open it shows the outcome: "You end with", the outcome as a serif title,
-  the last step's recording at rest on its poster, and the Start button
+  the last step's recording in a loop, and the Start button
   under it. With a row open it shows that row: the step number (a check in
   check green once ticked) and title in serif at the title size, then its
   recording, which plays at once after Start and otherwise while it
   crosses the middle of the window. A reader with ticks saved starts on the
   first step not ticked, and one who follows a link to a step starts
-  there; that row's recording rests on its poster with its play button
-  until the reader acts on the page: Start, a row's title, a tick, **Go to
-  step N** or the play button. The rows then show no picture of their own, so one player
+  there; that row's recording also plays while it crosses the middle of the
+  window. The rows then show no picture of their own, so one player
   mounts per step. The prerendered page and a reader without JavaScript
   keep the one column, with every picture in its row.
 - **Picture.** One recording of the step in the real app, in the recording
   player (see Illustration), 10px radius, with the shadow ring, at most
   560px or 70% of the window tall. Only the open row's clip and the
   outcome load. The open row's clip plays at once after Start, and
-  otherwise while it crosses the middle of the window once the reader has
-  acted on the page (a row open on load rests, see Media panel); the outcome waits
-  for the reader's play; one plays at a time. There is no zoom control: the recordings frame the action
-  themselves.
+  otherwise while it crosses the middle of the window, a row open on load
+  included; it plays once. At its end the last frame dims under the row's
+  leading action — **Tick step N**, or **Go to step N** (**See the end**)
+  once the row is ticked, the same button and handler as the row's own —
+  then **Replay**, in that focus order, both in the picture's centre, in
+  the row and in the media panel alike. The outcome loops while it crosses
+  the middle of the window; one plays at a time. Under reduced motion every
+  recording rests on its poster until the reader plays it, and a step
+  played then also plays once and ends dimmed. There is no zoom control:
+  the recordings frame the action themselves.
 - **Action.** Body size, each control named in semibold at the text's size;
   a link, such as the `obsidian://` shortcut in lesson 1, is underlined in
   the accent text tone.

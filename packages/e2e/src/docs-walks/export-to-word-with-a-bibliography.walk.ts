@@ -179,8 +179,10 @@ describe.skipIf(!reachable)(
               // deletes the selection.
               const from = cm.coordsAtPos(at + 1)!;
               const to = cm.coordsAtPos(doc.length)!;
-              await pointer.pointAt(from.left, (from.top + from.bottom) / 2);
-              await pointer.park(to.right, (to.top + to.bottom) / 2);
+              await pointer.drag(
+                { x: from.left, y: (from.top + from.bottom) / 2 },
+                { x: to.right, y: (to.top + to.bottom) / 2 },
+              );
               cm.dispatch({ selection: { anchor: at + 1, head: doc.length } });
               cm.focus();
               await new Promise((r) => setTimeout(r, 700));
