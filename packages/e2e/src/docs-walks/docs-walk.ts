@@ -89,8 +89,8 @@ export interface DocsWalkPointer {
   /**
    * Glide to `from`, show the press mark there, and glide on to `to`, where
    * the button comes up: a drag, or a selection made with the pointer. Each
-   * end is a point in CSS px, or an element's centre. The camera shows both
-   * ends in one view.
+   * end is a point in CSS px, or an element the pointer aims at as `point`
+   * does. The camera shows both ends in one view.
    */
   drag(from: DragEnd, to: DragEnd): Promise<void>;
   /** Type `text` into `input` one key at a time, as a person types. */
@@ -905,14 +905,25 @@ async function startRecording(
           : undefined;
       };
 
+      /**
+       * Where the pointer aims at `el`, scrolled into view: its centre, or
+       * `inset` px from its left edge, 120 px at most by default.
+       */
+      const aim = (el: Element, inset?: number) => {
+        el.scrollIntoView({ block: "nearest", behavior: "instant" });
+        const b = el.getBoundingClientRect();
+        return {
+          x: Math.round(b.left + (inset ?? Math.min(b.width / 2, 120))),
+          y: Math.round(b.top + b.height / 2),
+          rect: rectOf(b),
+        };
+      };
+
       page.scratch.docsWalkPointer = {
         async point(el, { inset } = {}) {
-          el.scrollIntoView({ block: "nearest", behavior: "instant" });
-          const b = el.getBoundingClientRect();
-          const x = Math.round(b.left + (inset ?? Math.min(b.width / 2, 120)));
-          const y = Math.round(b.top + b.height / 2);
+          const { x, y, rect } = aim(el, inset);
           await glide(x, y);
-          events.push({ kind: "point", t: now(), x, y, rect: rectOf(b) });
+          events.push({ kind: "point", t: now(), x, y, rect });
           await mark(x, y);
         },
         async pointAt(x, y) {
@@ -925,21 +936,15 @@ async function startRecording(
           events.push({ kind: "park", t: now(), x, y });
         },
         async drag(from, to) {
-          const spotOf = (e: DragEnd) => {
-            if (!(e instanceof Element))
-              return { x: Math.round(e.x), y: Math.round(e.y) };
-            const b = e.getBoundingClientRect();
-            return {
-              x: Math.round(b.left + b.width / 2),
-              y: Math.round(b.top + b.height / 2),
-              rect: rectOf(b),
-            };
-          };
+          const spotOf = (e: DragEnd) =>
+            e instanceof Element
+              ? aim(e)
+              : { x: Math.round(e.x), y: Math.round(e.y) };
           const a = spotOf(from);
-          const b = spotOf(to);
           await glide(a.x, a.y);
           const t = now();
           await mark(a.x, a.y);
+          const b = spotOf(to);
           await glide(b.x, b.y);
           events.push({ kind: "drag", t, end: now(), from: a, to: b });
         },
