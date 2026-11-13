@@ -5,7 +5,7 @@ import { ArrowUpRight } from "lucide-react";
 import { BackCrumb } from "@/components/back-crumb";
 import { CompanionNote } from "@/components/companion-note";
 import { getMDXComponents } from "@/components/mdx";
-import { betaFallbackUrl } from "@/lib/beta-fallback";
+import { missingReleaseRedirect } from "@/lib/beta-fallback";
 import { cn } from "@/lib/cn";
 import { changelogs } from "@/lib/collections";
 import { localeInput } from "@/lib/i18n";
@@ -32,13 +32,13 @@ const getRelease = createServerFn({ method: "GET" })
   .handler(({ data: { version, locale } }) => {
     const page = changelog.getPage([version], locale);
     if (!page) {
-      // A version this build never published still lives on Pre-release Docs.
-      const href = betaFallbackUrl(
-        localizeHref(`${changelogRoute}/${version}`, { locale }),
-      );
-      throw href === undefined
+      const target = missingReleaseRedirect(version, {
+        release: localizeHref(`${changelogRoute}/${version}`, { locale }),
+        changelog: localizeHref(changelogRoute, { locale }),
+      });
+      throw target === undefined
         ? notFound()
-        : redirect({ href, statusCode: 307 });
+        : redirect({ href: target.href, statusCode: target.status });
     }
     return {
       path: page.path,
