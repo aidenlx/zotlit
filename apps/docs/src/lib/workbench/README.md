@@ -90,4 +90,5 @@ theirs — so Fast Refresh accepts each one in place.
 
 Each suite's name says what it pins; `apps/docs/AGENTS.md` → Verification maps them.
 The control vocabulary in [`WORKBENCH-DESIGN.md`](../../../WORKBENCH-DESIGN.md) is enforced by
-[`design.test.ts`](design.test.ts).
+the oxlint rule `zotlit-design/workbench-chrome`
+([`oxlint-plugin-design.ts`](../../../../../packages/config/oxlint-plugin-design.ts)) under `pnpm lint`.

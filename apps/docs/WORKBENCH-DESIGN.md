@@ -13,7 +13,8 @@ case, including labels and pane headings.
 
 Put reusable control mechanics in the [shared UI kit](src/components/ui/) and
 host themes. Put deterministic rules in the
-[design check](src/lib/workbench/design.test.ts).
+[design lint rule](../../packages/config/oxlint-plugin-design.ts)
+`zotlit-design/workbench-chrome`.
 Put behavioral contracts, state, persistence, and architectural trade-offs in
 the relevant ADR. The Workbench diagnosis contract is
 [ADR 0056](../../docs/adr/0056-template-diagnosis-belongs-to-the-editor.md).

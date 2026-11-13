@@ -25,7 +25,7 @@ A correction lands in the narrowest tier that can hold it for good. A size that 
    pnpm --filter @zotlit/docs exec oxlint <changed files under src/>
    ```
 
-   Each `zotlit-design/workbench-chrome` error names `file:line` and the rule. Fix the cause in the kit or the spec; extend the rule when a new rule earned its place in DESIGN.md. Other diagnostics are this review's only when the change introduced them (`git blame` the line). When no changed file is under `src/lib/workbench/`, report the check as covering none of the touched surfaces and carry on.
+   Each `zotlit-design/workbench-chrome` error names `file:line` and the rule. Fix the cause in the kit or the spec; extend the rule when a new rule earned its place in DESIGN.md. Other diagnostics are this review's only when the change introduced them (`git blame` the line). When no changed file is a non-test `.tsx` file directly under `src/lib/workbench/`, report the check as covering none of the touched surfaces and carry on.
 
 4. **Render the touched surfaces.** Start the dev server and capture each touched surface at 1440 px and 640 px with agent-browser (conventions: `docs/agents/agent-browser.md`; export `NO_PROXY='localhost,127.0.0.1'`). Measure rather than eyeball: read control heights and font sizes from the DOM and compare them with the spec's numbers.
 
@@ -39,7 +39,7 @@ A correction lands in the narrowest tier that can hold it for good. A size that 
 
 5. **Route the judgement calls.** Hand the rendered surfaces to `better-layout`, `better-typography`, and `better-ui` with the spec's values as the density system, so the reviewer applies 32 px / 12 px / 4-8-12-16 rather than its generic defaults. `better-interface` consolidates the verdict.
 
-6. **Report** in the `better-*` table format, one row per root cause with every location. Add a `Tier` column: `kit`, `check`, or `spec`, naming where the fix belongs. End with `Block` while any `HIGH` or any `zotlit-design` error remains, `Approve` otherwise. State every viewport and state you did not render as `Not verified`.
+6. **Report** in the `better-*` table format, one row per root cause with every location. Add a `Tier` column: `kit`, `check`, or `spec`, naming where the fix belongs. End with `Block` while any `HIGH` or any `workbench-chrome` error remains, `Approve` otherwise. State every viewport and state you did not render as `Not verified`.
 
 ## Extending the system
 
