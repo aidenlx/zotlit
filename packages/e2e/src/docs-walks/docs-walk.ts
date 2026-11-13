@@ -212,9 +212,8 @@ export function recordRequested(name?: string): boolean {
 
 /**
  * Whether the run needs every Desktop Slot: it captures, or it records. A
- * recording brings Zotero to the front, hides Obsidian, and, under
- * `DOCS_WALK_NATIVE=1`, sends real pointer and key input, so no other run may
- * use the desktop meanwhile. The global setup cannot tell which steps
+ * recording brings Zotero to the front, hides Obsidian, and can send real
+ * pointer and key input, so no other run may use the desktop meanwhile. The global setup cannot tell which steps
  * record, so every recording run takes the hold.
  */
 export function exclusiveHoldRequested(): boolean {
