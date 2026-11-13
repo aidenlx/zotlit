@@ -546,4 +546,251 @@ describe.skipIf(!reachable)("Library View long lists", () => {
     },
     240_000,
   );
+
+  /**
+   * Create `files`, and remove them and close their tabs once the case ends.
+   */
+  async function createFiles(
+    cleanup: AsyncDisposableStack,
+    files: Record<string, string>,
+  ) {
+    const paths = Object.keys(files);
+    cleanup.defer(() =>
+      obRun(
+        vaultId,
+        async ({ app }, { paths }) => {
+          for (const leaf of app.workspace.getLeavesOfType("markdown"))
+            if (paths.includes((leaf.view as MarkdownView).file?.path ?? ""))
+              leaf.detach();
+          for (const leaf of app.workspace.getLeavesOfType("zotlit-query-file"))
+            if (paths.includes((leaf.view as MarkdownView).file?.path ?? ""))
+              leaf.detach();
+          for (const path of paths) {
+            const file = app.vault.getFileByPath(path);
+            if (file) await app.vault.delete(file);
+          }
+        },
+        { paths },
+      ),
+    );
+    await obRun(
+      vaultId,
+      async ({ app }, { files }) => {
+        for (const [path, text] of Object.entries(files))
+          await app.vault.create(path, text);
+      },
+      { files },
+    );
+  }
+
+  it("keeps the List's height as the scroll bar is dragged after Indent properties makes its rows taller", async () => {
+    const path = "Long indent.zotquery";
+    const view = (indent: boolean) =>
+      [
+        "views:",
+        "  - type: list",
+        "    name: All",
+        "    from: items",
+        '    filters: library == "personal"',
+        "    order:",
+        "      - title",
+        "      - date",
+        "      - itemType",
+        ...(indent ? ["    indentProperties: true"] : []),
+        "",
+      ].join("\n");
+    await using cleanup = new AsyncDisposableStack();
+    await createFiles(cleanup, { [path]: view(false) });
+    await obRun(
+      vaultId,
+      async ({ app }, { path }) => {
+        const leaf = app.workspace.getLeaf("tab");
+        await leaf.openFile(app.vault.getFileByPath(path)!);
+        app.workspace.setActiveLeaf(leaf, { focus: true });
+      },
+      { path },
+    );
+    /** The List of the Query File tab drawn the way `indent` asks. */
+    const drawn = (indent: boolean) =>
+      obRunUntil(
+        vaultId,
+        ({ app }, { path, indent }) => {
+          const leaf = app.workspace
+            .getLeavesOfType("zotlit-query-file")
+            .find((l) => (l.view as MarkdownView).file?.path === path);
+          const row = leaf?.view.containerEl.querySelector(
+            '[data-query-layout="list"] li[data-query-row]',
+          );
+          // An indented row holds its other properties on lines below.
+          const indented = [...(row?.children ?? [])].some((child) =>
+            child.className.includes("zt:block"),
+          );
+          return row != null && indented === indent;
+        },
+        { path, indent },
+        {
+          what: `the List drawn with Indent properties ${indent ? "on" : "off"}`,
+        },
+      );
+    /** Drag the List's scroll bar from top to end, a step each frame. */
+    const drag = () =>
+      obRun(
+        vaultId,
+        async ({ app }, { path }) => {
+          const leaf = app.workspace
+            .getLeavesOfType("zotlit-query-file")
+            .find((l) => (l.view as MarkdownView).file?.path === path)!;
+          const list = leaf.view.containerEl.querySelector<HTMLElement>(
+            '[data-query-layout="list"]',
+          )!;
+          list.scrollTop = 0;
+          for (let still = 0, last = -1, tries = 0; still < 5; tries++) {
+            if (tries > 120) throw new Error("The List's height never held");
+            await new Promise((resolve) => requestAnimationFrame(resolve));
+            still = list.scrollHeight === last ? still + 1 : 0;
+            last = list.scrollHeight;
+          }
+          const start = list.scrollHeight;
+          const heights = new Set<number>();
+          let mounted = 0;
+          const end = list.scrollHeight - list.clientHeight;
+          for (let at = 0; at <= end; at += 200) {
+            list.scrollTop = at;
+            await new Promise((resolve) => requestAnimationFrame(resolve));
+            heights.add(list.scrollHeight);
+            mounted = Math.max(
+              mounted,
+              list.querySelectorAll("li[data-query-row]").length,
+            );
+          }
+          return {
+            start,
+            mounted,
+            heightMoved: Math.max(...heights) - Math.min(...heights),
+          };
+        },
+        { path },
+        { timeoutMs: 120_000 },
+      );
+    await drawn(false);
+    const inline = await drag();
+    await obRun(
+      vaultId,
+      async ({ app }, { path, text }) => {
+        await app.vault.modify(app.vault.getFileByPath(path)!, text);
+      },
+      { path, text: view(true) },
+    );
+    await drawn(true);
+    const indented = await drag();
+    expect(inline.mounted).toBeLessThan(80);
+    expect(indented.mounted).toBeLessThan(80);
+    // The rows take more lines, and the list learns their new height.
+    expect(indented.start).toBeGreaterThan(inline.start * 1.3);
+    expect(indented.heightMoved).toBeLessThan(50);
+  }, 180_000);
+
+  it("mounts a bounded number of rows of a long embed in a folded callout, and the rows near the screen once it unfolds", async () => {
+    const queryPath = "Long fold.zotquery";
+    const notePath = "Long fold.md";
+    await using cleanup = new AsyncDisposableStack();
+    await createFiles(cleanup, {
+      [queryPath]: [
+        "views:",
+        "  - type: papers",
+        "    name: All",
+        "    from: items",
+        '    filters: library == "personal"',
+        "",
+      ].join("\n"),
+      [notePath]: [
+        "# Folded",
+        "",
+        "> [!note]- Long list",
+        `> ![[${queryPath}]]`,
+        "",
+        "The end.",
+        "",
+      ].join("\n"),
+    });
+    await obRun(
+      vaultId,
+      async ({ app }, { notePath }) => {
+        const leaf = app.workspace.getLeaf("tab");
+        await leaf.openFile(app.vault.getFileByPath(notePath)!, {
+          state: { mode: "preview" },
+        });
+        app.workspace.setActiveLeaf(leaf, { focus: true });
+      },
+      { notePath },
+    );
+    /** The folded state, and the embed's listed, mounted and shown rows. */
+    const state = (
+      what: string,
+      ready: (s: {
+        folded: boolean;
+        listed: number;
+        mounted: number;
+        shown: number;
+      }) => boolean,
+    ) =>
+      obRunUntil(
+        vaultId,
+        ({ app }, { notePath }) => {
+          const leaf = app.workspace
+            .getLeavesOfType("markdown")
+            .find((l) => (l.view as MarkdownView).file?.path === notePath)!;
+          const scroller = leaf.view.containerEl.querySelector<HTMLElement>(
+            ".markdown-preview-view",
+          )!;
+          const callout = scroller.querySelector<HTMLElement>(".callout");
+          const host =
+            scroller.querySelector<QueryViewElement>(".zt-query-view");
+          const bounds = scroller.getBoundingClientRect();
+          const rows = [
+            ...(host?.querySelectorAll<HTMLElement>(
+              "[data-query-papers-row]",
+            ) ?? []),
+          ];
+          return {
+            folded: callout?.classList.contains("is-collapsed") ?? false,
+            listed:
+              host?.zotlitQueryView?.state.getState().results?.rows.length ?? 0,
+            mounted: rows.length,
+            shown: rows.filter((row) => {
+              const rowBounds = row.getBoundingClientRect();
+              return (
+                rowBounds.height > 0 &&
+                rowBounds.bottom > bounds.top &&
+                rowBounds.top < bounds.bottom
+              );
+            }).length,
+          };
+        },
+        { notePath },
+        { what, ready },
+      );
+    const folded = await state(
+      "the embed's rows listed in the folded callout",
+      (s) => s.folded && s.listed > LISTED,
+    );
+    expect(folded.mounted).toBeLessThan(80);
+    await obRun(
+      vaultId,
+      ({ app }, { notePath }) => {
+        const leaf = app.workspace
+          .getLeavesOfType("markdown")
+          .find((l) => (l.view as MarkdownView).file?.path === notePath)!;
+        leaf.view.containerEl
+          .querySelector<HTMLElement>(".markdown-preview-view .callout-title")!
+          .click();
+      },
+      { notePath },
+    );
+    const open = await state(
+      "the embed's rows in view once the callout unfolds",
+      (s) => !s.folded && s.shown > 0,
+    );
+    expect(open.mounted).toBeLessThan(80);
+  }, 180_000);
 });

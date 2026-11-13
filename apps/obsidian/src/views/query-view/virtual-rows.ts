@@ -102,14 +102,20 @@ export function learn(
 
 /**
  * The element that scrolls the list: the nearest ancestor of a note's view
- * that scrolls, in a note, else the layout's own box.
+ * that scrolls its content up and down, in a note, else the layout's own
+ * box. An ancestor that only scrolls sideways, as a callout's body does, is
+ * as high as its content and passes.
  */
 function scrollerOf(list: HTMLElement, own: HTMLElement): HTMLElement {
   const note = list.closest(".zt-query-note");
   if (!note) return own;
   for (let el = note.parentElement; el; el = el.parentElement) {
     const { overflowY } = el.win.getComputedStyle(el);
-    if (overflowY === "auto" || overflowY === "scroll") return el;
+    if (
+      (overflowY === "auto" || overflowY === "scroll") &&
+      el.scrollHeight > el.clientHeight
+    )
+      return el;
   }
   return own;
 }
