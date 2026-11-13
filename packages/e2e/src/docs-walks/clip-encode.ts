@@ -116,7 +116,9 @@ async function readShot(dir: string) {
  * camera track: `track` when given, `"whole"` for the whole window
  * throughout, or the plan of the clip's `camera.json`. `settings` default to
  * those the clip was recorded with, under this run's overrides; with the
- * camera off, the clip keeps the whole window and has no poster. The track
+ * camera off, the clip keeps the whole window and has no poster. The first
+ * image holds `openPad` before the clip and the last `endPad` after it, so
+ * the track's times stay those of the frames. The track
  * used is written to `dir/track.json` and answered with the clip's log.
  * A `dir` with a `sequence.json` is a clip of several shots
  * ({@link ClipSequence}); it answers the track and log of its last shot.
@@ -165,6 +167,8 @@ export async function encodeClip(
       const first = await sharp(join(shot.dir, read.shown[0]!.file)).metadata();
       const outW = Math.min(s.width, first.width);
       size = { outW, outH: 2 * Math.round((outW * H) / W / 2) };
+      // The clip's first ticks are the open pad, after the shots.
+      tick = Math.round(s.openPad * s.fps);
     }
     const used =
       shot.track === "whole" || !s.camera
@@ -194,6 +198,17 @@ export async function encodeClip(
     tick = last.tick;
     image = last.image;
   }
+  // The open pad holds the clip's first image, and the end pad its last.
+  for (let n = 0; n < Math.round(s!.openPad * s!.fps); n++)
+    await link(
+      join(baked, "b00000.png"),
+      join(baked, `t${String(n).padStart(5, "0")}.png`),
+    );
+  for (let n = 0; n < Math.round(s!.endPad * s!.fps); n++)
+    await link(
+      join(baked, last!.lastFile),
+      join(baked, `t${String(tick++).padStart(5, "0")}.png`),
+    );
   await encodeBoth(
     {
       input: [
@@ -353,8 +368,13 @@ export async function encodeMovie(
 ): Promise<void> {
   const crop = inset > 0 ? `crop=iw-${2 * inset}:ih-${2 * inset},` : "";
   const filter = `${crop}scale='min(${s.width},iw)':-2:flags=lanczos`;
+  // The open pad holds the first frame, and the end pad the last.
+  const pads = `tpad=start_mode=clone:start_duration=${s.openPad}:stop_mode=clone:stop_duration=${s.endPad}`;
   await encodeBoth(
-    { input: ["-y", "-i", movie], filter: `${filter},format=yuv420p` },
+    {
+      input: ["-y", "-i", movie],
+      filter: `${filter},${pads},format=yuv420p`,
+    },
     out,
     s,
   );

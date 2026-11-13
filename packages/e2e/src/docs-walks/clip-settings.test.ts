@@ -21,6 +21,33 @@ describe("clipSettings", () => {
     });
   });
 
+  it("keeps the camera calm by default", () => {
+    const s = defaultClipSettings;
+    expect(s.zoom).toBeLessThanOrEqual(1.4);
+    expect(s.hold).toBeGreaterThanOrEqual(2.5);
+    expect(s.ease).toBeGreaterThanOrEqual(1);
+    expect(s.minEase).toBeGreaterThanOrEqual(0.6);
+    // The first and last frames rest about 2.5 s with the pads.
+    expect(s.opening + s.openHold + s.openPad).toBeGreaterThanOrEqual(2.5);
+    expect(s.rest + s.endPad).toBeGreaterThanOrEqual(2.5);
+  });
+
+  it("fills the settings a clip was recorded without from the defaults", () => {
+    const {
+      hold: _,
+      openPad: __,
+      endPad: ___,
+      context: ____,
+      ...recorded
+    } = defaultClipSettings;
+    expect(clipSettings({ ...recorded, zoom: 2 })).toMatchObject({
+      zoom: 2,
+      hold: defaultClipSettings.hold,
+      openPad: defaultClipSettings.openPad,
+      endPad: defaultClipSettings.endPad,
+    });
+  });
+
   it("refuses a setting it does not know", () => {
     process.env.DOCS_WALK_CLIP = '{"zoon":1.5}';
     expect(() => clipSettings()).toThrow("unknown clip setting zoon");
