@@ -3,55 +3,19 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { m } from "@/paraglide/messages.js";
 
+import {
+  FakeIntersectionObserver,
+  queueMediaEvents,
+  settle,
+  where,
+} from "./__fixtures__/media-boundary";
+import type { Box } from "./__fixtures__/media-boundary";
+
 // The turn lives in module state, so each case loads a fresh copy of the
 // module and of everything that imports it.
 beforeEach(() => {
   vi.resetModules();
 });
-
-/**
- * IntersectionObserver at the browser boundary, which happy-dom lacks. `show`
- * reports a target's visible ratio to every observer that watches it.
- */
-class FakeIntersectionObserver {
-  static readonly live = new Set<FakeIntersectionObserver>();
-  readonly #targets = new Set<Element>();
-  readonly #callback: IntersectionObserverCallback;
-
-  constructor(callback: IntersectionObserverCallback) {
-    this.#callback = callback;
-    FakeIntersectionObserver.live.add(this);
-  }
-
-  observe(target: Element) {
-    this.#targets.add(target);
-  }
-
-  unobserve(target: Element) {
-    this.#targets.delete(target);
-  }
-
-  disconnect() {
-    this.#targets.clear();
-    FakeIntersectionObserver.live.delete(this);
-  }
-
-  takeRecords() {
-    return [];
-  }
-
-  static show(target: Element, ratio: number) {
-    for (const observer of [...FakeIntersectionObserver.live]) {
-      if (!observer.#targets.has(target)) continue;
-      const entry = {
-        target,
-        isIntersecting: ratio > 0,
-        intersectionRatio: ratio,
-      } as IntersectionObserverEntry;
-      observer.#callback([entry], observer as unknown as IntersectionObserver);
-    }
-  }
-}
 
 /** A landing recording beside the table demo, both on the page's real modules. */
 async function mountRecordingAndDemo() {
@@ -67,6 +31,7 @@ async function mountRecordingAndDemo() {
     FakeIntersectionObserver.live.clear();
     vi.unstubAllGlobals();
   });
+  cleanup.use(queueMediaEvents());
 
   const container = cleanup.adopt(document.createElement("div"), (element) =>
     element.remove(),
@@ -87,17 +52,26 @@ async function mountRecordingAndDemo() {
         <TableDemo />
       </>,
     );
+    await settle();
   });
 
   const video = container.querySelector("video")!;
   const figure = container.querySelector("figure")!;
   const lifetime = cleanup.move();
   return {
-    act,
     video,
     figure,
-    show: (target: Element, ratio: number) =>
-      act(() => FakeIntersectionObserver.show(target, ratio)),
+    /** Does `action` as the reader, then lets the browser's queued tasks run. */
+    act: (action: () => void) =>
+      act(async () => {
+        action();
+        await settle();
+      }),
+    place: (target: Element, box: Box) =>
+      act(async () => {
+        FakeIntersectionObserver.place(target, box);
+        await settle();
+      }),
     [Symbol.dispose]: () => lifetime.dispose(),
   };
 }
@@ -138,26 +112,41 @@ describe("the recording turn", () => {
 
   it("leaves the table demo stopped when the reader pauses it while it waits behind a paused recording", async () => {
     using page = await mountRecordingAndDemo();
-    const { act, video, figure, show } = page;
+    const { video, figure } = page;
 
     // The recording crosses the middle of the viewport and plays on its own.
-    show(video, 1);
+    await page.place(video, where.middle());
     expect(video.paused).toBe(false);
     // The reader pauses it, so it holds the turn while in view.
-    act(() => video.pause());
+    await page.act(() => video.pause());
 
-    // The demo comes half into view and waits for the turn.
-    show(figure, 0.6);
+    // The demo comes into view and waits for the turn.
+    await page.place(figure, where.middle());
     // The reader pauses the waiting demo, which rests on its finished frame.
     const toggle = figure.querySelector("button")!;
-    act(() => toggle.click());
+    await page.act(() => toggle.click());
     expect(toggle.getAttribute("aria-label")).toBe(m.docs_home_table_play());
     const finished = figure.textContent;
 
     // The paused recording leaves view and gives up the turn.
-    show(video, 0);
+    await page.place(video, where.away());
 
     expect(video.paused).toBe(true);
     expect(figure.textContent).toBe(finished);
+  });
+
+  it("keeps a landing recording the reader played at rest when it leaves view and an edge of it comes back", async () => {
+    using page = await mountRecordingAndDemo();
+    const { video } = page;
+    await page.place(video, where.middle());
+    // The reader pauses, then plays the recording.
+    await page.act(() => video.pause());
+    await page.act(() => void video.play());
+    expect(video.paused).toBe(false);
+
+    await page.place(video, where.away());
+    await page.place(video, where.edge());
+
+    expect(video.paused).toBe(true);
   });
 });

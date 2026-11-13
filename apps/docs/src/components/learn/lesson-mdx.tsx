@@ -29,6 +29,7 @@ import { cn } from "@/lib/cn";
 import * as m from "@/paraglide/messages.js";
 import { localizeHref } from "@/paraglide/runtime.js";
 
+import { metaClass, secondaryButtonClass } from "./action-classes";
 import { LessonContext, nextOpenStep } from "./lesson-state";
 import type { LessonState, LessonStepMeta } from "./lesson-state";
 import { stepMedia, StepPicture } from "./step-picture";
@@ -59,8 +60,8 @@ export const preHydration = {
 export const labelClass =
   "font-mono text-[0.6875rem] leading-[1.25] font-medium tracking-[0.08em] text-fd-muted-foreground uppercase";
 
-/** 15px: secondary text, meta lines, buttons and links beside the step text. */
-export const metaClass = "text-[0.9375rem] leading-[1.45]";
+// 15px, `metaClass`, lives in ./action-classes with the secondary action.
+export { metaClass } from "./action-classes";
 
 /** 17px: every step text — action, check, fix and figure — and the lede. */
 export const bodyClass = "text-[1.0625rem] leading-[1.55]";
@@ -95,12 +96,6 @@ const captionClass = cn(
 export const buttonClass = cn(
   metaClass,
   "inline-flex min-h-11 cursor-pointer items-center gap-2 rounded-[10px] bg-fd-foreground px-5 py-2.5 font-semibold text-fd-background transition-[background-color,scale] duration-150 hover:bg-fd-foreground/90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fd-ring motion-safe:active:scale-[0.96]",
-);
-
-/** The secondary action: the raised surface with the shadow ring. */
-const secondaryButtonClass = cn(
-  metaClass,
-  "inline-flex min-h-11 cursor-pointer items-center gap-2 rounded-[10px] border border-transparent bg-fd-background px-5 py-2.5 font-semibold text-fd-foreground shadow-ring transition-[box-shadow,scale] duration-150 hover:shadow-ring-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fd-ring motion-safe:active:scale-[0.96]",
 );
 
 export const focusClass =
@@ -317,7 +312,8 @@ export function Step({ n, children }: { n: number; children: ReactNode }) {
             n={n}
             alt={meta.alt}
             active={live?.open === n && !live.wide}
-            autoplay={live?.acted ?? false}
+            loop={false}
+            endActions={live && <TickButton n={n} total={total} live={live} />}
             playNow={live?.launched === n}
           />
         </div>
@@ -352,6 +348,37 @@ function TickAction({
   total: number;
   live: NonNullable<LessonState["live"]>;
 }) {
+  return (
+    <>
+      {live.ticks.has(n) && (
+        <span
+          className={cn(
+            metaClass,
+            "inline-flex items-center gap-1.5 font-semibold text-check-label",
+          )}
+        >
+          <CircleCheck aria-hidden strokeWidth={2.25} className="size-[18px]" />
+          {m.docs_learn_ticked()}
+        </span>
+      )}
+      <TickButton n={n} total={total} live={live} />
+    </>
+  );
+}
+
+/**
+ * Row `n`'s leading action, which the row and its ended recording share:
+ * "Tick step N", or the way on once the row is ticked.
+ */
+export function TickButton({
+  n,
+  total,
+  live,
+}: {
+  n: number;
+  total: number;
+  live: NonNullable<LessonState["live"]>;
+}) {
   if (!live.ticks.has(n)) {
     return (
       <button
@@ -366,30 +393,19 @@ function TickAction({
   }
   const next = nextOpenStep(live.ticks, n, total) ?? total + 1;
   return (
-    <>
-      <span
-        className={cn(
-          metaClass,
-          "inline-flex items-center gap-1.5 font-semibold text-check-label",
-        )}
-      >
-        <CircleCheck aria-hidden strokeWidth={2.25} className="size-[18px]" />
-        {m.docs_learn_ticked()}
-      </span>
-      <button
-        type="button"
-        onClick={() => {
-          live.go(next);
-          focusPart(next, total);
-        }}
-        className={secondaryButtonClass}
-      >
-        {next > total
-          ? m.docs_learn_see_end()
-          : m.docs_learn_go_to_step({ number: next })}
-        <ArrowDown aria-hidden strokeWidth={2.25} className="size-4" />
-      </button>
-    </>
+    <button
+      type="button"
+      onClick={() => {
+        live.go(next);
+        focusPart(next, total);
+      }}
+      className={secondaryButtonClass}
+    >
+      {next > total
+        ? m.docs_learn_see_end()
+        : m.docs_learn_go_to_step({ number: next })}
+      <ArrowDown aria-hidden strokeWidth={2.25} className="size-4" />
+    </button>
   );
 }
 
