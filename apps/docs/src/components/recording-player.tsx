@@ -229,6 +229,15 @@ export default function RecordingPlayer({
 
   // A clip that plays once gives its turn back at its end, so a waiting loop can start.
   function onEnded() {
+    // The control bar leaves with the end, so focus on one of its buttons moves to the player.
+    const f = frame.current;
+    if (
+      f &&
+      f !== document.activeElement &&
+      f.contains(document.activeElement)
+    ) {
+      f.focus({ preventScroll: true });
+    }
     setEnded(true);
     stopWaiting(me);
     endTurn(me);

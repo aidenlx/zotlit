@@ -257,6 +257,24 @@ describe("a lesson's recordings", () => {
     expect(outcome.paused).toBe(false);
   });
 
+  it("keeps focus on the player when a step ends while a control-bar button has it", async () => {
+    using page = await mountLesson();
+    await page.start();
+    const step = await page.player("#step-1-body");
+    await page.place(step, where.middle());
+    const bar = step
+      .closest(`[aria-label="${CSS.escape(first.alt)}"]`)!
+      .querySelector<HTMLElement>(
+        `[aria-label="${CSS.escape(m.docs_learn_recording_controls())}"] button`,
+      )!;
+    bar.focus();
+    expect(document.activeElement).toBe(bar);
+
+    await page.act(() => endPlayback(step));
+
+    expect(document.activeElement?.getAttribute("aria-label")).toBe(first.alt);
+  });
+
   it("replays an ended step on the reader's press, and not when it comes back into view", async () => {
     using page = await mountLesson();
     await page.start();

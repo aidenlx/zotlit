@@ -286,8 +286,9 @@ heading, one caption and one check line.
   the shadow ring, a Lucide rotate icon), after any actions the page adds
   (`endActions`); on the scrim their focus ring is white (4.7:1 or more on
   the dimmed frame). The control bar leaves while the end shows, so this
-  Replay is the only one. In a player under 20rem wide (a 320px window)
-  Replay keeps its icon in a 44px square, its name read but not shown, so
+  Replay is the only one. In a player under 20rem (320px) wide, as in
+  phone windows up to about 400px, Replay keeps its icon in a 44px square,
+  its name read but not shown, so
   it shares one row with the page's action. It gives its turn back, and
   plays again only on the reader's press, not when it comes back into
   view. Once the reader plays or pauses a clip, the reader's choice holds.
