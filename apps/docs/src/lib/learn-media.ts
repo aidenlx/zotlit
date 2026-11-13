@@ -7,22 +7,17 @@
 // Recordings arrive step by step, so the page reads which steps have one from
 // this scan rather than from the lesson file. The scan runs in Node —
 // `learnMediaPlugin` hands the result to the app as the `__LEARN_MEDIA__`
-// define, and `vitest.config.ts` does the same for the tests. A file that is
-// missing, or still a Git LFS pointer, leaves its step out instead of failing
-// the build.
+// define, and `vitest.config.ts` does the same for the tests. The clips come
+// from the media store's scan (`scanVideos`). A file that is missing, or
+// still a Git LFS pointer, leaves its step out instead of failing the build.
 
 import { existsSync, globSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { normalizePath } from "vite";
 import type { Plugin } from "vite";
 
-import { isVideoBytes } from "./media-store.js";
-
-/** A picture's pixel size. */
-export interface MediaSize {
-  width: number;
-  height: number;
-}
+import { scanVideos } from "./media-store.js";
+import type { MediaSize, StoredVideo } from "./media-store.js";
 
 /** One step's media: the still, and the recording when one exists. */
 export interface StepMedia extends MediaSize {
@@ -72,31 +67,15 @@ export function webpSize(bytes: Uint8Array): MediaSize | undefined {
 }
 
 /**
- * The display size of an MP4's first video track, from its `tkhd` box, or
- * undefined when the file declares none.
- */
-export function mp4Size(bytes: Uint8Array): MediaSize | undefined {
-  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
-  const tkhd = [0x74, 0x6b, 0x68, 0x64];
-  for (let at = 4; at + 4 <= bytes.length; at++) {
-    if (tkhd.some((byte, i) => bytes[at + i] !== byte)) continue;
-    const body = at + 4;
-    // Version 1 headers carry 64-bit times, which moves the size 12 bytes on.
-    const sizeAt = body + (bytes[body] === 1 ? 88 : 76);
-    if (sizeAt + 8 > bytes.length) return undefined;
-    const width = view.getUint32(sizeAt) >>> 16;
-    const height = view.getUint32(sizeAt + 4) >>> 16;
-    // An audio track's header declares no size; the video track's comes later.
-    if (width > 0 && height > 0) return { width, height };
-  }
-  return undefined;
-}
-
-/**
  * Every step still under `public/img/learn`, with its size and recording.
  * @param packageRoot the app's own root, which `vite.config.ts` owns.
+ * @param videos the media store's scan of the same root.
  */
-export function scanLearnMedia(packageRoot: string): LearnMedia {
+export function scanLearnMedia(
+  packageRoot: string,
+  videos: readonly StoredVideo[] = scanVideos(packageRoot),
+): LearnMedia {
+  const clips = new Map(videos.map((video) => [video.path, video]));
   const root = resolve(packageRoot, learnDir);
   if (!existsSync(root)) return {};
 
@@ -110,8 +89,7 @@ export function scanLearnMedia(packageRoot: string): LearnMedia {
     const size = webpSize(readFileSync(join(root, file)));
     if (!size) continue;
 
-    const mp4Path = join(root, `${key}.mp4`);
-    const mp4 = existsSync(mp4Path) ? readFileSync(mp4Path) : undefined;
+    const clip = clips.get(`/img/learn/${key}.mp4`);
     const posterPath = join(root, `${key}.poster.webp`);
     const poster = existsSync(posterPath)
       ? webpSize(readFileSync(posterPath))
@@ -120,25 +98,35 @@ export function scanLearnMedia(packageRoot: string): LearnMedia {
     media[key] = {
       ...size,
       ...(poster && { poster }),
-      ...(mp4 && isVideoBytes(mp4) && { clip: { size: mp4Size(mp4) ?? size } }),
+      ...(clip && { clip: { size: clip.size ?? size } }),
     };
   }
   return media;
 }
 
-/** Hands the scan to the app as `__LEARN_MEDIA__`, and rescans when a step's media changes in dev. */
-export function learnMediaPlugin(packageRoot: string): Plugin {
-  const inventory = () => JSON.stringify(scanLearnMedia(packageRoot));
+/**
+ * Hands the scan to the app as `__LEARN_MEDIA__`, and rescans when a step's
+ * media changes in dev.
+ * @param videos the media store's scan; `vite.config.ts` shares one with `mediaStorePlugin`.
+ */
+export function learnMediaPlugin(
+  packageRoot: string,
+  videos: () => readonly StoredVideo[] = () => scanVideos(packageRoot),
+): Plugin {
+  const inventory = (scan: readonly StoredVideo[]) =>
+    JSON.stringify(scanLearnMedia(packageRoot, scan));
   const mediaRoot = `${normalizePath(resolve(packageRoot, learnDir))}/`;
   return {
     name: "zotlit:learn-media",
     config() {
-      return { define: { __LEARN_MEDIA__: inventory() } };
+      return { define: { __LEARN_MEDIA__: inventory(videos()) } };
     },
     configureServer(server) {
+      // A change on disk needs a new scan, not the one the config was built from.
       async function refresh(path: string) {
         if (!normalizePath(path).startsWith(mediaRoot)) return;
-        if (server.config.define?.__LEARN_MEDIA__ !== inventory()) {
+        const fresh = inventory(scanVideos(packageRoot));
+        if (server.config.define?.__LEARN_MEDIA__ !== fresh) {
           await server.restart();
         }
       }

@@ -1,50 +1,63 @@
 // Uploads the recordings' videos the media store lacks, before a deploy that
 // plays them from there (see src/lib/media-store.ts). Each object key carries
 // the file's content hash, so a key in the bucket already holds these bytes:
-// the script sends only the missing keys, and a second run sends nothing.
-//
-//   node scripts/upload-media.ts [--dry-run]
-//
-// It talks to R2 through its S3-compatible API with a bucket-scoped key pair:
-// R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY and CLOUDFLARE_ACCOUNT_ID. With
-// --dry-run it uploads nothing and prints each key with what a real run does
-// with it; without credentials it lists every key as not checked.
+// a run sends only the missing keys, and a second run sends nothing.
 
 import { AwsClient } from "aws4fetch";
-import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { parseArgs } from "node:util";
+import yargs from "yargs";
+import { hideBin } from "yargs/helpers";
 
 import {
   mediaBucket,
   mediaCacheControl,
   mediaContentType,
   scanVideos,
+  uploadMissing,
 } from "../src/lib/media-store.ts";
 
-const { values } = parseArgs({
-  options: { "dry-run": { type: "boolean", default: false } },
-});
-const dryRun = values["dry-run"];
+const credentials = [
+  "R2_ACCESS_KEY_ID",
+  "R2_SECRET_ACCESS_KEY",
+  "CLOUDFLARE_ACCOUNT_ID",
+] as const;
 
-const videos = scanVideos(resolve(import.meta.dirname, ".."));
+const { dryRun } = await yargs(hideBin(process.argv))
+  .scriptName("upload-media.ts")
+  .usage(
+    "$0 [--dry-run]\n\nUpload the lesson and landing MP4s under public/img that the media store lacks.",
+  )
+  .option("dry-run", {
+    describe:
+      "Upload nothing: print each key and whether a real run uploads it; without credentials, list every key as not checked",
+    type: "boolean",
+    default: false,
+  })
+  .epilogue(
+    [
+      `Bucket: ${mediaBucket}, through R2's S3 API. Each object is uploaded with Content-Type: ${mediaContentType} and Cache-Control: ${mediaCacheControl}.`,
+      `Credentials, from the environment: ${credentials.join(", ")} (the S3 key pair of a token with Workers R2 Storage Bucket Item Read and Write on ${mediaBucket}).`,
+      "A HEAD that answers other than 200 or 404, or a failed PUT, ends the run with an error.",
+    ].join("\n"),
+  )
+  .strict()
+  .version(false)
+  .parse();
+
+const packageRoot = resolve(import.meta.dirname, "..");
+const videos = scanVideos(packageRoot);
 if (videos.length === 0) {
   throw new Error(
     "No videos under public/img/learn or public/img/landing. Is Git LFS checked out?",
   );
 }
 
-const {
-  R2_ACCESS_KEY_ID: accessKeyId,
-  R2_SECRET_ACCESS_KEY: secretAccessKey,
-  CLOUDFLARE_ACCOUNT_ID: accountId,
-} = process.env;
-
+const [accessKeyId, secretAccessKey, accountId] = credentials.map(
+  (name) => process.env[name],
+);
 if (!accessKeyId || !secretAccessKey || !accountId) {
   if (!dryRun) {
-    throw new Error(
-      "Set R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY and CLOUDFLARE_ACCOUNT_ID, or pass --dry-run.",
-    );
+    throw new Error(`Set ${credentials.join(", ")}, or pass --dry-run.`);
   }
   for (const video of videos) console.log(`not checked  ${video.key}`);
   console.log(
@@ -59,39 +72,13 @@ const r2 = new AwsClient({
   service: "s3",
   region: "auto",
 });
-const objectUrl = (key: string) =>
-  `https://${accountId}.r2.cloudflarestorage.com/${mediaBucket}/${key}`;
-
-let missing = 0;
-for (const video of videos) {
-  const head = await r2.fetch(objectUrl(video.key), { method: "HEAD" });
-  if (head.ok) {
-    console.log(`present      ${video.key}`);
-    continue;
-  }
-  if (head.status !== 404) {
-    throw new Error(`HEAD ${video.key} answered ${head.status}.`);
-  }
-  missing++;
-  if (dryRun) {
-    console.log(`would upload ${video.key}`);
-    continue;
-  }
-  const put = await r2.fetch(objectUrl(video.key), {
-    method: "PUT",
-    body: readFileSync(video.file),
-    headers: {
-      "Content-Type": mediaContentType,
-      "Cache-Control": mediaCacheControl,
-    },
-  });
-  if (!put.ok) {
-    throw new Error(
-      `PUT ${video.key} answered ${put.status}: ${await put.text()}`,
-    );
-  }
-  console.log(`uploaded     ${video.key}`);
-}
+const results = await uploadMissing(videos, {
+  fetch: (url, init) => r2.fetch(url, init),
+  accountId,
+  dryRun,
+});
+for (const { key, state } of results) console.log(`${state.padEnd(12)} ${key}`);
+const sent = results.filter((r) => r.state !== "present").length;
 console.log(
-  `${videos.length} keys, ${missing} ${dryRun ? "missing" : "uploaded"}.`,
+  `${videos.length} keys, ${sent} ${dryRun ? "missing" : "uploaded"}.`,
 );
