@@ -4,7 +4,7 @@
 // without gestures leaves the rows as they are.
 //
 // @see apps/obsidian/docs/adr/0074-library-view-rows-act-as-quick-switcher-results.md
-import { useLayoutEffect, useMemo, useSyncExternalStore } from "react";
+import { useSyncExternalStore } from "react";
 import type { DragEvent, FocusEvent, HTMLAttributes, MouseEvent } from "react";
 
 type ItemSelection = { readonly key: string | null };
@@ -130,48 +130,4 @@ export function useItemRow(
     },
     onDragStart: (event: DragEvent<HTMLElement>) => gestures.drag(key, event),
   } as HTMLAttributes<HTMLElement>;
-}
-
-/** The Item rows that stay mounted in a long list: the selected and the first. */
-export function usePinnedRows(
-  gestures: ItemRowGestures | undefined,
-): readonly string[] {
-  const selected = useSyncExternalStore(
-    (listener) => gestures?.selection.subscribe(listener) ?? (() => {}),
-    () => gestures?.selection.getState().key ?? null,
-  );
-  const first = gestures?.first() ?? null;
-  return useMemo(
-    () => [selected, first].filter((key) => key !== null),
-    [selected, first],
-  );
-}
-
-/**
- * Tell the host the Item rows `keys` lists, in its order, and how to scroll
- * to one: `scrollTo` takes the place among the layout's entries.
- */
-export function useShownRows(
-  gestures: ItemRowGestures | undefined,
-  {
-    keys,
-    placeOf,
-    scrollTo,
-  }: {
-    keys: readonly string[];
-    placeOf: (key: string) => number;
-    scrollTo: (index: number) => boolean;
-  },
-): void {
-  useLayoutEffect(() => {
-    gestures?.shown({
-      keys,
-      scrollTo: (key) => {
-        const index = placeOf(key);
-        return index !== -1 && scrollTo(index);
-      },
-    });
-    // A layout that goes shows no rows.
-    return () => gestures?.shown(NO_ROWS);
-  }, [gestures, keys, placeOf, scrollTo]);
 }

@@ -7,13 +7,7 @@
 // of the Reading State.
 //
 // @see apps/obsidian/docs/adr/0075-the-papers-layout-is-a-query-view-layout-the-library-view-offers-with-the-table.md
-import {
-  Fragment,
-  useCallback,
-  useMemo,
-  useState,
-  useSyncExternalStore,
-} from "react";
+import { Fragment, useMemo, useSyncExternalStore } from "react";
 import type { CSSProperties, ReactNode } from "react";
 
 import { resolveVenue } from "@zotlit/db";
@@ -27,8 +21,10 @@ import type { TargetOpenGesture } from "@/services/attachment-open/actions";
 import type { OpenTarget } from "@/services/attachment-open/open-target";
 import type { QueryViewValue } from "@/services/item-query/query-view";
 
-import { useItemRow, usePinnedRows, useShownRows } from "./item-rows";
+import { useItemRow } from "./item-rows";
 import type { ItemRowGestures } from "./item-rows";
+import { useItemsWindow } from "./items-window";
+import type { WindowEntry } from "./items-window";
 import type { QueryLayout } from "./layouts";
 import { useQueryTask } from "./model";
 import {
@@ -50,7 +46,6 @@ import {
 import type { ChildState, TableRecord } from "./table-layout";
 import type { LiteratureNotes } from "./table-notes";
 import type { QueryView } from "./view";
-import { useVirtualRows } from "./virtual-rows";
 import { ListSpacer } from "./virtual-spacers";
 
 export const PAPERS_LAYOUT: QueryLayout = {
@@ -185,8 +180,8 @@ function useNotePath(notes: LiteratureNotes, itemKey: string): string | null {
   );
 }
 
-/** The height of a Papers row of two lines, before it is measured. */
-const ROW_ESTIMATE = 46;
+/** The height of a Papers entry of each kind, before it is measured. */
+const ESTIMATES = { heading: HEADING_ESTIMATE, row: 46, line: 32 };
 
 /** The rows of the shown view as a reading list, under their group headings. */
 export function PapersLayout({ view }: { view: QueryView }) {
@@ -194,58 +189,33 @@ export function PapersLayout({ view }: { view: QueryView }) {
   const { literatureNotes, readers } = view.tableDeps;
   const { children: expanded, toggle } = useChildren(view);
   const gestures = view.rows;
-  const [own, setOwn] = useState<HTMLDivElement | null>(null);
   const entries = useMemo(() => groupEntries(groups), [groups]);
-  const order = useMemo(
-    () =>
-      entries.flatMap((entry) =>
-        entry.kind === "row" ? [entry.record.row.indexedKey] : [],
-      ),
-    [entries],
-  );
-  const placeOf = useCallback(
-    (key: string) =>
-      entries.findIndex(
-        (entry) => entry.kind === "row" && entry.record.row.indexedKey === key,
-      ),
-    [entries],
-  );
-  const pinnedKeys = usePinnedRows(gestures);
-  const pinned = useMemo(() => pinnedKeys.map(placeOf), [placeOf, pinnedKeys]);
-  const rows = useVirtualRows({
-    count: entries.length,
-    own,
-    estimate: useCallback(
-      (index: number) =>
-        entries[index]!.kind === "heading" ? HEADING_ESTIMATE : ROW_ESTIMATE,
-      [entries],
-    ),
-    kindOf: useCallback(
-      (index: number) => {
-        const entry = entries[index]!;
-        if (entry.kind === "heading") return "heading";
-        const { row } = entry.record;
-        if (expanded.has(id({ kind: "item", key: row.indexedKey })))
-          return null;
-        // A row with no second line is one line high.
-        return metaText(row.values) !== "" || view.reason(row) !== null
-          ? "row"
-          : "line";
-      },
+  const rows = useItemsWindow(
+    view,
+    useMemo(
+      () =>
+        entries.map((entry): WindowEntry => {
+          if (entry.kind === "heading")
+            return { key: entry.key, kind: "heading", item: null };
+          const { row } = entry.record;
+          return {
+            key: entry.key,
+            // A row with no second line is one line high.
+            kind:
+              metaText(row.values) !== "" || view.reason(row) !== null
+                ? "row"
+                : "line",
+            item: row.indexedKey,
+            own: expanded.has(id({ kind: "item", key: row.indexedKey })),
+          };
+        }),
       [entries, expanded, view],
     ),
-    keyOf: useCallback((index: number) => entries[index]!.key, [entries]),
-    pinned,
-    all: view.printing,
-  });
-  useShownRows(gestures, {
-    keys: order,
-    placeOf,
-    scrollTo: rows.scrollTo,
-  });
+    { estimates: ESTIMATES, fallback: ESTIMATES.row },
+  );
   return (
     <div
-      ref={setOwn}
+      ref={rows.box}
       className="zt:min-h-0 zt:flex-1 zt:overflow-auto zt:px-1 zt:pb-11 zt:[overflow-anchor:none] zt:not-in-[.zt-query-note]:scroll-gutter zt:in-[.zt-query-note]:pb-2"
       data-query-layout="papers"
     >

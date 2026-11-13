@@ -2,7 +2,7 @@
 // properties in the view's order, as the List layout of Bases draws a note.
 // Its options are those of Bases 1.14.4: `markers`, `indentProperties` and
 // `separator`.
-import { Fragment, useCallback, useMemo, useState } from "react";
+import { Fragment, useMemo } from "react";
 
 import { useUniqueId } from "@zotlit/ui";
 
@@ -12,6 +12,8 @@ import { Toggle } from "@/components/obsidian/toggle";
 import * as m from "@/lib/i18n/generated/messages";
 import { cn } from "@/lib/utils";
 
+import { useItemsWindow } from "./items-window";
+import type { WindowEntry } from "./items-window";
 import type { QueryLayout } from "./layouts";
 import { useQueryViewState } from "./model";
 import type { QueryFileView } from "./query-file";
@@ -23,7 +25,6 @@ import {
   useRecordGroups,
 } from "./record-rows";
 import type { QueryView } from "./view";
-import { useVirtualRows } from "./virtual-rows";
 import { ListSpacer } from "./virtual-spacers";
 
 export const LIST_LAYOUT: QueryLayout = {
@@ -138,8 +139,8 @@ export function ListLayoutFields({
   );
 }
 
-/** The height of a List row of one line, before it is measured. */
-const ROW_ESTIMATE = 28;
+/** The height of a List entry of each kind, before it is measured. */
+const ESTIMATES = { heading: HEADING_ESTIMATE, row: 28 };
 
 /**
  * The rows of the shown view, one line each, under their group headings.
@@ -148,32 +149,34 @@ const ROW_ESTIMATE = 28;
 export function ListLayout({ view }: { view: QueryView }) {
   const { properties, groups } = useRecordGroups(view);
   const options = listLayoutOptions(useQueryViewState(view, (s) => s.view));
-  const [own, setOwn] = useState<HTMLDivElement | null>(null);
   const entries = useMemo(() => groupEntries(groups), [groups]);
-  const rows = useVirtualRows({
-    count: entries.length,
-    own,
-    estimate: useCallback(
-      (index: number) =>
-        entries[index]!.kind === "heading" ? HEADING_ESTIMATE : ROW_ESTIMATE,
+  const rows = useItemsWindow(
+    view,
+    useMemo(
+      () =>
+        entries.map((entry): WindowEntry =>
+          entry.kind === "heading"
+            ? { key: entry.key, kind: "heading", item: null }
+            : {
+                key: entry.key,
+                kind: "row",
+                item: entry.record.row.indexedKey,
+              },
+        ),
       [entries],
     ),
-    kindOf: useCallback(
-      (index: number) =>
-        entries[index]!.kind === "heading" ? "heading" : "row",
-      [entries],
-    ),
-    keyOf: useCallback((index: number) => entries[index]!.key, [entries]),
-    pinned: NONE,
-    // A row's lines follow the options and the properties it shows.
-    shape: JSON.stringify([options, properties.map(({ path }) => path)]),
-    all: view.printing,
-  });
+    {
+      estimates: ESTIMATES,
+      fallback: ESTIMATES.row,
+      // A row's lines follow the options and the properties it shows.
+      shape: JSON.stringify([options, properties.map(({ path }) => path)]),
+    },
+  );
   // Numbers count the rows of a list; bullets and none mark no order.
   const List = options.markers === "number" ? "ol" : "ul";
   return (
     <div
-      ref={setOwn}
+      ref={rows.box}
       className="zt:min-h-0 zt:flex-1 zt:overflow-auto zt:px-3 zt:pt-2 zt:pb-11 zt:[overflow-anchor:none] zt:in-[.zt-query-note]:pb-2"
       data-query-layout="list"
     >
@@ -271,5 +274,3 @@ export function ListLayout({ view }: { view: QueryView }) {
     </div>
   );
 }
-
-const NONE: readonly number[] = [];

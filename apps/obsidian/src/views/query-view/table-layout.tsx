@@ -35,8 +35,10 @@ import type {
 import type { ItemQueryError } from "@/services/item-query/service";
 import { useAnnotStore } from "@/views/annot-view/store";
 
-import { useItemRow, usePinnedRows, useShownRows } from "./item-rows";
+import { useItemRow } from "./item-rows";
 import type { ItemRowGestures } from "./item-rows";
+import { useItemsWindow } from "./items-window";
+import type { WindowEntry } from "./items-window";
 import type { QueryLayout } from "./layouts";
 import { useQueryTask, useQueryViewState } from "./model";
 import { LITERATURE_NOTE, vaultName } from "./query-file";
@@ -50,7 +52,6 @@ import { VaultEditCell, useVaultVersion } from "./vault-cell";
 import type { QueryView } from "./view";
 import { useViewProperties } from "./view-properties";
 import type { PropertyEntry } from "./view-properties";
-import { useVirtualRows } from "./virtual-rows";
 import { TableSpacer } from "./virtual-spacers";
 
 export const TABLE_LAYOUT: QueryLayout = {
@@ -764,64 +765,37 @@ export function TableLayout({ view }: { view: QueryView }) {
     );
   }, [rows, columns, search, literatureNotes, view, vaultVersion]);
   const gestures = view.rows;
-  const order = useMemo(
-    () => visible.map(({ row }) => row.indexedKey),
-    [visible],
-  );
-  const placeOf = useCallback((key: string) => order.indexOf(key), [order]);
-  const pinnedKeys = usePinnedRows(gestures);
-  const pinned = useMemo(() => pinnedKeys.map(placeOf), [placeOf, pinnedKeys]);
-  /** Whether a group's heading stands before the row at each place. */
-  const opens = useMemo(
+  /** One entry per row: a group's heading stands in the body of its first row. */
+  const entries = useMemo(
     () =>
-      visible.map(
-        ({ group }, index) =>
+      visible.map(({ row, group }, index): WindowEntry => {
+        const opens =
           group !== undefined &&
           group !== null &&
-          group.key !== (visible[index - 1]?.group?.key ?? null),
-      ),
-    [visible],
+          group.key !== (visible[index - 1]?.group?.key ?? null);
+        return {
+          key: `${group?.key ?? ""}\0${row.indexedKey}\0${index}`,
+          kind: opens ? "heading-row" : "row",
+          item: row.indexedKey,
+          own: expanded.has(id({ kind: "item", key: row.indexedKey })),
+        };
+      }),
+    [visible, expanded],
   );
-  /** The key of the row at a place, which also keys its body. */
-  const keyOf = useCallback(
-    (index: number) => {
-      const { row, group } = visible[index]!;
-      return `${group?.key ?? ""}\0${row.indexedKey}\0${index}`;
-    },
-    [visible],
-  );
-  const [own, setOwn] = useState<HTMLDivElement | null>(null);
-  const mountScroller = useCallback((el: HTMLDivElement | null) => {
-    scroller.current = el;
-    setOwn(el);
-  }, []);
-  const mounted = useVirtualRows({
-    count: visible.length,
-    own,
-    estimate: useCallback(
-      (index: number) =>
-        opens[index] ? ROW_ESTIMATE + HEADING_ESTIMATE : ROW_ESTIMATE,
-      [opens],
-    ),
-    kindOf: useCallback(
-      (index: number) => {
-        const key = visible[index]!.row.indexedKey;
-        if (expanded.has(id({ kind: "item", key }))) return null;
-        return opens[index] ? "heading-row" : "row";
-      },
-      [visible, expanded, opens],
-    ),
-    keyOf,
-    pinned,
+  const mounted = useItemsWindow(view, entries, {
+    estimates: ESTIMATES,
+    fallback: ESTIMATES.row,
     // A row's height follows its columns and their widths.
     shape: JSON.stringify([columns.map(({ path }) => path), sizes ?? null]),
-    all: view.printing,
   });
-  useShownRows(gestures, {
-    keys: order,
-    placeOf,
-    scrollTo: mounted.scrollTo,
-  });
+  const { box } = mounted;
+  const mountScroller = useCallback(
+    (el: HTMLDivElement | null) => {
+      scroller.current = el;
+      box(el);
+    },
+    [box],
+  );
   if (rows.length === 0) return null;
   const span = childSpan(columns.length) + 1;
   return (
@@ -859,7 +833,7 @@ export function TableLayout({ view }: { view: QueryView }) {
             values: row.values,
           };
           const heading =
-            placed && opens[index] ? (
+            placed && entries[index]!.kind === "heading-row" ? (
               <tr data-query-group={placed.key}>
                 <th
                   colSpan={span}
@@ -873,7 +847,7 @@ export function TableLayout({ view }: { view: QueryView }) {
               </tr>
             ) : null;
           return (
-            <Fragment key={keyOf(index)}>
+            <Fragment key={entries[index]!.key}>
               {before > 0 && <TableSpacer height={before} span={span} />}
               {/* One body per Item, the unit a long table measures and
                   mounts: its heading, its row and the rows under it. */}
@@ -902,10 +876,8 @@ export function TableLayout({ view }: { view: QueryView }) {
   );
 }
 
-/** The height of an Item row of the Table, before it is measured. */
-const ROW_ESTIMATE = 33;
-/** The height of a group's heading row, before it is measured. */
-const HEADING_ESTIMATE = 33;
+/** The height of a Table row, and of one under its group's heading, before it is measured. */
+const ESTIMATES = { row: 33, "heading-row": 66 };
 
 function ItemRow({
   heading,
