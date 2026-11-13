@@ -2,7 +2,7 @@
 //
 // A lesson names its media folder; each step's still is
 // `public/img/learn/<folder>/step-<n>.webp`, and a step with a recording also
-// has `step-<n>.webm` and/or `step-<n>.mp4` beside it, and may have
+// has `step-<n>.mp4` beside it, and may have
 // `step-<n>.poster.webp`, the clip's last frame framed on the result.
 // Recordings arrive step by step, so the page reads which steps have one from
 // this scan rather than from the lesson file. The scan runs in Node —
@@ -16,6 +16,8 @@ import { join, resolve } from "node:path";
 import { normalizePath } from "vite";
 import type { Plugin } from "vite";
 
+import { isVideoBytes } from "./media-store.js";
+
 /** A picture's pixel size. */
 export interface MediaSize {
   width: number;
@@ -26,11 +28,10 @@ export interface MediaSize {
 export interface StepMedia extends MediaSize {
   /** The size of `step-<n>.poster.webp`, when the step has one. */
   poster?: MediaSize;
+  /** The step's `step-<n>.mp4`, when it has one. */
   clip?: {
     /** The clip's own size, when its MP4 header gives one; the still's otherwise. */
     size: MediaSize;
-    webm: boolean;
-    mp4: boolean;
   };
 }
 
@@ -109,16 +110,8 @@ export function scanLearnMedia(packageRoot: string): LearnMedia {
     const size = webpSize(readFileSync(join(root, file)));
     if (!size) continue;
 
-    const real = (ext: string, check: (bytes: Uint8Array) => boolean) => {
-      const path = join(root, `${key}.${ext}`);
-      return existsSync(path) && check(readFileSync(path));
-    };
-    // A Git LFS pointer is a short text file, not a video.
-    const isVideo = (bytes: Uint8Array) =>
-      bytes.length > 1024 &&
-      !String.fromCharCode(...bytes.subarray(0, 7)).startsWith("version");
-    const mp4 = real("mp4", isVideo);
-    const webm = real("webm", isVideo);
+    const mp4Path = join(root, `${key}.mp4`);
+    const mp4 = existsSync(mp4Path) ? readFileSync(mp4Path) : undefined;
     const posterPath = join(root, `${key}.poster.webp`);
     const poster = existsSync(posterPath)
       ? webpSize(readFileSync(posterPath))
@@ -127,14 +120,7 @@ export function scanLearnMedia(packageRoot: string): LearnMedia {
     media[key] = {
       ...size,
       ...(poster && { poster }),
-      ...((mp4 || webm) && {
-        clip: {
-          size:
-            (mp4 && mp4Size(readFileSync(join(root, `${key}.mp4`)))) || size,
-          webm,
-          mp4,
-        },
-      }),
+      ...(mp4 && isVideoBytes(mp4) && { clip: { size: mp4Size(mp4) ?? size } }),
     };
   }
   return media;
