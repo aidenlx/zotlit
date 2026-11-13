@@ -67,3 +67,72 @@ describe("global machine endpoint locale aliases", () => {
     },
   );
 });
+
+// A Markdown answer repeats its HTML page, so search engines must neither
+// index it nor treat it as a page of its own; and a cache in front of a page
+// whose answer follows the Accept header must keep the two answers apart.
+describe("Markdown answers", () => {
+  const page = "/docs/how-to/insert-citations";
+  const canonical = `<https://zotlit.aidenlx.site${page}>; rel="canonical"`;
+
+  beforeEach(() => {
+    assetsFetch.mockImplementation((request: Request) => {
+      const { pathname } = new URL(request.url);
+      const markdown =
+        pathname.endsWith(".md") || pathname.startsWith("/llms.mdx/");
+      return Promise.resolve(
+        new Response(markdown ? "# Insert citations" : "<html></html>", {
+          headers: {
+            "content-type": markdown
+              ? "text/markdown; charset=utf-8"
+              : "text/html; charset=utf-8",
+          },
+        }),
+      );
+    });
+  });
+
+  async function fetchPage(path: string, accept: string) {
+    return server.fetch(
+      new Request(`https://zotlit.aidenlx.site${path}`, {
+        headers: { accept },
+      }),
+    );
+  }
+
+  it.each([
+    ["a `.md` edition", `${page}.md`, "*/*"],
+    ["a negotiated page", page, "text/markdown"],
+    ["a Chinese fallback's edition", `/zh-CN${page}.md`, "*/*"],
+  ])(
+    "keeps %s out of the index and names its HTML page canonical",
+    async (_, path, accept) => {
+      const response = await fetchPage(path, accept);
+      expect(response.headers.get("content-type")).toMatch(/^text\/markdown/);
+      expect(response.headers.get("x-robots-tag")).toBe("noindex");
+      expect(response.headers.get("link")).toBe(canonical);
+    },
+  );
+
+  it.each([
+    ["HTML", "text/html"],
+    ["Markdown", "text/markdown"],
+  ])("marks a page's %s answer as varying by Accept", async (_, accept) => {
+    const response = await fetchPage(page, accept);
+    expect(response.headers.get("vary")).toMatch(/\bAccept\b/);
+  });
+
+  it("leaves the HTML answer indexable with no canonical header", async () => {
+    const response = await fetchPage(page, "text/html");
+    expect(response.headers.get("x-robots-tag")).toBeNull();
+    expect(response.headers.get("link")).toBeNull();
+  });
+
+  it.each(["/", `${page}.md`])(
+    "adds no Vary to %s, whose answer ignores Accept",
+    async (path) => {
+      const response = await fetchPage(path, "text/markdown");
+      expect(response.headers.get("vary")).toBeNull();
+    },
+  );
+});

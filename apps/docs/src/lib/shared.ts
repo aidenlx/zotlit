@@ -38,6 +38,19 @@ export function docsPageTitle(data: { title: string; searchTitle?: string }) {
   return data.searchTitle ?? data.title;
 }
 
+/**
+ * A Markdown edition's headers: it repeats its HTML page, so the edition stays
+ * out of the search index and names the page canonical. The `_headers` rules
+ * and the Worker's Markdown answers both send these.
+ * @param pagePath the HTML page's root-relative path.
+ */
+export function markdownEditionHeaders(pagePath: string) {
+  return {
+    "X-Robots-Tag": "noindex",
+    Link: `<${baseURL}${pagePath}>; rel="canonical"`,
+  };
+}
+
 /** `owner/name`, the form GitHub's API and giscus both name the repository by. */
 export const repoSlug = `${gitConfig.user}/${gitConfig.repo}` as const;
 

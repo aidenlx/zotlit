@@ -1,4 +1,5 @@
 // @vitest-environment happy-dom
+import type { ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
@@ -38,6 +39,7 @@ const lesson: LessonViewData = {
     title: "A new highlight and comment in your note",
     caption: "You can now highlight PDFs in Obsidian.",
   },
+  further: [],
   others: [],
 };
 const [first, second] = lesson.steps as [
@@ -378,5 +380,84 @@ describe("a lesson's recordings", () => {
     const outcome = await page.player(panel);
     expect(outcome.loop).toBe(true);
     expect(page.buttonNamed(m.docs_learn_recording_replay())).toHaveLength(0);
+  });
+});
+
+// The prerendered page shows the outcome first, above the checklist: it is the
+// picture a search visitor sees on arrival, so it loads at once and every
+// step picture below it waits until it nears the window.
+describe("the prerendered page's pictures", () => {
+  /** The lesson page as the prerender writes it, parsed. */
+  async function prerender(view: LessonViewData, body: ReactNode) {
+    const { renderToString } = await import("react-dom/server");
+    const {
+      RouterContextProvider,
+      createMemoryHistory,
+      createRootRoute,
+      createRouter,
+    } = await import("@tanstack/react-router");
+    const { LessonView } = await import("./lesson-view");
+    const router = createRouter({
+      history: createMemoryHistory({
+        initialEntries: [`/learn/${view.slug}`],
+      }),
+      routeTree: createRootRoute(),
+    });
+    const html = renderToString(
+      <RouterContextProvider router={router}>
+        <LessonView lesson={view}>{body}</LessonView>
+      </RouterContextProvider>,
+    );
+    return new DOMParser().parseFromString(html, "text/html");
+  }
+
+  it("loads the outcome first and leaves every step picture lazy", async () => {
+    const { Step } = await import("./lesson-mdx");
+    const page = await prerender(
+      lesson,
+      <>
+        <Step n={1}>Open the PDF from its card.</Step>
+        <Step n={2}>Allow editing in Zotero.</Step>
+      </>,
+    );
+    const outcome = page.querySelector(`${outcomeScope} img`);
+    const steps = [...page.querySelectorAll("img")].filter(
+      (image) => image !== outcome,
+    );
+
+    expect(outcome?.getAttribute("loading")).toBe("eager");
+    expect(outcome?.getAttribute("fetchpriority")).toBe("high");
+    expect(steps.map((image) => image.getAttribute("alt"))).toEqual([
+      first.alt,
+      second.alt,
+    ]);
+    expect(steps.map((image) => image.getAttribute("loading"))).toEqual([
+      "lazy",
+      "lazy",
+    ]);
+    expect(steps.some((image) => image.hasAttribute("fetchpriority"))).toBe(
+      false,
+    );
+  });
+
+  it("ends on the Go further guides, each linked by its title", async () => {
+    const guide = {
+      title: "Edit or delete Zotero highlights from Obsidian",
+      href: "/docs/how-to/edit-pdf-annotations",
+      when: "when you want to change a highlight color.",
+    };
+
+    const page = await prerender({ ...lesson, further: [guide] }, null);
+    const list = page.querySelector('nav[aria-labelledby="lesson-further"]');
+
+    expect(list?.querySelector("h2")?.textContent).toBe(
+      m.docs_learn_go_further(),
+    );
+    expect(
+      [...(list?.querySelectorAll("a") ?? [])].map((link) => [
+        link.textContent,
+        link.getAttribute("href"),
+      ]),
+    ).toEqual([[guide.title, guide.href]]);
   });
 });

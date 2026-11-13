@@ -14,14 +14,10 @@ export interface PageLocaleState {
   }[];
 }
 
-// Static and listing pages use the locale catalogs rather than an MDX body.
-const catalogPages = new Set([
-  "/",
-  "/community",
-  "/workbench",
-  "/blog",
-  "/changelog",
-]);
+// The Workbench draws its whole UI from the locale catalogs. The landing,
+// community and listing pages show English copy until their catalog strings
+// are translated, so their `/zh-CN` URLs are English fallbacks.
+const catalogPages = new Set(["/workbench"]);
 const chinesePages = new Set(__DOCS_CHINESE_PAGES__);
 
 /** Normalize the two published locales while keeping unsupported input English. */

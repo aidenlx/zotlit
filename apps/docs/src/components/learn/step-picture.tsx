@@ -35,6 +35,7 @@ export function StepPicture({
   endActions,
   playNow = false,
   thumb = false,
+  priority = false,
 }: {
   media: string;
   n: number;
@@ -53,6 +54,12 @@ export function StepPicture({
   playNow?: boolean;
   /** A card's picture: the still in a window-shaped frame, cropped from its top. */
   thumb?: boolean;
+  /**
+   * The page's first picture: its still loads at once with high fetch
+   * priority instead of waiting until it nears the window.
+   * @default false
+   */
+  priority?: boolean;
 }) {
   const entry = stepMedia(media, n);
   if (!entry) return null;
@@ -68,6 +75,7 @@ export function StepPicture({
       height={entry.still.height}
       alt={alt}
       loading={thumb ? "lazy" : undefined}
+      priority={priority}
       className={thumb ? "max-h-none!" : "max-h-full object-contain"}
     />
   );

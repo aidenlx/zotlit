@@ -18,6 +18,7 @@ import { Callout } from "@/components/callout";
 import { Command } from "@/components/command";
 import { ContractTable } from "@/components/contract-table";
 import { lessonMarkdownComponents } from "@/components/learn/lesson-mdx";
+import { LessonLink } from "@/components/lesson-link";
 import { SettingsPath } from "@/components/settings-path";
 import { UiLabel } from "@/components/ui-label";
 import * as m from "@/paraglide/messages.js";
@@ -33,6 +34,7 @@ import {
   getChangelogPages,
   getLessonPages,
   learn,
+  lessonFurther,
   source,
 } from "./source";
 
@@ -52,6 +54,7 @@ const mdxComponents: Record<string, ElementType> = {
   Callout,
   Command,
   ContractTable,
+  LessonLink,
   SettingsPath,
   UiLabel,
 };
@@ -67,6 +70,13 @@ interface EditionPage {
   data: { load: () => Promise<{ _exports: Record<string, unknown> }> };
 }
 
+/**
+ * An empty `<span id>` keeps an old `#anchor` working on the HTML page (see
+ * `AGENTS.md`); the edition drops it, with the line break after it, so the
+ * text it stands before reads on.
+ */
+const anchorSpan = /<span id="[^"]+"(?: data-accordion-value="[^"]+")? \/>\s*/g;
+
 /** The page's body as Markdown, rendered through its `_markdown` component. */
 async function renderBody(
   page: EditionPage,
@@ -80,7 +90,10 @@ async function renderBody(
   }
 
   return localizeMarkdownLinks(
-    await renderToMarkdown(<Body components={components} />),
+    (await renderToMarkdown(<Body components={components} />)).replaceAll(
+      anchorSpan,
+      "",
+    ),
     locale,
   );
 }
@@ -106,8 +119,13 @@ async function renderLessonPage(
   const nextLine = next
     ? `[${m.docs_learn_next_lesson({ number: next.data.lesson, title: next.data.title }, { locale })}](${next.url}.md)`
     : `[${m.docs_learn_how_to_guides({}, { locale })}](/docs/how-to.md)`;
+  const further = lessonFurther(data.further, locale)
+    .map(({ title, href, when }) => `- [${title}](${href}.md): ${when}`)
+    .join("\n");
 
-  return `# ${data.title} (${page.url})
+  // The links built here, beside the rendered body, follow the edition's locale too.
+  return localizeMarkdownLinks(
+    `# ${data.title} (${page.url})
 
 ${[data.lede, data.note].filter(Boolean).join("\n\n")}
 
@@ -124,7 +142,13 @@ ${body}
 **${data.end.title}** ${data.end.caption}
 
 ${nextLine}: ${data.end.next}
-`;
+
+## ${m.docs_learn_go_further({}, { locale })}
+
+${further}
+`,
+    locale,
+  );
 }
 
 /** Title line, page URL, then the rendered Markdown body. */

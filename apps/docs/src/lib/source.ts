@@ -10,6 +10,7 @@ import { rcompare } from "semver";
 import { blogs, changelogs, docs, lessons } from "./collections";
 import { i18n } from "./i18n";
 import type { SiteLocale } from "./i18n";
+import { docsPageTitle } from "./shared";
 
 /** @see https://github.com/fuma-nama/fumadocs/blob/fumadocs-mdx%4015.2.1/apps/docs/content/docs/headless/source-api/index.mdx */
 export const source = loader({
@@ -72,4 +73,20 @@ export function getLessonPages({
   return learn
     .getPages(locale)
     .toSorted((a, b) => a.data.lesson - b.data.lesson);
+}
+
+/**
+ * A lesson's "Go further" pages, each named by the docs page's own title, so
+ * the lesson page and its Markdown edition show the title the page shows.
+ * @throws when a slug names no docs page, which fails the build.
+ */
+export function lessonFurther(
+  further: readonly { slug: string; when: string }[],
+  locale: SiteLocale,
+) {
+  return further.map(({ slug, when }) => {
+    const page = source.getPage(slug.split("/"), locale);
+    if (!page) throw new Error(`"Go further" names no docs page: ${slug}`);
+    return { title: docsPageTitle(page.data), href: `/docs/${slug}`, when };
+  });
 }

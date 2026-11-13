@@ -44,15 +44,20 @@ const seoPages: PrerenderPage[] = [
   { path: "/changelog/rss.xml" },
 ];
 
-/** Every build-time-safe machine route. */
+/**
+ * Every build-time-safe machine route.
+ * @param landings whether the section listings' editions join the list; their
+ *   copy comes from the English catalog, so the Chinese list leaves them out.
+ */
 function machineRoutePages(
   content: Record<MarkdownSection, { slugs: string[] }[]>,
+  { landings }: { landings: boolean },
 ): PrerenderPage[] {
   const pages: PrerenderPage[] = [];
 
   for (const section of markdownSections) {
     const slugSets = content[section].map((entry) => entry.slugs);
-    if (landingSections.includes(section)) slugSets.push([]);
+    if (landings && landingSections.includes(section)) slugSets.push([]);
 
     for (const slugs of slugSets) {
       const page = { section, slugs };
@@ -65,12 +70,14 @@ function machineRoutePages(
 }
 
 /**
- * The HTML pages: the landing, community, and Workbench pages, the whole docs
- * tree, the blog and its posts, the changelog index with its versions, and
- * the lessons.
+ * The HTML pages: the Workbench, the whole docs tree, the blog posts, the
+ * changelog versions and the lessons, plus, with `landings`, the landing,
+ * community, blog and changelog listing pages, whose copy comes from the
+ * English catalog.
  */
 function htmlPages(
   content: Record<MarkdownSection, { slugs: string[] }[]>,
+  { landings }: { landings: boolean },
 ): PrerenderPage[] {
   const docs = content.docs.map((entry) => ({
     path: `/${["docs", ...entry.slugs].join("/")}`,
@@ -86,15 +93,13 @@ function htmlPages(
   }));
 
   return [
-    { path: "/" },
-    { path: "/community" },
+    ...(landings ? [{ path: "/" }, { path: "/community" }] : []),
     { path: "/workbench" },
     ...docs,
     ...blog,
     ...changelog,
     ...learn,
-    { path: "/blog" },
-    { path: "/changelog" },
+    ...(landings ? [{ path: "/blog" }, { path: "/changelog" }] : []),
   ];
 }
 
@@ -110,13 +115,14 @@ export function prerenderPages(packageRoot: string): PrerenderPage[] {
     ...seoPages,
     { path: "/llms.txt" },
     { path: "/llms-full.txt" },
-    ...machineRoutePages(content),
-    ...htmlPages(content),
+    ...machineRoutePages(content, { landings: true }),
+    ...htmlPages(content, { landings: true }),
     { path: "/learn" },
     { path: suffixEditionUrl({ section: "learn", slugs: [] }) },
     { path: contentRouteUrl({ section: "learn", slugs: [] }) },
-    ...[...machineRoutePages(chinese), ...htmlPages(chinese)].map(
-      ({ path }) => ({ path: localizedPath(path, "zh-CN") }),
-    ),
+    ...[
+      ...machineRoutePages(chinese, { landings: false }),
+      ...htmlPages(chinese, { landings: false }),
+    ].map(({ path }) => ({ path: localizedPath(path, "zh-CN") })),
   ];
 }

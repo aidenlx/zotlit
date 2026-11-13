@@ -25,7 +25,9 @@ import type { ReactNode } from "react";
 
 import { cn } from "@/lib/cn";
 import * as m from "@/paraglide/messages.js";
+import { localizeHref } from "@/paraglide/runtime.js";
 
+import { textLinkClass } from "./action-classes";
 import {
   bodyClass,
   buttonClass,
@@ -56,6 +58,7 @@ import { StepPicture } from "./step-picture";
 export interface ChoreLink {
   slug: string;
   lesson: number;
+  title: string;
   chore: string;
   minutes: number;
   media: string;
@@ -74,8 +77,19 @@ export interface LessonViewData {
   needs: { item: string; detail: string }[];
   steps: LessonStepMeta[];
   end: { title: string; caption: string };
+  /** The guides for the other ways to do the lesson's task. */
+  further: FurtherLink[];
   /** Every other lesson, in course order. */
   others: ChoreLink[];
+}
+
+/** A docs page the lesson's "Go further" list links, by its title. */
+export interface FurtherLink {
+  title: string;
+  /** A root-relative `/docs/...` path. */
+  href: string;
+  /** When the reader needs the page, as a phrase that follows the title. */
+  when: string;
 }
 
 function prefersReducedMotion() {
@@ -322,6 +336,7 @@ export function LessonView({
             <ol className="mt-2">{children}</ol>
           </div>
           {(!ready || allDone) && <End lesson={lesson} progress={progress} />}
+          <GoFurther further={lesson.further} />
         </div>
         {ready && wide && (
           <MediaPanel lesson={lesson}>{startButton}</MediaPanel>
@@ -413,6 +428,8 @@ function Outcome({
         n={total}
         alt={last.alt}
         active={active}
+        // The page's first picture, and what a visitor sees on arrival.
+        priority
       />
     </section>
   );
@@ -571,7 +588,8 @@ function End({
           to="/learn"
           className={cn(
             metaClass,
-            "justify-self-start rounded-sm py-1.5 font-semibold text-fd-primary underline decoration-fd-primary/40 underline-offset-4 hover:decoration-fd-primary",
+            textLinkClass,
+            "justify-self-start py-1.5 font-semibold",
             focusClass,
           )}
         >
@@ -593,7 +611,10 @@ function ChoreCard({ chore, done }: { chore: ChoreLink; done?: boolean }) {
         active={false}
         thumb
       />
-      <h4 className={cn(titleClass, "font-serif font-medium text-balance")}>
+      <p className={cn(titleClass, "font-serif font-medium text-balance")}>
+        {m.docs_learn_chore_quote({ chore: chore.chore })}
+      </p>
+      <h4 className={cn(metaClass, "font-semibold text-pretty")}>
         <Link
           to="/learn/$lesson"
           params={{ lesson: chore.slug }}
@@ -602,7 +623,7 @@ function ChoreCard({ chore, done }: { chore: ChoreLink; done?: boolean }) {
             focusClass,
           )}
         >
-          {m.docs_learn_chore_quote({ chore: chore.chore })}
+          {chore.title}
         </Link>
       </h4>
       <p
@@ -615,6 +636,34 @@ function ChoreCard({ chore, done }: { chore: ChoreLink; done?: boolean }) {
         {done && <DoneBadge />}
       </p>
     </div>
+  );
+}
+
+/** After the checklist: the guides for the other ways to do the task. */
+function GoFurther({ further }: { further: FurtherLink[] }) {
+  if (further.length === 0) return null;
+  return (
+    <nav aria-labelledby="lesson-further" className="grid gap-3">
+      <h2
+        id="lesson-further"
+        className={cn(titleClass, "font-serif font-medium text-balance")}
+      >
+        {m.docs_learn_go_further()}
+      </h2>
+      <ul className="grid gap-2.5">
+        {further.map(({ title, href, when }) => (
+          <li key={href} className={cn(bodyClass, "text-pretty")}>
+            <a
+              href={localizeHref(href)}
+              className={cn(textLinkClass, "font-semibold", focusClass)}
+            >
+              {title}
+            </a>
+            <span className="text-fd-muted-foreground">: {when}</span>
+          </li>
+        ))}
+      </ul>
+    </nav>
   );
 }
 

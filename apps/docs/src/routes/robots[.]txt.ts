@@ -12,7 +12,6 @@ import { baseURL } from "@/lib/shared";
  */
 const disallow = [
   "/api/",
-  "/og/",
   "/llms.txt",
   "/llms-full.txt",
   "/llms.mdx/",

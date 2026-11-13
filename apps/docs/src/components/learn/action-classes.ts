@@ -5,6 +5,10 @@ import { cn } from "@/lib/cn";
 /** 15px: secondary text, meta lines, buttons and links beside the step text. */
 export const metaClass = "text-[0.9375rem] leading-[1.45]";
 
+/** A text link in the accent text tone, its underline a lighter accent until hover; the caller sets weight and focus. */
+export const textLinkClass =
+  "rounded-sm text-fd-primary underline decoration-fd-primary/40 underline-offset-4 hover:decoration-fd-primary";
+
 /** The secondary action: the raised surface with the shadow ring. */
 export const secondaryButtonClass = cn(
   metaClass,

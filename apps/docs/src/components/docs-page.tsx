@@ -39,6 +39,7 @@ import {
   docsRoute,
   docsSourceBranch,
   gitConfig,
+  ogImageUrl,
 } from "@/lib/shared";
 import { source } from "@/lib/source";
 import type { Crumb } from "@/lib/structured-data";
@@ -73,6 +74,7 @@ export const resolveDocsPage = createServerFn({ method: "GET" })
       slugs: page.slugs,
       title: docsPageTitle(page.data),
       description: page.data.description,
+      published: __FIRST_COMMIT_DAYS__[`docs/${page.path}`],
       modified: lastModified?.toISOString().slice(0, 10),
       faq: page.data.faq ?? [],
       trail,
@@ -163,8 +165,10 @@ export function docsPageHead(page: DocsPageData | undefined) {
       docsArticleSchema({
         title: page.title,
         description: page.description,
+        published: page.published,
         modified: page.modified,
         url: page.url,
+        image: ogImageUrl("docs", page.slugs),
       }),
       ...(page.faq.length > 0
         ? [faqPageSchema({ url: page.url, entries: page.faq })]

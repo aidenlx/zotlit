@@ -2,17 +2,61 @@
 // the rendered file into the client build so the asset layer applies these
 // headers without a Worker invocation.
 
+import { regex } from "arkregex";
+
+import { chinesePrefix, unlocalizedPath } from "./i18n.js";
+import { htmlPagePath } from "./markdown-routes.js";
+import { markdownEditionHeaders } from "./shared.js";
+
 /** One `_headers` block: a path pattern and the headers it adds. */
 export interface HeaderRule {
   source: string;
   headers: Record<string, string>;
 }
 
-export function buildHeaderRules(): HeaderRule[] {
+const contentRoute = regex("^/llms\\.mdx/(?<page>.+)/content\\.md$");
+
+/**
+ * Keeps the prerendered Markdown editions the asset layer answers on its own —
+ * the `/llms.mdx` content routes and each section's own `.md` edition — out of
+ * the search index, each naming its HTML page canonical. `src/server.ts` gives
+ * the Markdown answers that pass through the Worker the same headers.
+ *
+ * A placeholder matches one path segment, so the content routes take one rule
+ * per depth, and the page is the route's segments before `content.md`. Only
+ * native editions prerender, so a `/zh-CN` route names its Chinese page.
+ */
+function markdownEditionRules(pages: readonly string[]): HeaderRule[] {
+  const canonicalBySource = new Map<string, string>();
+  for (const path of pages) {
+    const bare = unlocalizedPath(path);
+    const prefix = bare === path ? "" : chinesePrefix;
+    const route = contentRoute.exec(bare)?.groups.page;
+    if (route !== undefined) {
+      const segments = route
+        .split("/")
+        .map((_, index) => `:p${index + 1}`)
+        .join("/");
+      canonicalBySource.set(
+        `${prefix}/llms.mdx/${segments}/content.md`,
+        `${prefix}/${segments}`,
+      );
+    } else if (/^\/[^/]+\.md$/.test(bare)) {
+      canonicalBySource.set(path, `${prefix}${htmlPagePath(bare)}`);
+    }
+  }
+  return [...canonicalBySource].map(([source, page]) => ({
+    source,
+    headers: markdownEditionHeaders(page),
+  }));
+}
+
+/** @param pages every prerendered path, from `prerenderPages`. */
+export function buildHeaderRules(pages: readonly string[] = []): HeaderRule[] {
   return [
     // Native Chinese assets keep their language when served without the Worker.
-    // Missing-file fallbacks have no asset and receive English headers from SSR.
-    { source: "/zh-CN", headers: { "Content-Language": "zh-CN" } },
+    // Missing-file fallbacks, `/zh-CN` itself among them, have no asset and
+    // receive English headers from SSR.
     { source: "/zh-CN/*", headers: { "Content-Language": "zh-CN" } },
     /**
      * giscus loads the custom comment themes (public/giscus/*.css) into its
@@ -54,6 +98,7 @@ export function buildHeaderRules(): HeaderRule[] {
         "X-Robots-Tag": "noindex",
       },
     },
+    ...markdownEditionRules(pages),
   ];
 }
 

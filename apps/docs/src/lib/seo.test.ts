@@ -54,6 +54,7 @@ describe("pageHead", () => {
     const article = docsArticleSchema({
       title: "Compare </script> plugins",
       url: "/docs/answers/compare",
+      image: "/og/docs/answers/compare/image.webp",
     });
     const faq = faqPageSchema({
       url: "/docs/answers/compare",

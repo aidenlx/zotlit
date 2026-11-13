@@ -126,17 +126,35 @@ function canonicalUrl(path: string): string {
   return absoluteUrl(getPageLocaleState(path, getLocale()).canonicalPath);
 }
 
+/** The git days of a docs page or lesson, each when git knows it. */
+function commitDates({
+  published,
+  modified,
+}: {
+  published?: string;
+  modified?: string;
+}) {
+  return {
+    ...(published !== undefined && { datePublished: published }),
+    ...(modified !== undefined && { dateModified: modified }),
+  };
+}
+
 /**
  * A docs page as a TechArticle, the Article type schema.org gives technical
  * documentation and how-to guides.
  *
- * @param modified last commit day in ISO form, when git knows one.
+ * @param published first commit day in ISO form, followed through renames.
+ * @param modified last commit day in ISO form, the sitemap's `lastmod`.
  */
 export function docsArticleSchema(input: {
   title: string;
   description?: string;
+  published?: string;
   modified?: string;
   url: string;
+  /** Root-relative path of the page's social card. */
+  image: string;
 }): WithContext<TechArticle> {
   const localeState = getPageLocaleState(input.url, getLocale());
   const url = absoluteUrl(localeState.canonicalPath);
@@ -147,11 +165,13 @@ export function docsArticleSchema(input: {
     ...(input.description !== undefined && {
       description: input.description,
     }),
-    ...(input.modified !== undefined && { dateModified: input.modified }),
+    ...commitDates(input),
     inLanguage: localeState.contentLocale,
+    author: organization,
     publisher: organization,
     url,
     mainEntityOfPage: url,
+    image: absoluteUrl(input.image),
   };
 }
 
@@ -179,11 +199,13 @@ export function faqPageSchema(input: {
 
 /**
  * A `/learn` lesson.
- * @param modified last commit day in ISO form, when git knows one.
+ * @param published first commit day in ISO form, followed through renames.
+ * @param modified last commit day in ISO form, the sitemap's `lastmod`.
  */
 export function lessonArticleSchema(input: {
   title: string;
   description: string;
+  published?: string;
   modified?: string;
   url: string;
   /** Root-relative path of the lesson's social card. */
@@ -194,7 +216,8 @@ export function lessonArticleSchema(input: {
     "@type": "Article",
     headline: input.title,
     description: input.description,
-    ...(input.modified !== undefined && { dateModified: input.modified }),
+    ...commitDates(input),
+    author: organization,
     publisher: organization,
     url: absoluteUrl(input.url),
     image: absoluteUrl(input.image),

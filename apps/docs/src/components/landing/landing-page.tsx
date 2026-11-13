@@ -7,7 +7,11 @@
 
 import type { ReactNode } from "react";
 
+import { textLinkClass } from "@/components/learn/action-classes";
+import { Message } from "@/components/message";
+import { cn } from "@/lib/cn";
 import { m } from "@/paraglide/messages.js";
+import { localizeHref } from "@/paraglide/runtime.js";
 
 import { Hero } from "./hero";
 import { Actions } from "./parts";
@@ -53,8 +57,43 @@ function Closing() {
           {m.docs_home_close_title()}
         </h2>
         <Actions className="mt-8" />
+        <p className="mt-8 text-[0.9375rem] text-pretty text-fd-muted-foreground">
+          <Message
+            text={m.docs_home_close_switch({
+              compare: "{compare}",
+              trouble: "{trouble}",
+            })}
+            slots={{
+              compare: (
+                <AnswerLink path="/docs/answers/zotlit-vs-zotero-integration-vs-citations">
+                  {m.docs_home_close_compare()}
+                </AnswerLink>
+              ),
+              trouble: (
+                <AnswerLink path="/docs/answers/zotero-integration-not-working">
+                  {m.docs_home_close_trouble()}
+                </AnswerLink>
+              ),
+            }}
+          />
+        </p>
       </div>
     </section>
+  );
+}
+
+/** A link to an answer page for readers who use another Zotero plugin. */
+function AnswerLink({ path, children }: { path: string; children: string }) {
+  return (
+    <a
+      href={localizeHref(path)}
+      className={cn(
+        textLinkClass,
+        "font-medium focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fd-primary",
+      )}
+    >
+      {children}
+    </a>
   );
 }
 

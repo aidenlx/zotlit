@@ -6,9 +6,12 @@ description: "Refresh one literature note or a batch when a paper's Zotero data 
 
 import { Accordion, Accordions } from "fumadocs-ui/components/accordion";
 import { Command } from "@/components/command";
+import { LessonLink } from "@/components/lesson-link";
 import { SettingsPath } from "@/components/settings-path";
 import { UiLabel } from "@/components/ui-label";
 import { m } from "@/paraglide/messages.js";
+
+To make your first connected note, try <LessonLink slug="connect-zotero-to-obsidian" />.
 
 1. Open the literature note.
 2. Press `Ctrl+P` (`Cmd+P` on macOS) and run <Command inline name={m.command_update_notes_name()} />.
@@ -18,8 +21,11 @@ import { m } from "@/paraglide/messages.js";
 
 1. Open the literature note you want to update. (For <UiLabel name={m.modal_update_notes_all()} />, any note can be open.)
    The note is the active tab.
-2. Open the command palette (`Ctrl+P` on Windows/Linux, `Cmd+P` on macOS) and run <Command inline name={m.command_update_notes_name()} />.
-   A dialog titled <UiLabel name={m.modal_update_notes_title()} /> opens, with the checkbox <UiLabel name={m.modal_update_notes_create()} /> turned off by default.
+2. <span id="run-the-update-command" />
+   Open the command palette (`Ctrl+P` on Windows/Linux, `Cmd+P` on macOS) and
+   run <Command inline name={m.command_update_notes_name()} />. A dialog titled
+   <UiLabel name={m.modal_update_notes_title()} /> opens, with the checkbox
+   <UiLabel name={m.modal_update_notes_create()} /> turned off by default.
 3. Select <UiLabel name={m.modal_update_notes_active()} />.
    For a note made with the current default template, the notice <UiLabel name={m.notice_updated_note_no_region()} /> appears. The properties are refreshed, your body text stays as you wrote it, and the **Annotations** section is a live view that was already current. For a note with a managed region, the notice reads <UiLabel name={m.notice_updated_note()} />
    An update refreshes the properties ZotLit manages; your own writing and any properties you added stay as they are.

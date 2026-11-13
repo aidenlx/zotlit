@@ -13,7 +13,9 @@ import * as v from "valibot";
 import { describe, expect, it } from "vitest";
 
 import { scanLearnMedia, webpSize } from "./learn-media";
+import { getMarkdownEdition } from "./markdown-editions";
 import { mp4Size } from "./media-store";
+import { source } from "./source";
 
 import { learnSchema } from "#content-config";
 
@@ -62,10 +64,47 @@ describe("the lessons", () => {
     }
   });
 
+  // A moved docs page shows up here rather than as a failed build.
+  it.each(lessons)(
+    "$file names a docs page in each Go further slug",
+    ({ data }) => {
+      for (const { slug } of data.further) {
+        expect(source.getPage(slug.split("/")), slug).toBeDefined();
+      }
+    },
+  );
+
   it("name a different chore each", () => {
     const chores = lessons.map(({ data }) => data.chore);
     expect(new Set(chores).size).toBe(chores.length);
   });
+});
+
+// A guide a lesson sends its reader on to sends a new reader back to that
+// lesson, above its first section, with the lesson's length. The answer pages
+// a lesson lists are for readers of other plugins, so only guides pair up.
+const guideReturns = lessons.flatMap(({ file, data }) =>
+  data.further
+    .filter(({ slug }) => slug.startsWith("how-to/"))
+    .map(({ slug }) => ({
+      guide: slug,
+      lesson: file.replace(/\.mdx$/, ""),
+      minutes: data.minutes,
+    })),
+);
+
+describe("the guides a lesson lists", () => {
+  it.each(guideReturns)(
+    "$guide links back to $lesson",
+    async ({ guide, lesson, minutes }) => {
+      const edition = await getMarkdownEdition({
+        section: "docs",
+        slugs: guide.split("/"),
+      });
+      const top = edition?.split(/^## /m)[0];
+      expect(top).toContain(`](/learn/${lesson}) (about ${minutes} minutes)`);
+    },
+  );
 });
 
 describe("the media scan", () => {

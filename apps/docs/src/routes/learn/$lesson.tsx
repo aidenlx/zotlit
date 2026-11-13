@@ -13,7 +13,7 @@ import { getPageLocaleState } from "@/lib/locale-state";
 import { getReleaseSnapshot } from "@/lib/release-data";
 import { pageHead } from "@/lib/seo";
 import { appName, learnRoute, ogImageUrl } from "@/lib/shared";
-import { getLessonPages, learn } from "@/lib/source";
+import { getLessonPages, learn, lessonFurther } from "@/lib/source";
 import {
   breadcrumbListSchema,
   lessonArticleSchema,
@@ -38,6 +38,7 @@ const getLesson = createServerFn({ method: "GET" })
       url: page.url,
       slugs: page.slugs,
       description: data.description,
+      published: __FIRST_COMMIT_DAYS__[`learn/${page.path}`],
       modified,
       snapshot: installLessonSlugs.includes(slug)
         ? await getReleaseSnapshot()
@@ -53,11 +54,13 @@ const getLesson = createServerFn({ method: "GET" })
         needs: data.needs,
         steps: data.steps,
         end: { title: data.end.title, caption: data.end.caption },
+        further: lessonFurther(data.further, locale),
         others: pages
           .filter((entry) => entry.url !== page.url)
           .map((entry) => ({
             slug: entry.slugs.join("/"),
             lesson: entry.data.lesson,
+            title: entry.data.title,
             chore: entry.data.chore,
             minutes: entry.data.minutes,
             media: entry.data.media,
@@ -103,6 +106,7 @@ export const Route = createFileRoute("/learn/$lesson")({
             lessonArticleSchema({
               title: lesson.view.title,
               description: lesson.description,
+              published: lesson.published,
               modified: lesson.modified,
               url: getPageLocaleState(lesson.url, getLocale()).canonicalPath,
               image: ogImageUrl("learn", lesson.slugs),

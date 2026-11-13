@@ -6,9 +6,12 @@ description: "Make a literature note for a Zotero paper in Obsidian, or open its
 
 import { Accordion, Accordions } from "fumadocs-ui/components/accordion";
 import { Command } from "@/components/command";
+import { LessonLink } from "@/components/lesson-link";
 import { SettingsPath } from "@/components/settings-path";
 import { UiLabel } from "@/components/ui-label";
 import { m } from "@/paraglide/messages.js";
+
+If you have not created a literature note before, start with <LessonLink slug="connect-zotero-to-obsidian" />.
 
 1. Press `Ctrl+P` (`Cmd+P` on macOS) and run <Command inline name={m.command_open_lit_note_name()} />.
 2. Type a few words of the paper's title.
@@ -64,6 +67,7 @@ ZotLit resolves the key against Zotero's Citation Key field across all libraries
 To change where Zotero opens notes in Obsidian, open Zotero's settings, go to the <UiLabel name={m["zotero.prefs_pane_label"]()} /> pane, find <UiLabel name={m["zotero.prefs_open_section"]()} />, and set <UiLabel name={m["zotero.prefs_pane_type"]()} /> to <UiLabel name={m["zotero.prefs_pane_type_active.label"]()} /> (default), <UiLabel name={m["zotero.prefs_pane_type_tab.label"]()} />, <UiLabel name={m["zotero.prefs_pane_type_split.label"]()} />, or <UiLabel name={m["zotero.prefs_pane_type_window.label"]()} />. See [Pane type options](/docs/reference/protocol-links#pane-type).
 
 </Accordion>
+<span id="bulk-profiles" data-accordion-value="Several papers at once" />
 <Accordion title="Several papers at once" id="bulk">
 
 Creating notes in bulk from Zotero requires the ZotLit Companion add-on. The Obsidian command requires no extra setup.
