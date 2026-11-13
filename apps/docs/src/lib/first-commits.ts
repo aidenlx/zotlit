@@ -10,12 +10,32 @@ import type { Plugin } from "vite";
  * Reads `git log` oldest first over `content/`, following each rename, so a
  * page that moved keeps the day it first appeared.
  * @returns ISO days keyed by path under `content/` (`docs/how-to/x.mdx`).
- * @throws outside a git checkout: the build needs the history (the deploy
- * checks out with `fetch-depth: 0`) to date its pages.
+ * @throws outside a git checkout, or in a shallow one: the build needs the
+ * whole history (the deploy checks out with `fetch-depth: 0`) to date its
+ * pages. A shallow history ends early, so its oldest commit would stand in as
+ * every older page's publication day.
  */
 export function scanFirstCommitDays(
   packageRoot: string,
 ): Record<string, string> {
+  let shallow: string;
+  try {
+    shallow = execFileSync("git", ["rev-parse", "--is-shallow-repository"], {
+      cwd: packageRoot,
+      encoding: "utf8",
+    }).trim();
+  } catch (cause) {
+    throw new Error(
+      `Pages' first commit days need the git history of ${packageRoot}/content`,
+      { cause },
+    );
+  }
+  if (shallow === "true") {
+    throw new Error(
+      "Pages' first commit days need the whole git history, and this clone is shallow. Run `git fetch --unshallow`, or check out with `fetch-depth: 0`.",
+    );
+  }
+
   let log: string;
   try {
     log = execFileSync(

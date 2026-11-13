@@ -68,6 +68,23 @@ describe("scanFirstCommitDays", () => {
     });
   });
 
+  it("stops in a shallow clone", () => {
+    using dir = mkdtempDisposableSync(join(tmpdir(), "first-commits-"));
+    const origin = join(dir.path, "origin");
+    mkdirSync(join(origin, "content"), { recursive: true });
+    git(origin, ["init", "--quiet"]);
+    writeFileSync(join(origin, "content/page.mdx"), "one\n");
+    git(origin, ["add", "."]);
+    commitOn(origin, "2026-07-18");
+    writeFileSync(join(origin, "content/page.mdx"), "one\nedited\n");
+    commitOn(origin, "2026-11-13");
+
+    const clone = join(dir.path, "clone");
+    git(dir.path, ["clone", "--quiet", "--depth=1", `file://${origin}`, clone]);
+
+    expect(() => scanFirstCommitDays(clone)).toThrow("this clone is shallow");
+  });
+
   it("stops outside a git checkout", () => {
     using dir = mkdtempDisposableSync(join(tmpdir(), "first-commits-"));
     expect(() => scanFirstCommitDays(dir.path)).toThrow(
