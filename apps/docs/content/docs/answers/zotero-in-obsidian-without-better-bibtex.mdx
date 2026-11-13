@@ -7,58 +7,56 @@ faq:
   - question: "Do I need Better BibTeX to cite papers in Obsidian?"
     answer: "Yes. Better BibTeX is required to cite as you write. When you type [@ to cite a paper, ZotLit reads Zotero's Citation Key field, which Better BibTeX populates. Selecting a paper without a citation key inserts nothing."
   - question: "How does ZotLit name literature notes without Better BibTeX?"
-    answer: "ZotLit normally names a literature note by the paper's citation key. When a paper has no citation key, ZotLit names the note by its DOI. If the paper has no DOI either, ZotLit names the note by its title. The note's citekey property stays empty."
+    answer: "With the default note name, ZotLit names a note by the paper's citation key; for a paper without one, by its DOI, and by its title when there is no DOI. The note's citekey property stays empty."
   - question: "Can I export my notes to Word without Better BibTeX?"
-    answer: "Export to Word itself reads references from Zotero when Zotero is running and uses Better BibTeX when it is installed. In practice, the citations in your draft still require citation keys to resolve, so citing and exporting go with Better BibTeX."
+    answer: 'Yes, when you cite by linking to literature notes. An ordinary Obsidian link such as [[Sandve 2013]] exports with a formatted citation and a reference-list entry, even without a citation key. Citations typed as [@key] export only when that key exists in Zotero. Zotero must be running, with "Allow other applications on this computer to communicate with Zotero" turned on in Zotero''s Settings > Advanced.'
   - question: "Do other Zotero plugins for Obsidian work without Better BibTeX?"
-    answer: "Zotero Integration's README says it requires Better BibTeX, and Zotero running, while Citations' README's Zotero steps export the library with Better BibTeX to a .bib or CSL-JSON file."
+    answer: "Zotero Integration's README says it requires Better BibTeX and Zotero running. Citations' README's Zotero steps export the library with Better BibTeX to a .bib or CSL-JSON file."
 ---
 
 import { LessonLink } from "@/components/lesson-link";
 
-You can use ZotLit to search your Zotero library, read PDFs, import notes, and create literature notes from highlights without installing Better BibTeX. Better BibTeX is required to cite as you write, because citing inserts each paper's citation key into your draft. Zotero Integration's README says it requires Better BibTeX, and Zotero running, while Citations' README's Zotero steps export the library with Better BibTeX to a .bib or CSL-JSON file.
+You can use ZotLit to search your Zotero library, read PDFs, and create literature notes from highlights without installing Better BibTeX. Better BibTeX is required to cite as you write with `[@`, because citing inserts each paper's citation key into your draft. Exporting to Word works without Better BibTeX when you cite by linking to literature notes.
 
-| Task                                          | Needs Better BibTeX? | What happens                                                                                                                                |
-| --------------------------------------------- | -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
-| Browse and search your library                | No                   | ZotLit connects to the Zotero library on your computer and searches your items.                                                             |
-| Open PDFs and view annotations                | No                   | You can open Zotero PDFs in Obsidian and read highlights and comments.                                                                      |
-| Create and update literature notes            | No                   | ZotLit creates literature notes from highlights and imports Zotero notes. Notes take names from DOIs or titles when no citation key exists. |
-| Cite as you write (`[@`)                      | Yes                  | ZotLit inserts the paper's citation key. Selecting a paper without a key inserts nothing.                                                   |
-| Copy a citation key or a highlight's citation | Yes                  | Copying displays a notice that the item has no citation key.                                                                                |
-| Export draft to Word                          | In practice, yes     | Export reads references from Zotero, but citations in your draft still require citation keys.                                               |
+| Task                           | Needs Better BibTeX? | What happens                                                                                                                |
+| ------------------------------ | -------------------- | --------------------------------------------------------------------------------------------------------------------------- |
+| Browse and search your library | No                   | ZotLit connects to your local Zotero library and searches items.                                                            |
+| Open PDFs and view annotations | No                   | Open Zotero PDFs in Obsidian and view highlights.                                                                           |
+| Create literature notes        | No                   | Creates notes from highlights and imports Zotero notes. Names use DOIs or titles without citation keys.                     |
+| Cite as you write (`[@`)       | Yes                  | Inserts the paper's citation key. Selecting a paper without a key inserts nothing and shows a notice.                       |
+| Copy citations                 | Yes                  | Copying shows a notice that the paper has no citation key.                                                                  |
+| Export draft to Word           | No, with note links  | Reference data comes from Zotero for note links such as `[[Sandve 2013]]`. Citations typed as `[@key]` need keys in Zotero. |
 
 ## What works without Better BibTeX [#what-works]
 
-ZotLit connects to the Zotero library on the same computer. You can browse and search your collection directly in Obsidian without installing any add-on into Zotero.
-
-You can also open your Zotero PDFs inside Obsidian to read their highlights and comments. When you want to capture those annotations in your vault, ZotLit creates literature notes from a paper's highlights, imports existing Zotero notes, and keeps those notes up to date when highlights change. If your goal is reading and taking notes on papers, you do not need Better BibTeX.
+ZotLit connects directly to the Zotero library on your computer, so you can browse and search your collection without any Zotero add-ons. You can open Zotero PDFs to read highlights and comments, create literature notes from annotations, and import existing Zotero notes. ZotLit keeps those notes updated when your highlights change. If your goal is reading and taking notes, you do not need Better BibTeX.
 
 ## What changes without a citation key [#what-changes]
 
-ZotLit names a new literature note by the paper's citation key. When a paper has no citation key, ZotLit names the note by its DOI. When a paper has no DOI either, ZotLit names the note by its title. The note's `citekey` property stays empty. If you want to modify how literature notes are structured, see [how to customize a template](/docs/how-to/customize-a-template).
+With the default note name, ZotLit names a note by the paper's citation key; for a paper without one, by its DOI, and by its title when there is no DOI. The note's `citekey` property stays empty. If you want to modify how literature notes are structured, see [how to customize a template](/docs/how-to/customize-a-template).
 
-Actions that copy citations also change. If you try to copy a citation for a paper without a key, ZotLit shows "Selected item has no citation key". If you try to copy a citation from an annotation on that paper, ZotLit shows "This item has no citation key; nothing to copy".
+Actions that copy citations also change. If you try to copy a citation for a paper without a key, or copy a citation from one of its annotations, ZotLit shows a notice that the paper has no citation key.
 
 ## Why citing as you write needs Better BibTeX [#citing]
 
-Better BibTeX is required to cite as you write. When you type `[@` in a note and choose a paper, ZotLit inserts that paper's citation key into your draft. ZotLit reads this value from Zotero's Citation Key field, and Better BibTeX is the free Zotero add-on that gives every paper a citation key.
+Better BibTeX is required to cite as you write. When you type `[@` and select a paper, ZotLit inserts its citation key into your draft. ZotLit reads this value from Zotero's Citation Key field, which Better BibTeX populates.
 
-Without Better BibTeX, papers without citation keys still appear when you type `[@`, but selecting one inserts nothing and shows "Selected item has no citation key". If you plan to cite, [install Better BibTeX](https://retorque.re/zotero-better-bibtex/installation/). To learn how citation autocompletion works once keys are present, see [how to insert citations](/docs/how-to/insert-citations) and <LessonLink slug="cite-in-obsidian-with-zotero" />.
+Without Better BibTeX, papers without keys still appear when you type `[@`, but selecting one inserts nothing and shows a notice that the paper has no citation key. If you plan to cite as you write, [install Better BibTeX](https://retorque.re/zotero-better-bibtex/installation/). To see how citation autocompletion works once keys exist, read [how to insert citations](/docs/how-to/insert-citations) and <LessonLink slug="cite-in-obsidian-with-zotero" />.
 
 ## Exporting notes to Word [#export-to-word]
 
-Export to Word reads your references from Zotero and requires Zotero to be running on your computer. When Better BibTeX is installed, the export process uses it.
+Export to Word works without Better BibTeX when you cite by linking to literature notes. An ordinary Obsidian link such as `[[Sandve 2013]]` exports with a formatted citation and bibliography entry, even without a citation key. ZotLit gets the reference data directly from Zotero. For export to work, Zotero must be running, with "Allow other applications on this computer to communicate with Zotero" turned on in Zotero's Settings > Advanced.
 
-Because citations in your draft rely on citation keys to link to references in your Zotero library, citing and exporting go with Better BibTeX in practice. For the complete workflow, read [how to export a note with citations](/docs/how-to/export-note-with-citations).
+Citations typed as `[@key]` export only when that citation key exists in Zotero. Typing `[@` to insert a citation still requires Better BibTeX. For the complete workflow, read [how to export a note with citations](/docs/how-to/export-note-with-citations).
 
 ## Other Obsidian Zotero plugins [#other-plugins]
 
-If another plugin asked you to install Better BibTeX, this is what each one needs:
+If another plugin asked you to install Better BibTeX, this is what each needs:
 
-- **Zotero Integration:** Its README states that it requires Better BibTeX and requires Zotero to be running.
-- **Citations:** Its README's Zotero setup steps export your library with Better BibTeX to a .bib or CSL-JSON file before Citations can read it.
+- **Zotero Integration:** Its README says it requires Better BibTeX and Zotero running.
+- **Citations:** Its README's Zotero steps export the library with Better BibTeX to a .bib or CSL-JSON file.
 
-ZotLit differs because it connects directly to your local Zotero library database, allowing you to browse, read, and create notes without add-ons. To review how these plugins compare in detail, see [ZotLit vs Zotero Integration vs Citations](/docs/answers/zotlit-vs-zotero-integration-vs-citations).
+ZotLit connects directly to your local Zotero database, so you can browse items, read PDFs, and create notes without add-ons. To compare these plugins in detail, see [ZotLit vs Zotero Integration vs Citations](/docs/answers/zotlit-vs-zotero-integration-vs-citations).
 
 ## Questions [#questions]
 
@@ -68,19 +66,19 @@ Yes. You can connect ZotLit to your Zotero library, search items, open PDFs, rea
 
 ### Do I need Better BibTeX to cite papers in Obsidian?
 
-Yes. Better BibTeX is required to cite as you write. When you type [@ to cite a paper, ZotLit reads Zotero's Citation Key field, which Better BibTeX populates. Selecting a paper without a citation key inserts nothing.
+Yes. Better BibTeX is required to cite as you write. When you type `[@` to cite a paper, ZotLit reads Zotero's Citation Key field, which Better BibTeX populates. Selecting a paper without a citation key inserts nothing.
 
 ### How does ZotLit name literature notes without Better BibTeX?
 
-ZotLit normally names a literature note by the paper's citation key. When a paper has no citation key, ZotLit names the note by its DOI. If the paper has no DOI either, ZotLit names the note by its title. The note's citekey property stays empty.
+With the default note name, ZotLit names a note by the paper's citation key; for a paper without one, by its DOI, and by its title when there is no DOI. The note's `citekey` property stays empty.
 
 ### Can I export my notes to Word without Better BibTeX?
 
-Export to Word itself reads references from Zotero when Zotero is running and uses Better BibTeX when it is installed. In practice, the citations in your draft still require citation keys to resolve, so citing and exporting go with Better BibTeX.
+Yes, when you cite by linking to literature notes. An ordinary Obsidian link such as `[[Sandve 2013]]` exports with a formatted citation and a reference-list entry, even without a citation key. Citations typed as `[@key]` export only when that key exists in Zotero. Zotero must be running, with "Allow other applications on this computer to communicate with Zotero" turned on in Zotero's Settings > Advanced.
 
 ### Do other Zotero plugins for Obsidian work without Better BibTeX?
 
-Zotero Integration's README says it requires Better BibTeX, and Zotero running, while Citations' README's Zotero steps export the library with Better BibTeX to a .bib or CSL-JSON file.
+Zotero Integration's README says it requires Better BibTeX and Zotero running. Citations' README's Zotero steps export the library with Better BibTeX to a .bib or CSL-JSON file.
 
 ## Next step [#next-step]
 
