@@ -110,14 +110,18 @@ export function changelogArticleSchema(input: {
   version: string;
   date: string;
   url: string;
+  /** Root-relative path of the release's social card. */
+  image: string;
 }): WithContext<Article> {
   return {
     "@context": "https://schema.org",
     "@type": "Article",
     headline: input.title ?? `${appName} v${input.version}`,
     datePublished: input.date,
+    author: organization,
     publisher: organization,
     url: absoluteUrl(input.url),
+    image: absoluteUrl(input.image),
   };
 }
 

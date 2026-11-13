@@ -7,6 +7,7 @@ import { regex } from "arkregex";
 import { chinesePrefix, unlocalizedPath } from "./i18n.js";
 import { htmlPagePath } from "./markdown-routes.js";
 import { markdownEditionHeaders } from "./shared.js";
+import type { DocsLine } from "./shared.js";
 
 /** One `_headers` block: a path pattern and the headers it adds. */
 export interface HeaderRule {
@@ -51,8 +52,39 @@ function markdownEditionRules(pages: readonly string[]): HeaderRule[] {
   }));
 }
 
-/** @param pages every prerendered path, from `prerenderPages`. */
-export function buildHeaderRules(pages: readonly string[] = []): HeaderRule[] {
+/**
+ * Pre-release Docs repeats the production pages, so the beta line keeps every
+ * file out of the search index. Cloudflare joins the values of a header that
+ * two rules set, so the narrower `X-Robots-Tag` rules give way to this one.
+ * @see src/server.ts for the same header on the pages the Worker answers.
+ */
+function betaLineRules(rules: HeaderRule[]): HeaderRule[] {
+  return [
+    { source: "/*", headers: { "X-Robots-Tag": "noindex" } },
+    ...rules
+      .map(({ source, headers }) => ({
+        source,
+        headers: Object.fromEntries(
+          Object.entries(headers).filter(([name]) => name !== "X-Robots-Tag"),
+        ),
+      }))
+      .filter(({ headers }) => Object.keys(headers).length > 0),
+  ];
+}
+
+/**
+ * @param pages every prerendered path, from `prerenderPages`.
+ * @param options.docsLine the line this build deploys to.
+ */
+export function buildHeaderRules(
+  pages: readonly string[] = [],
+  { docsLine = "production" }: { docsLine?: DocsLine } = {},
+): HeaderRule[] {
+  const rules = siteRules(pages);
+  return docsLine === "beta" ? betaLineRules(rules) : rules;
+}
+
+function siteRules(pages: readonly string[]): HeaderRule[] {
   return [
     // Native Chinese assets keep their language when served without the Worker.
     // Missing-file fallbacks, `/zh-CN` itself among them, have no asset and

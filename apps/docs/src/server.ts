@@ -107,6 +107,10 @@ export default createServerEntry({
         ))
           headers.set(name, value);
       }
+      // Pre-release Docs repeats the production pages: the asset layer's
+      // `_headers` keeps its files out of the index, and this keeps out the
+      // pages the Worker answers.
+      if (env.DOCS_LINE === "beta") headers.set("x-robots-tag", "noindex");
       return new Response(response.body, {
         status: response.status,
         statusText: response.statusText,

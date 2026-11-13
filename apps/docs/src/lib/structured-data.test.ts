@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  changelogArticleSchema,
   docsArticleSchema,
   faqPageSchema,
   lessonArticleSchema,
@@ -85,6 +86,28 @@ describe("lessonArticleSchema", () => {
       url: "https://zotlit.aidenlx.site/learn/cite-in-obsidian-with-zotero",
       image:
         "https://zotlit.aidenlx.site/og/learn/cite-in-obsidian-with-zotero.webp",
+    });
+  });
+});
+
+describe("changelogArticleSchema", () => {
+  it("names the release's author and social card", () => {
+    expect(
+      changelogArticleSchema({
+        version: "2.2.2",
+        date: "2026-10-30",
+        url: "/changelog/2.2.2",
+        image: "/og/changelog/2.2.2/image.webp",
+      }),
+    ).toEqual({
+      "@context": "https://schema.org",
+      "@type": "Article",
+      headline: "ZotLit v2.2.2",
+      datePublished: "2026-10-30",
+      author: publisher,
+      publisher,
+      url: "https://zotlit.aidenlx.site/changelog/2.2.2",
+      image: "https://zotlit.aidenlx.site/og/changelog/2.2.2/image.webp",
     });
   });
 });

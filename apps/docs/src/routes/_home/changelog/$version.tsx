@@ -17,6 +17,7 @@ import {
   changelogFeedRoute,
   changelogRoute,
   formatReleaseDate,
+  ogImageUrl,
   repoUrl,
 } from "@/lib/shared";
 import { changelog, getChangelogPages } from "@/lib/source";
@@ -93,6 +94,7 @@ export const Route = createFileRoute("/_home/changelog/$version")({
               version: release.version,
               date: release.date,
               url: getPageLocaleState(release.url, getLocale()).canonicalPath,
+              image: ogImageUrl("changelog", release.slugs),
             }),
             breadcrumbListSchema([
               { name: appName, url: "/" },

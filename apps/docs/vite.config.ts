@@ -97,7 +97,10 @@ function cloudflareAssetRules(): Plugin {
         type: "asset",
         fileName: "_headers",
         source: renderHeadersFile(
-          buildHeaderRules(prerenderPages(packageRoot).map(({ path }) => path)),
+          buildHeaderRules(
+            prerenderPages(packageRoot).map(({ path }) => path),
+            { docsLine: resolvedDocsLine() },
+          ),
         ),
       });
     },

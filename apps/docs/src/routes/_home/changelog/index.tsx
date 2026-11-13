@@ -1,5 +1,9 @@
 import { Link, createFileRoute, notFound } from "@tanstack/react-router";
 import { createServerFn } from "@tanstack/react-start";
+import { Heading } from "fumadocs-ui/components/heading";
+import type { MDXComponents } from "mdx/types";
+import { useMemo } from "react";
+import type { ComponentPropsWithoutRef, ComponentType } from "react";
 
 import { CompanionNote } from "@/components/companion-note";
 import { getMDXComponents } from "@/components/mdx";
@@ -61,6 +65,42 @@ export const Route = createFileRoute("/_home/changelog/")({
   },
 });
 
+const headingLevels = ["h2", "h3", "h4", "h5", "h6"] as const;
+type HeadingLevel = (typeof headingLevels)[number];
+
+/**
+ * One release's notes on the shared index. Every release repeats headings such
+ * as "What's new", so each heading id takes the release's version as a prefix
+ * (`v2.2.2-whats-new`) and every anchor on the page stays unique.
+ */
+function ReleaseBody({
+  Body,
+  version,
+}: {
+  Body: ComponentType<{ components?: MDXComponents }>;
+  version: string;
+}) {
+  const components = useMemo(
+    () =>
+      getMDXComponents(
+        Object.fromEntries(
+          headingLevels.map((as) => [
+            as,
+            ({ id, ...props }: ComponentPropsWithoutRef<HeadingLevel>) => (
+              <Heading
+                as={as}
+                {...props}
+                id={id === undefined ? undefined : `v${version}-${id}`}
+              />
+            ),
+          ]),
+        ),
+      ),
+    [version],
+  );
+  return <Body components={components} />;
+}
+
 function ChangelogIndex() {
   const releases = Route.useLoaderData();
 
@@ -117,7 +157,7 @@ function ChangelogIndex() {
                     "mt-2.5 prose-h2:mt-6 prose-h2:mb-2.5 prose-h2:text-xs prose-h2:tracking-[0.16em] prose-h2:before:mr-2 prose-h2:before:h-3 prose-h3:mt-4 prose-h3:mb-1 prose-h3:text-base prose-p:my-1 prose-ol:my-1 prose-ul:my-1 prose-li:my-0.5 prose-li:leading-[1.55]",
                   )}
                 >
-                  <Body components={getMDXComponents()} />
+                  <ReleaseBody Body={Body} version={release.version} />
                 </div>
               </div>
             </section>

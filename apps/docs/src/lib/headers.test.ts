@@ -30,6 +30,27 @@ describe("renderHeadersFile", () => {
   });
 });
 
+// Pre-release Docs repeats the production pages; search engines list the
+// production line alone.
+describe("beta line", () => {
+  const file = renderHeadersFile(buildHeaderRules([], { docsLine: "beta" }));
+
+  it("keeps every file out of the search index", () => {
+    expect(file.startsWith("/*\n  X-Robots-Tag: noindex\n")).toBe(true);
+  });
+
+  it("sends the noindex header once per file", () => {
+    expect(file.match(/X-Robots-Tag/g)).toHaveLength(1);
+    expect(file).toContain(
+      "/assets/*\n  Cache-Control: public, max-age=31536000, immutable\n",
+    );
+  });
+
+  it("leaves the production line indexable", () => {
+    expect(renderHeadersFile()).not.toContain("/*\n  X-Robots-Tag");
+  });
+});
+
 // The asset layer answers these Markdown editions without the Worker, so the
 // `_headers` file alone can keep them out of the index and point a crawler at
 // the HTML page. A Cloudflare placeholder matches one path segment.
@@ -61,6 +82,18 @@ describe("Markdown edition rules", () => {
     expect(bySource.get(source)).toEqual({
       "X-Robots-Tag": "noindex",
       Link: `<${page}>; rel="canonical"`,
+    });
+  });
+
+  it("keeps the canonical link on the beta line", () => {
+    const beta = new Map(
+      buildHeaderRules(["/docs.md"], { docsLine: "beta" }).map((rule) => [
+        rule.source,
+        rule.headers,
+      ]),
+    );
+    expect(beta.get("/docs.md")).toEqual({
+      Link: `<https://zotlit.aidenlx.site/docs>; rel="canonical"`,
     });
   });
 
