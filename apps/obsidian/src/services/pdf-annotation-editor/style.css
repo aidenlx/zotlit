@@ -165,6 +165,14 @@
 }
 
 /*
+ * Another tab covers the popup's PDF view. The popup stays mounted, so a
+ * comment typed in it is still there when the view shows again.
+ */
+.popover.zt-pdf-mark-popup[data-zt-covered] {
+  display: none;
+}
+
+/*
  * The note glyph's stroke weight, set on the group so both the body and the
  * crease inherit it — `non-scaling-stroke` is set in render.ts, so this width
  * stays a true hairline at every zoom step.

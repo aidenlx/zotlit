@@ -53,6 +53,7 @@ import {
   GRAPH_ITEMS,
   GRAPH_LITERATURE_NOTE_BODIES,
   GRAPH_VIEW_OPTIONS,
+  holdsDemoPapers,
   INSTALLED_STYLES,
   ITEMS,
   LITERATURE_NOTE_DOCUMENTS,
@@ -101,6 +102,11 @@ export {
   DEMO_ITEMS,
   DEMO_PAPERS_DIR,
   DEMO_PROFILE_DOCUMENT,
+  DOCS_ANNOTATIONS,
+  DOCS_ATTACHMENTS,
+  DOCS_COLLECTIONS,
+  DOCS_ITEMS,
+  DOCS_NOTES,
   EXCERPT_RENDERING_CASES,
   EXCERPT_RENDERING_PDFS,
   EXCERPT_RENDERING_VAULT_DIR,
@@ -319,7 +325,7 @@ export async function buildFixture(
   // References Style choices from the moment it exists, Zotero running or not.
   await writePristineStyles(layout.dataDir);
   await writeInstalledStyles(layout);
-  const demo = options.vaultCase === "demo";
+  const demo = holdsDemoPapers(vaultCase.id);
   await writeAttachmentFiles(layout, data.attachments, demo);
   await writeAnnotationCacheFiles(layout, data.annotations);
   await writePrefs(layout, options);
@@ -411,8 +417,8 @@ async function writeAttachmentFiles(
 ): Promise<void> {
   for (const attachment of attachments) {
     if (attachment.sourceAsset === null) continue;
-    // A vault holds the linked PDFs of its own case: the demo vault the demo
-    // papers', every other vault the test Items'.
+    // A vault holds the linked PDFs of its own case: the demo and docs vaults
+    // the demo papers', every other vault the test Items'.
     if (
       attachment.linkMode === "linked_file" &&
       attachment.fileRoot === "vault" &&
@@ -1226,6 +1232,14 @@ async function writeVault(
     return;
   }
 
+  if (vaultCase.id === "docs") {
+    // A new reader's first launch: the reader's own pages, ZotLit's Default
+    // Profile alone, and no settings file, so ZotLit opens its first screen.
+    await cp(DEMO_PAGES_DIR, layout.vaultDir, { recursive: true });
+    await rm(layout.pluginDataPath, { force: true });
+    return;
+  }
+
   if (vaultCase.id === "demo") {
     // The demo vault's notes render through ZotLit's shipped templates and
     // read the way a new user's do. Its one Profile document has no match,
@@ -1309,10 +1323,14 @@ async function writeVaultConfig(
   });
   await writeJson(join(configDir, "workspace.json"), workspacePreset(options));
   // The types the vault cells showcase notes need, as the Properties panel
-  // records them once a property's type is set.
-  await writeJson(join(configDir, "types.json"), {
-    types: VAULT_PROPERTY_TYPES,
-  });
+  // records them once a property's type is set. The docs vault holds no
+  // showcase note, and its `related` text type would mark the list a new
+  // Literature Note writes there as a type mismatch.
+  if ((options.vaultCase ?? DEFAULT_VAULT_CASE) !== "docs") {
+    await writeJson(join(configDir, "types.json"), {
+      types: VAULT_PROPERTY_TYPES,
+    });
+  }
   await cp(
     join(VAULT_PLUGINS_DIR, "hot-reload"),
     join(configDir, "plugins", "hot-reload"),

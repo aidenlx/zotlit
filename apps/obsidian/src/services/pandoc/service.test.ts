@@ -305,9 +305,9 @@ describe("Pandoc Engine", () => {
         const opened = await harness();
         const { service, handle, createEngine } = opened;
 
-        await expect(handle.runPromise(service.getEngine)).rejects.toThrow(
-          /not installed/,
-        );
+        await expect(
+          handle.runPromise(Effect.scoped(service.getEngine)),
+        ).rejects.toThrow(/not installed/);
 
         expect(handle.runSync(service.getStatus)).toEqual({ kind: "absent" });
         expect(createEngine).not.toHaveBeenCalled();
@@ -327,9 +327,9 @@ describe("Pandoc Engine", () => {
         const { service, handle } = opened;
         await handle.runPromise(service.install);
 
-        await expect(handle.runPromise(service.getEngine)).rejects.toThrow(
-          /bad magic/,
-        );
+        await expect(
+          handle.runPromise(Effect.scoped(service.getEngine)),
+        ).rejects.toThrow(/bad magic/);
         expect(handle.runSync(service.getStatus)).toEqual({
           kind: "failed",
           failure: { code: "init-failed", detail: "CompileError: bad magic" },
@@ -339,7 +339,7 @@ describe("Pandoc Engine", () => {
         // the status back to `installed`, so the engine can be tried again.
         await handle.runPromise(service.install);
         await expect(
-          handle.runPromise(service.getEngine),
+          handle.runPromise(Effect.scoped(service.getEngine)),
         ).resolves.toBeDefined();
         await opened[Symbol.asyncDispose]();
       }),
@@ -360,16 +360,18 @@ describe("Pandoc Engine", () => {
       const listener = vi.fn();
       subscribe(runtime, Stream.drop(service.changes, 1), listener);
 
-      await expect(handle.runPromise(service.getEngine)).rejects.toThrow(
-        /bad magic/,
-      );
+      await expect(
+        handle.runPromise(Effect.scoped(service.getEngine)),
+      ).rejects.toThrow(/bad magic/);
 
       expect(store.files.has(CACHED_NAME)).toBe(false);
       expect(handle.runSync(service.getStatus)).toEqual({ kind: "absent" });
       expect(listener).toHaveBeenCalled();
 
       await handle.runPromise(service.install);
-      await expect(handle.runPromise(service.getEngine)).resolves.toBeDefined();
+      await expect(
+        handle.runPromise(Effect.scoped(service.getEngine)),
+      ).resolves.toBeDefined();
       await opened[Symbol.asyncDispose]();
     }),
   );
@@ -383,8 +385,10 @@ describe("Pandoc Engine", () => {
       const { service, handle, createEngine } = opened;
       await handle.runPromise(service.install);
 
-      const engine = await handle.runPromise(service.getEngine);
-      expect(await handle.runPromise(service.getEngine)).toBe(engine);
+      const engine = await handle.runPromise(Effect.scoped(service.getEngine));
+      expect(await handle.runPromise(Effect.scoped(service.getEngine))).toBe(
+        engine,
+      );
       expect(createEngine).toHaveBeenCalledTimes(1);
       const [passed] = createEngine.mock.calls[0]!;
       expect(passed).toBeInstanceOf(Blob);
@@ -403,7 +407,7 @@ describe("Pandoc Engine", () => {
       });
       const { service, handle } = opened;
       await handle.runPromise(service.install);
-      await handle.runPromise(service.getEngine);
+      await handle.runPromise(Effect.scoped(service.getEngine));
 
       await handle.runPromise(service.uninstall);
 

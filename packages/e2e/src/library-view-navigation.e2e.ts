@@ -3179,14 +3179,30 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
               ...init,
             }),
           );
-        const pressRow = (el: HTMLElement | null, what: string) => {
+        const pressRow = async (el: HTMLElement | null, what: string) => {
           if (!el) throw new Error(`Missing: ${what}`);
           el.scrollIntoView({ block: "center", behavior: "instant" });
-          const r = el.getBoundingClientRect();
-          const hit = el.ownerDocument.elementFromPoint(
-            r.left + 24,
-            r.top + r.height / 2,
-          );
+          // A row scrolled into view draws its content at the next frame
+          // (`content-visibility: auto`); until then a hit lands on the
+          // row's list item.
+          const hitAt = () => {
+            const r = el.getBoundingClientRect();
+            return el.ownerDocument.elementFromPoint(
+              r.left + 24,
+              r.top + r.height / 2,
+            );
+          };
+          let hit = hitAt();
+          for (
+            let frame = 0;
+            frame < 10 && !(hit && el.contains(hit));
+            frame++
+          ) {
+            await new Promise((resolve) =>
+              el.win.requestAnimationFrame(resolve),
+            );
+            hit = hitAt();
+          }
           if (!hit || !el.contains(hit))
             throw new Error(
               `Covered: ${what} (by ${hit ? hit.outerHTML.slice(0, 80) : "nothing"})`,
@@ -3195,7 +3211,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           return el;
         };
         await until("rows", () => row(readingKey), 10000);
-        pressRow(row(readingKey), "reading row");
+        await pressRow(row(readingKey), "reading row");
         const keys = [
           ...el.querySelectorAll<HTMLElement>("[data-query-item-row]"),
         ].map((n) => n.getAttribute("data-query-item-row")!);
@@ -3238,14 +3254,30 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
               ...init,
             }),
           );
-        const pressRow = (el: HTMLElement | null, what: string) => {
+        const pressRow = async (el: HTMLElement | null, what: string) => {
           if (!el) throw new Error(`Missing: ${what}`);
           el.scrollIntoView({ block: "center", behavior: "instant" });
-          const r = el.getBoundingClientRect();
-          const hit = el.ownerDocument.elementFromPoint(
-            r.left + 24,
-            r.top + r.height / 2,
-          );
+          // A row scrolled into view draws its content at the next frame
+          // (`content-visibility: auto`); until then a hit lands on the
+          // row's list item.
+          const hitAt = () => {
+            const r = el.getBoundingClientRect();
+            return el.ownerDocument.elementFromPoint(
+              r.left + 24,
+              r.top + r.height / 2,
+            );
+          };
+          let hit = hitAt();
+          for (
+            let frame = 0;
+            frame < 10 && !(hit && el.contains(hit));
+            frame++
+          ) {
+            await new Promise((resolve) =>
+              el.win.requestAnimationFrame(resolve),
+            );
+            hit = hitAt();
+          }
           if (!hit || !el.contains(hit))
             throw new Error(
               `Covered: ${what} (by ${hit ? hit.outerHTML.slice(0, 80) : "nothing"})`,
@@ -3253,7 +3285,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           press(hit as HTMLElement, what);
           return el;
         };
-        pressRow(row(readingKey), "reading row");
+        await pressRow(row(readingKey), "reading row");
         keydown(row(readingKey)!, { key: "Enter" });
       },
       { readingKey: reading.key },
@@ -3286,14 +3318,30 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
               ...init,
             }),
           );
-        const pressRow = (el: HTMLElement | null, what: string) => {
+        const pressRow = async (el: HTMLElement | null, what: string) => {
           if (!el) throw new Error(`Missing: ${what}`);
           el.scrollIntoView({ block: "center", behavior: "instant" });
-          const r = el.getBoundingClientRect();
-          const hit = el.ownerDocument.elementFromPoint(
-            r.left + 24,
-            r.top + r.height / 2,
-          );
+          // A row scrolled into view draws its content at the next frame
+          // (`content-visibility: auto`); until then a hit lands on the
+          // row's list item.
+          const hitAt = () => {
+            const r = el.getBoundingClientRect();
+            return el.ownerDocument.elementFromPoint(
+              r.left + 24,
+              r.top + r.height / 2,
+            );
+          };
+          let hit = hitAt();
+          for (
+            let frame = 0;
+            frame < 10 && !(hit && el.contains(hit));
+            frame++
+          ) {
+            await new Promise((resolve) =>
+              el.win.requestAnimationFrame(resolve),
+            );
+            hit = hitAt();
+          }
           if (!hit || !el.contains(hit))
             throw new Error(
               `Covered: ${what} (by ${hit ? hit.outerHTML.slice(0, 80) : "nothing"})`,
@@ -3301,7 +3349,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           press(hit as HTMLElement, what);
           return el;
         };
-        pressRow(row(readingKey), "reading row");
+        await pressRow(row(readingKey), "reading row");
         keydown(row(readingKey)!, { key: "Enter", shiftKey: true });
       },
       { readingKey: reading.key },
@@ -3333,14 +3381,30 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
               ...init,
             }),
           );
-        const pressRow = (el: HTMLElement | null, what: string) => {
+        const pressRow = async (el: HTMLElement | null, what: string) => {
           if (!el) throw new Error(`Missing: ${what}`);
           el.scrollIntoView({ block: "center", behavior: "instant" });
-          const r = el.getBoundingClientRect();
-          const hit = el.ownerDocument.elementFromPoint(
-            r.left + 24,
-            r.top + r.height / 2,
-          );
+          // A row scrolled into view draws its content at the next frame
+          // (`content-visibility: auto`); until then a hit lands on the
+          // row's list item.
+          const hitAt = () => {
+            const r = el.getBoundingClientRect();
+            return el.ownerDocument.elementFromPoint(
+              r.left + 24,
+              r.top + r.height / 2,
+            );
+          };
+          let hit = hitAt();
+          for (
+            let frame = 0;
+            frame < 10 && !(hit && el.contains(hit));
+            frame++
+          ) {
+            await new Promise((resolve) =>
+              el.win.requestAnimationFrame(resolve),
+            );
+            hit = hitAt();
+          }
           if (!hit || !el.contains(hit))
             throw new Error(
               `Covered: ${what} (by ${hit ? hit.outerHTML.slice(0, 80) : "nothing"})`,
@@ -3367,7 +3431,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
             row(unwrittenkey),
           10000,
         );
-        pressRow(row(unwrittenkey), "unwritten row");
+        await pressRow(row(unwrittenkey), "unwritten row");
         keydown(row(unwrittenkey)!, { key: "Enter" });
       },
       {
@@ -3892,7 +3956,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
             open: run.m.welcome_step_folder_title(),
             // The Help Links show beside the checklist.
             help: [
-              "https://zotlit.aidenlx.site/docs",
+              "https://zotlit.aidenlx.site/learn",
               "https://zotlit.aidenlx.site/community",
               "https://github.com/aidenlx/zotlit",
               "https://zotlit.aidenlx.site/docs/reference/templates",
@@ -5319,5 +5383,100 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     ).toEqual(
       Object.keys(results).map((label) => [label, label.endsWith("narrow")]),
     );
+  });
+
+  it("offers Untitled, not Recent, as the name of a query file saved from a new Library View", async () => {
+    const snapshot = await obRun(
+      run.vaultId,
+      ({ app, zotlit }) =>
+        JSON.stringify({
+          layout: app.workspace.getLayout(),
+          document:
+            zotlit.services.bridge.runSync(zotlit.services.settings.current)[
+              "library.document"
+            ] ?? null,
+        }),
+      undefined,
+    );
+    await using cleanup = new AsyncDisposableStack();
+    cleanup.defer(async () => {
+      await obRun(
+        run.vaultId,
+        async ({ app, zotlit }, { snapshot }) => {
+          const saved = JSON.parse(snapshot);
+          const { settings, bridge } = zotlit.services;
+          bridge.runSync(
+            settings.update({ "library.document": saved.document }),
+          );
+          await bridge.runPromise(settings.flush);
+          await app.workspace.changeLayout(saved.layout);
+        },
+        { snapshot },
+      );
+    });
+    const offered = await obRun(
+      run.vaultId,
+      async ({ app, zotlit, page }) => {
+        const { settings, bridge } = zotlit.services;
+        bridge.runSync(settings.update({ "library.document": null }));
+        await bridge.runPromise(settings.flush);
+        for (const leaf of app.workspace.getLeavesOfType("zotlit-library"))
+          leaf.detach();
+        app.commands.executeCommandById("zotlit:open-library-view");
+        const leaf = await page.until(
+          "the Library View",
+          () =>
+            (
+              app.workspace.getLeavesOfType(
+                "zotlit-library",
+              ) as (WorkspaceLeaf & { view: LibraryView })[]
+            )[0],
+          30000,
+        );
+        await leaf.view.query.settled;
+        const node = leaf.view.tree.state.node.kind;
+        page.press(
+          await page.until(
+            "Save as query file",
+            () =>
+              leaf.view.contentEl.querySelector<HTMLElement>(
+                "[data-query-save-as]",
+              ),
+            10000,
+          ),
+          "Save as query file",
+        );
+        const input = await page.until(
+          "the name field",
+          () =>
+            document.querySelector<HTMLInputElement>(
+              '.modal.zt-save-query-file-modal [data-save-field="name"]',
+            ),
+          10000,
+        );
+        const name = input.value;
+        page.press(
+          document.querySelector<HTMLElement>(
+            ".modal.zt-save-query-file-modal .modal-button-container button:not(.mod-cta)",
+          ),
+          "Cancel",
+        );
+        await page.until(
+          "the dialog closed",
+          () => !document.querySelector(".modal.zt-save-query-file-modal"),
+          5000,
+        );
+        return { node, name };
+      },
+      undefined,
+      { timeoutMs: 90000 },
+    );
+    // A new tab opens on Recent (aidenlx/zotlit#1986), whose file holds every
+    // paper of the Library Scope; the dialog asks for a name of the
+    // researcher's own.
+    expect(offered).toEqual({
+      node: "recent",
+      name: run.m.query_file_untitled(),
+    });
   });
 });

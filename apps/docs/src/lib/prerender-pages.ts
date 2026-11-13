@@ -31,7 +31,9 @@ interface PrerenderPage {
 /**
  * Sections whose bare path is a Markdown edition of its own. The docs index
  * page already carries the `/docs.md` edition; `changelog` and `blog` answer
- * their bare section path with a generated listing.
+ * their bare section path with a generated listing. The `/learn` course
+ * listing has no Chinese edition, so `prerenderPages` adds it for English
+ * alone.
  */
 const landingSections: MarkdownSection[] = ["changelog", "blog"];
 
@@ -42,15 +44,20 @@ const seoPages: PrerenderPage[] = [
   { path: "/changelog/rss.xml" },
 ];
 
-/** Every build-time-safe machine route. */
+/**
+ * Every build-time-safe machine route.
+ * @param landings whether the section listings' editions join the list; their
+ *   copy comes from the English catalog, so the Chinese list leaves them out.
+ */
 function machineRoutePages(
   content: Record<MarkdownSection, { slugs: string[] }[]>,
+  { landings }: { landings: boolean },
 ): PrerenderPage[] {
   const pages: PrerenderPage[] = [];
 
   for (const section of markdownSections) {
     const slugSets = content[section].map((entry) => entry.slugs);
-    if (landingSections.includes(section)) slugSets.push([]);
+    if (landings && landingSections.includes(section)) slugSets.push([]);
 
     for (const slugs of slugSets) {
       const page = { section, slugs };
@@ -63,11 +70,14 @@ function machineRoutePages(
 }
 
 /**
- * The HTML pages: the landing, community, and Workbench pages, the whole docs
- * tree, the blog and its posts, and the changelog index with its versions.
+ * The HTML pages: the Workbench, the whole docs tree, the blog posts, the
+ * changelog versions and the lessons, plus, with `landings`, the landing,
+ * community, blog and changelog listing pages, whose copy comes from the
+ * English catalog.
  */
 function htmlPages(
   content: Record<MarkdownSection, { slugs: string[] }[]>,
+  { landings }: { landings: boolean },
 ): PrerenderPage[] {
   const docs = content.docs.map((entry) => ({
     path: `/${["docs", ...entry.slugs].join("/")}`,
@@ -78,16 +88,18 @@ function htmlPages(
   const changelog = content.changelog.map((entry) => ({
     path: `/${["changelog", ...entry.slugs].join("/")}`,
   }));
+  const learn = content.learn.map((entry) => ({
+    path: `/${["learn", ...entry.slugs].join("/")}`,
+  }));
 
   return [
-    { path: "/" },
-    { path: "/community" },
+    ...(landings ? [{ path: "/" }, { path: "/community" }] : []),
     { path: "/workbench" },
     ...docs,
     ...blog,
     ...changelog,
-    { path: "/blog" },
-    { path: "/changelog" },
+    ...learn,
+    ...(landings ? [{ path: "/blog" }, { path: "/changelog" }] : []),
   ];
 }
 
@@ -103,10 +115,14 @@ export function prerenderPages(packageRoot: string): PrerenderPage[] {
     ...seoPages,
     { path: "/llms.txt" },
     { path: "/llms-full.txt" },
-    ...machineRoutePages(content),
-    ...htmlPages(content),
-    ...[...machineRoutePages(chinese), ...htmlPages(chinese)].map(
-      ({ path }) => ({ path: localizedPath(path, "zh-CN") }),
-    ),
+    ...machineRoutePages(content, { landings: true }),
+    ...htmlPages(content, { landings: true }),
+    { path: "/learn" },
+    { path: suffixEditionUrl({ section: "learn", slugs: [] }) },
+    { path: contentRouteUrl({ section: "learn", slugs: [] }) },
+    ...[
+      ...machineRoutePages(chinese, { landings: false }),
+      ...htmlPages(chinese, { landings: false }),
+    ].map(({ path }) => ({ path: localizedPath(path, "zh-CN") })),
   ];
 }

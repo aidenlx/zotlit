@@ -35,7 +35,7 @@ In a template, `noteLink` links to the imported file when one exists. Otherwise 
 
 ### Existing notes stay as they are
 
-Notes you already have don't change. A note with the managed markers keeps them, and an update still refreshes the text between them. To stop that, delete the two marker lines. See [Literature notes and the managed region](/docs/concepts/literature-notes-and-the-managed-region).
+Notes you already have don't change. A note with the managed markers keeps them, and an update still refreshes the text between them. To stop that, delete the two marker lines. See [Literature notes and the managed region](/docs/reference/literature-notes).
 
 If you customized or duplicated the Default profile, its document now has no managed block. Updating an older note with markers then shows <UiLabel name={m.notice_updated_note_no_managed_block()} /> To keep refreshing that region, add a `{% managed %}` block to the profile document.
 
@@ -53,7 +53,7 @@ The default annotation template has a new layout. The paper's citation now follo
 
 ![A literature note with two annotations in the new default layout, each with the quote, the paper's citation after it, and the page number as the link, and a popover over the second link that shows the quote, the comment, page 1, and a green highlight bar](/img/changelog/annotation-link-popover.webp)
 
-A new <UiLabel name={m.settings_citation_annotation_citations_name()} /> setting under <SettingsPath page={m.settings_page_citations()} /> is off by default. Turn it on to count an annotation link as a citation of its paper. The paper then appears in the <UiLabel name={m.references_view_name()} /> sidebar and the other citation features. See [How in-text citation rendering and navigation work](/docs/concepts/how-citekey-links-work).
+A new <UiLabel name={m.settings_citation_annotation_citations_name()} /> setting under <SettingsPath page={m.settings_page_citations()} /> is off by default. Turn it on to count an annotation link as a citation of its paper. The paper then appears in the <UiLabel name={m.references_view_name()} /> sidebar and the other citation features. See [How in-text citation rendering and navigation work](/docs/reference/citation-links).
 
 ### Show any paper in the Zotero library view
 

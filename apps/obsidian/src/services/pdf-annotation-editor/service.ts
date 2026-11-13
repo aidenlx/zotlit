@@ -315,8 +315,10 @@ export const layerPdfAnnotationEditor = (ports: PdfAnnotationEditorPorts) =>
       yield* forkEach(workspace.changes, (event) => {
         if (event._tag === "file-open" || event._tag === "layout-change")
           return reconcile;
-        if (event._tag === "active-leaf-change" && event.leaf) {
-          bindings.get(event.leaf.view as PDFFileView)?.activate();
+        if (event._tag === "active-leaf-change") {
+          for (const binding of bindings.values()) binding.placePopup();
+          if (event.leaf)
+            bindings.get(event.leaf.view as PDFFileView)?.activate();
         }
       });
       yield* workspace.layoutReady.pipe(

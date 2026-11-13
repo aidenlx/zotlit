@@ -1,0 +1,107 @@
+---
+title: "Track your Zotero reading list in Obsidian"
+description: "Mark each Zotero paper with a status such as to-read in Obsidian, and show only the papers that are left."
+lesson: 5
+minutes: 10
+media: track-reading-status
+lede: Build a table of your papers with reading statuses, filtered to what is left to read.
+chore: My reading list lives in a separate file
+instead: Type a status such as to-read in the paper’s row.
+needs:
+  - item: Lesson 1
+    detail: Completed
+  - item: Zotero
+    detail: Can stay closed
+steps:
+  - title: Save your library as a table file
+    alt: The Reading plan file opens in a new tab, listing the papers from the library.
+  - title: Switch to a table
+    alt: The papers in the Reading plan file appear as rows in a table.
+  - title: Add a reading status column
+    alt: A new reading-status (note) column appears in the table, displaying No note for unlinked papers.
+  - title: Mark a paper
+    alt: The notice Literature note created. appears, and the edited cell displays to-read.
+  - title: Mark the others
+    alt: The table shows status values across multiple rows, with suggested statuses shown while typing.
+  - title: Show only what is left to read
+    alt: The table is filtered by reading-status (note) is to-read, showing only papers marked to-read.
+end:
+  title: A filtered reading table for your papers
+  caption: You can now track reading status and filter for unread papers.
+  next: Build a literature review table to compare papers.
+further:
+  - slug: how-to/track-reading-status
+    when: "for sorting and filtering by status or using Obsidian Bases."
+  - slug: how-to/use-query-files
+    when: "how to filter, sort, group, and embed tables in your notes."
+---
+
+import { Check, Fix, Step } from "@/components/learn/lesson-mdx";
+import { UiLabel } from "@/components/ui-label";
+import { m } from "@/paraglide/messages.js";
+
+<Step n={1}>
+
+In <UiLabel name={m.library_view_name()} />, select <UiLabel name={m.annot_view_save_as_query_file()} /> (page-plus icon, top right of the list). Type `Reading plan` as the name and select <UiLabel name={m.annot_view_save_action()} />.
+
+<Check>The file `Reading plan` opens in a new tab, listing your papers.</Check>
+
+</Step>
+
+<Step n={2}>
+
+Select <UiLabel name={m.query_view_views()} /> at the top left, then the arrow at the end of the row (<UiLabel name={m.query_view_configure_view()} />). Set <UiLabel name={m.query_view_layout()} /> to <UiLabel name={m.query_view_layout_table()} />.
+
+<Check>Your papers appear as rows in a table.</Check>
+
+</Step>
+
+<Step n={3}>
+
+Select <UiLabel name={m.query_view_properties()} />, type `reading-status`, and select <UiLabel name={m.query_view_properties_add_vault({ name: "reading-status" })} />.
+
+<Check>
+  A column titled **reading-status (note)** appears, showing{" "}
+  <UiLabel name={m.query_view_vault_no_note()} /> for papers without a note.
+</Check>
+
+<Fix title="The column header does not say “(note)”">
+  Select <UiLabel name={m.query_view_properties()} />, clear that check box, and
+  select{" "}
+  <UiLabel
+    name={m.query_view_properties_add_vault({ name: "reading-status" })}
+  />
+  .
+</Fix>
+
+</Step>
+
+<Step n={4}>
+
+Select a paper’s reading status cell, type `to-read`, and press Enter.
+
+<Check>
+  The notice appears: <UiLabel name={m.notice_created_note()} /> The cell shows
+  `to-read`.
+</Check>
+
+</Step>
+
+<Step n={5}>
+
+Mark another paper as `reading` and a finished paper as `done`.
+
+<Check>
+  As you type, the cell suggests statuses you used before. The rows now show
+  statuses.
+</Check>
+
+</Step>
+
+<Step n={6}>
+
+Select <UiLabel name={m.query_view_filter()} />, set the first box to **reading-status (note)**, the second to **is**, and type `to-read` in the third.
+
+<Check>The table shows only papers marked `to-read`.</Check>
+
+</Step>

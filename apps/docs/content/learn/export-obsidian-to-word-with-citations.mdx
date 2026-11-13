@@ -1,0 +1,109 @@
+---
+title: "Export Obsidian notes to Word with citations"
+description: "Turn an Obsidian draft into a Word file with formatted citations and a reference list, in APA or any style installed in Zotero."
+lesson: 4
+minutes: 5
+media: export-to-word-with-a-bibliography
+lede: Export your draft to Word with formatted citations and a bibliography.
+chore: I rebuild my references in Word
+instead: Run the Export note with citations command.
+needs:
+  - item: Lesson 3
+    detail: Draft with citations and citation engine
+  - item: Zotero
+    detail: Open on this computer
+steps:
+  - title: Get the draft ready to send
+    alt: The Chapter 3 draft open in Obsidian, ready for export without personal to-do lines.
+  - title: Open the export dialog
+    alt: The Export with citations dialog open in Obsidian, with Format set to Word document.
+  - title: Choose the citation style
+    alt: The dialog with Citation style set to APA Style 7th edition, confirming the note style stays unchanged.
+  - title: Export
+    alt: A notice confirms Chapter 3 - Presenting the results.docx was exported with APA Style 7th edition citations.
+  - title: Open the Word file
+    alt: The exported Word file open, showing formatted citations like (Sandve et al., 2013, p. 2) and a References list.
+end:
+  title: A Word draft with formatted citations and bibliography
+  caption: You can now export drafts to Word with formatted citations and references.
+  next: Track papers you have read in your library.
+further:
+  - slug: how-to/export-note-with-citations
+    when: "to export to HTML or choose a different citation style."
+  - slug: how-to/export-with-native-pandoc
+    when: "if you prefer to run your own installed Pandoc command."
+  - slug: how-to/pandoc-citation-workflow
+    when: "a worked example comparing built-in export with native Pandoc."
+---
+
+import { Check, Fix, Step } from "@/components/learn/lesson-mdx";
+import { Command } from "@/components/command";
+import { UiLabel } from "@/components/ui-label";
+import { m } from "@/paraglide/messages.js";
+
+<Step n={1}>
+
+Remove lines meant only for you, such as a to-do list, because everything in the note exports to Word.
+
+<Check>The draft contains only what you want in the Word file.</Check>
+
+</Step>
+
+<Step n={2}>
+
+Press Ctrl+P (Cmd+P on Mac) and run <Command inline name={m.command_pandoc_export_name()} />.
+
+<Check>
+  The dialog <UiLabel name={m.pandoc_export_title()} /> opens with{" "}
+  <UiLabel name={m.pandoc_export_format_name()} /> set to{" "}
+  <UiLabel name={m.pandoc_export_format_docx()} />.
+</Check>
+
+</Step>
+
+<Step n={3}>
+
+In <UiLabel name={m.pandoc_export_style_name()} />, choose **APA Style 7th edition**.
+
+<Check>
+  The line under the setting reads{" "}
+  <UiLabel
+    name={m.pandoc_export_style_changed({
+      style: "Default (Chicago author-date)",
+    })}
+  />
+</Check>
+
+<Fix title="The style is not in the list">
+  Install the style in Zotero and reopen the dialog.
+</Fix>
+
+</Step>
+
+<Step n={4}>
+
+Select <UiLabel name={m.pandoc_export_confirm()} />.
+
+<Check>
+  The notice names your draft's Word file (here{" "}
+  <UiLabel
+    name={m.notice_pandoc_export_done({
+      file: "Chapter 3 - Presenting the results.docx",
+      style: "APA Style 7th edition",
+    })}
+  />
+  ).
+</Check>
+
+</Step>
+
+<Step n={5}>
+
+In Finder (Mac) or File Explorer (Windows), open the Word file in the draft’s folder.
+
+<Check>
+  The Word file shows formatted citations such as **(Sandve et al., 2013, p.
+  2)** and a **References** list.
+</Check>
+
+</Step>

@@ -1,0 +1,123 @@
+---
+title: "How to cite in Obsidian with Zotero"
+description: "Type [@ in your Obsidian draft, pick a paper from your Zotero library, add the page number, and see the formatted citation. About 10 minutes."
+lesson: 3
+minutes: 10
+media: cite-while-writing
+lede: Add formatted citations and quoted highlights to your draft as you write.
+chore: I paste citation keys and fix them later
+instead: Type [@ and a name, then select the paper.
+needs:
+  - item: Earlier lessons
+    detail: Lessons 1 and 2 completed
+  - item: Better BibTeX
+    detail: Required to cite as you write, installed in Zotero
+  - item: Draft note
+    detail: A draft note of your own, such as Chapter 3 - Presenting the results
+steps:
+  - title: Install the citation engine
+    alt: Under Citations in ZotLit settings, the Pandoc engine row reads Pandoc 3.10 is installed.
+  - title: Type [@ and a name
+    alt: A citation menu opens in the draft, showing Sandve et al. (2013), PLOS Computational Biology, 9(10), e1003285.
+  - title: Choose the paper
+    alt: The draft note displays the plain text citation key [@sandve2013] at the cursor.
+  - title: Add the page
+    alt: The draft displays the citation formatted as (Sandve et al. 2013, 2).
+  - title: Check it is the right paper
+    alt: Pointing at the citation opens a preview card with the full Sandve 2013 reference.
+  - title: Quote a highlight
+    alt: The draft shows a quote block titled Page 2 containing the highlighted text, citation, and note.
+end:
+  title: Formatted citations and quotes in your draft
+  caption: You can now cite Zotero papers and drag quotes into your draft.
+  next: Export your draft to Word with a formatted reference list.
+further:
+  - slug: how-to/insert-citations
+    when: "to cite from the command palette or use author-in-text forms."
+  - slug: how-to/review-copy-troubleshoot-references
+    when: "for checking reference lists, copying entries, and fixing citation errors."
+  - slug: answers/zotero-in-obsidian-without-better-bibtex
+    when: "to see what works before you install Better BibTeX."
+---
+
+import { Check, Fix, Step } from "@/components/learn/lesson-mdx";
+import { UiLabel } from "@/components/ui-label";
+import { m } from "@/paraglide/messages.js";
+
+<Step n={1}>
+
+In **Settings** > **ZotLit** > <UiLabel name={m.settings_page_citations()} />, select <UiLabel name={m.settings_citation_engine_install()} /> next to <UiLabel name={m.settings_citation_engine_name()} />.
+
+<Check>
+  The row reads{" "}
+  <UiLabel
+    name={m.settings_citation_engine_status_installed({ version: "3.10" })}
+  />{" "}
+  (the version can be higher).
+</Check>
+
+</Step>
+
+<Step n={2}>
+
+In your draft (here `Chapter 3 - Presenting the results`), place the cursor and type `[@` with an author's name from your library, such as `[@sandve`.
+
+<Check>
+  A citation menu opens, showing your paper (here **Sandve et al. (2013), PLOS
+  Computational Biology, 9(10), e1003285**).
+</Check>
+
+<Fix title="The paper is not in the list">
+  A paper with no citation key cannot be cited. Install Better BibTeX in Zotero
+  to give every paper a key.
+</Fix>
+
+</Step>
+
+<Step n={3}>
+
+Press Enter to choose the paper.
+
+<Check>
+  The draft displays the citation key for your paper (here `[@sandve2013]`) at
+  the cursor.
+</Check>
+
+</Step>
+
+<Step n={4}>
+
+Type `, p. 2` before the closing bracket, then move the cursor away.
+
+<Check>
+  The citation now shows as author, year and page, here **(Sandve et al. 2013,
+  2)**.
+</Check>
+
+<Fix title="It still reads [@sandve2013, p. 2]">
+  Install the engine in Step 1.
+</Fix>
+
+</Step>
+
+<Step n={5}>
+
+Point at the formatted citation.
+
+<Check>
+  A preview card opens with the full reference for your paper (here Sandve
+  2013).
+</Check>
+
+</Step>
+
+<Step n={6}>
+
+Open the PDF beside your draft. Drag the page label of a highlight, such as **p. 2**, from the sidebar into the draft.
+
+<Check>
+  The draft shows a quote block titled **Page 2** with the highlighted text,
+  citation, and note.
+</Check>
+
+</Step>

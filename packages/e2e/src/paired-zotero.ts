@@ -48,6 +48,43 @@ export function zoteroFetch(
 }
 
 /**
+ * Settles once Better BibTeX answers its JSON-RPC `api.ready`. Zotero opens
+ * its HTTP server before Better BibTeX registers that endpoint, which answers
+ * 404 until then; a researcher exports from a Zotero that has finished
+ * starting, and a Paired Run is ready at the same point.
+ *
+ * @throws when Better BibTeX does not answer within `timeoutMs`.
+ */
+export async function waitForBetterBibtex(
+  baseUrl: string,
+  timeoutMs = 60_000,
+): Promise<void> {
+  const body = JSON.stringify({
+    jsonrpc: "2.0",
+    method: "api.ready",
+    params: [],
+    id: 1,
+  });
+  const end = performance.now() + timeoutMs;
+  let last = "no answer";
+  while (performance.now() < end) {
+    const reply = await zoteroFetch(baseUrl, "/better-bibtex/json-rpc", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body,
+    }).catch((error: unknown) => error);
+    if (reply instanceof Response) {
+      if (reply.status === 200) return;
+      last = `${reply.status}`;
+    } else last = String(reply);
+    await new Promise((resolve) => setTimeout(resolve, 250));
+  }
+  throw new Error(
+    `Better BibTeX did not answer api.ready within ${timeoutMs} ms (last: ${last})`,
+  );
+}
+
+/**
  * Zotero's 12-character id for the database it is serving. Generated once per
  * database and kept in its `settings` table, so it is read at runtime and never
  * asserted as a literal.

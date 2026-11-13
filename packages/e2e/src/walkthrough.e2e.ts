@@ -8,6 +8,7 @@ import { getWorkspaceRoot } from "@zotlit/scripts/package-roots";
 import type { SearchHit } from "@/services/item-lookup/service";
 
 import { prepareRunWindow } from "./background-throttling.ts";
+import { EFFECT_MODULE_PATH } from "./effect-module.ts";
 import { useListingProfile } from "./listing-profile.ts";
 import { cliCommand, obRun, obRunUntil } from "./obsidian-cli.ts";
 import type {
@@ -561,7 +562,10 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
   it("recovers a failed citation render after cooldown while keeping the displayed text", async () => {
     const result = await obRun(
       vaultId,
-      async ({ app: host, zotlit }) => {
+      async ({ app: host, zotlit }, { EFFECT_MODULE_PATH }) => {
+        const { Effect } = require(
+          EFFECT_MODULE_PATH,
+        ) as typeof import("@/lib/effect");
         const app = host as WalkthroughApp;
 
         await using cleanup = new AsyncDisposableStack();
@@ -594,7 +598,7 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
         if (!first?.formatted.size)
           throw new Error("Initial citations were not formatted");
         const engine = await services.pandocEngine.runPromise(
-          services.pandocEngine.binary.getEngine,
+          Effect.scoped(services.pandocEngine.binary.getEngine),
         );
         // oxlint-disable-next-line typescript/unbound-method -- the original method is replaced for the test and restored by identity
         const original = engine!.renderCitations;
@@ -664,7 +668,7 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
           ).contentEl.querySelector<HTMLElement>(".zt-citation"),
         };
       },
-      undefined,
+      { EFFECT_MODULE_PATH },
     );
     expect(result).toEqual({
       failedStatus: "failed",
@@ -1310,14 +1314,14 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
           );
         press(row("Citations"), "Citations");
         const tutorial = !!row(
-          "Pandoc citation tutorial",
+          "Pandoc citation workflow",
         )?.querySelector<HTMLButtonElement>("button");
         const changed = [];
         for (const [name, key] of controls) {
           const initial = tab.getControlValue(key);
           for (const expected of [!initial, initial]) {
             const tutorialButton = row(
-              "Pandoc citation tutorial",
+              "Pandoc citation workflow",
             )!.querySelector<HTMLButtonElement>("button");
             press(
               row(name)!.querySelector<HTMLElement>(".checkbox-container"),
@@ -1328,7 +1332,7 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
                 value: tab.getControlValue(key),
                 refreshed:
                   row(
-                    "Pandoc citation tutorial",
+                    "Pandoc citation workflow",
                   )!.querySelector<HTMLButtonElement>("button") !==
                   tutorialButton,
               }),

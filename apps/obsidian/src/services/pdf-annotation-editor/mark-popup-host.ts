@@ -52,6 +52,12 @@ export interface MarkPopupHostDeps {
   doc: () => Document;
   surface: ReaderSurface;
   /**
+   * Whether the PDF view shows: another tab can cover it. A covered view
+   * hides its popup but keeps it mounted, with what floats and a comment
+   * typed in it, for when the view shows again.
+   */
+  shown: () => boolean;
+  /**
    * What each floating kind draws, and where it hangs. An image capture, a
    * Text Draft and a group have no popup.
    */
@@ -64,7 +70,7 @@ export interface MarkPopupHostDeps {
 /**
  * Opens the popup for a floating variant with an anchor, and hides it for
  * none, an image capture, a Text Draft, a group, a quiet selection, a selection whose grip is held
- * and not yet saving, or an anchor of `null`. Any change to what floats or to
+ * and not yet saving, an anchor of `null`, or a PDF view another tab covers. Any change to what floats or to
  * its row renders the popup again; a change of variant kind or of selected key
  * mounts its content anew, and any other change is a diff in place, which is
  * what keeps an editor alive.
@@ -73,6 +79,7 @@ export class MarkPopupHost implements Disposable {
   readonly #deps;
   readonly #unsubscribe;
   #popup: MarkPopup | null = null;
+  #changedWhileCovered = false;
 
   constructor(deps: MarkPopupHostDeps) {
     this.#deps = deps;
@@ -105,7 +112,18 @@ export class MarkPopupHost implements Disposable {
     this.#hide();
   }
 
-  #place({ refresh }: { refresh: boolean }): void {
+  #place(options: { refresh: boolean }): void {
+    // A covered view keeps its popup, hidden, so an editor in it lives on.
+    // A change that floats while it is covered draws the row again on the
+    // first place after the cover lifts.
+    const covered = !this.#deps.shown();
+    this.#popup?.hoverEl.toggleAttribute("data-zt-covered", covered);
+    if (covered) {
+      this.#changedWhileCovered ||= options.refresh;
+      return;
+    }
+    const refresh = options.refresh || this.#changedWhileCovered;
+    this.#changedWhileCovered = false;
     const state = current(this.#deps.surface);
     const { floating } = state;
     // A press on a grip hides the popup, so it never covers the edge being

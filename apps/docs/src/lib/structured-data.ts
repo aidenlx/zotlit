@@ -4,9 +4,11 @@ import type {
   Article,
   BlogPosting,
   BreadcrumbList,
+  FAQPage,
   Organization,
   Person,
   SoftwareApplication,
+  TechArticle,
   Thing,
   WebSite,
   WithContext,
@@ -108,14 +110,121 @@ export function changelogArticleSchema(input: {
   version: string;
   date: string;
   url: string;
+  /** Root-relative path of the release's social card. */
+  image: string;
 }): WithContext<Article> {
   return {
     "@context": "https://schema.org",
     "@type": "Article",
     headline: input.title ?? `${appName} v${input.version}`,
     datePublished: input.date,
+    author: organization,
     publisher: organization,
     url: absoluteUrl(input.url),
+    image: absoluteUrl(input.image),
+  };
+}
+
+/** The URL a schema names for a page: its canonical edition, absolutized. */
+function canonicalUrl(path: string): string {
+  return absoluteUrl(getPageLocaleState(path, getLocale()).canonicalPath);
+}
+
+/** The git days of a docs page or lesson, each when git knows it. */
+function commitDates({
+  published,
+  modified,
+}: {
+  published?: string;
+  modified?: string;
+}) {
+  return {
+    ...(published !== undefined && { datePublished: published }),
+    ...(modified !== undefined && { dateModified: modified }),
+  };
+}
+
+/**
+ * A docs page as a TechArticle, the Article type schema.org gives technical
+ * documentation and how-to guides.
+ *
+ * @param published first commit day in ISO form, followed through renames.
+ * @param modified last commit day in ISO form, the sitemap's `lastmod`.
+ */
+export function docsArticleSchema(input: {
+  title: string;
+  description?: string;
+  published?: string;
+  modified?: string;
+  url: string;
+  /** Root-relative path of the page's social card. */
+  image: string;
+}): WithContext<TechArticle> {
+  const localeState = getPageLocaleState(input.url, getLocale());
+  const url = absoluteUrl(localeState.canonicalPath);
+  return {
+    "@context": "https://schema.org",
+    "@type": "TechArticle",
+    headline: input.title,
+    ...(input.description !== undefined && {
+      description: input.description,
+    }),
+    ...commitDates(input),
+    inLanguage: localeState.contentLocale,
+    author: organization,
+    publisher: organization,
+    url,
+    mainEntityOfPage: url,
+    image: absoluteUrl(input.image),
+  };
+}
+
+export interface FaqEntry {
+  question: string;
+  /** Plain text, the same words the page shows under the question. */
+  answer: string;
+}
+
+export function faqPageSchema(input: {
+  url: string;
+  entries: FaqEntry[];
+}): WithContext<FAQPage> {
+  return {
+    "@context": "https://schema.org",
+    "@type": "FAQPage",
+    url: canonicalUrl(input.url),
+    mainEntity: input.entries.map((entry) => ({
+      "@type": "Question",
+      name: entry.question,
+      acceptedAnswer: { "@type": "Answer", text: entry.answer },
+    })),
+  };
+}
+
+/**
+ * A `/learn` lesson.
+ * @param published first commit day in ISO form, followed through renames.
+ * @param modified last commit day in ISO form, the sitemap's `lastmod`.
+ */
+export function lessonArticleSchema(input: {
+  title: string;
+  description: string;
+  published?: string;
+  modified?: string;
+  url: string;
+  /** Root-relative path of the lesson's social card. */
+  image: string;
+}): WithContext<Article> {
+  return {
+    "@context": "https://schema.org",
+    "@type": "Article",
+    headline: input.title,
+    description: input.description,
+    ...commitDates(input),
+    author: organization,
+    publisher: organization,
+    url: absoluteUrl(input.url),
+    image: absoluteUrl(input.image),
   };
 }
 

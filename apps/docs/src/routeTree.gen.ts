@@ -11,6 +11,7 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as HomeRouteRouteImport } from './routes/_home/route'
 import { Route as DocsRouteRouteImport } from './routes/docs/route'
+import { Route as LearnRouteRouteImport } from './routes/learn/route'
 import { Route as LlmsFullDottxtRouteImport } from './routes/llms-full[.]txt'
 import { Route as LlmsDottxtRouteImport } from './routes/llms[.]txt'
 import { Route as RobotsDottxtRouteImport } from './routes/robots[.]txt'
@@ -24,6 +25,8 @@ import { Route as ApiSearchRouteImport } from './routes/api/search'
 import { Route as ChangelogRssDotxmlRouteImport } from './routes/changelog/rss[.]xml'
 import { Route as DocsIndexRouteImport } from './routes/docs/index'
 import { Route as DocsSplatRouteImport } from './routes/docs/$'
+import { Route as LearnIndexRouteImport } from './routes/learn/index'
+import { Route as LearnLessonRouteImport } from './routes/learn/$lesson'
 import { Route as LlmsDotmdxSplatRouteImport } from './routes/llms[.]mdx/$'
 import { Route as OgSplatRouteImport } from './routes/og/$'
 import { Route as HomeBlogIndexRouteImport } from './routes/_home/blog/index'
@@ -38,6 +41,11 @@ const HomeRouteRoute = HomeRouteRouteImport.update({
 const DocsRouteRoute = DocsRouteRouteImport.update({
   id: '/docs',
   path: '/docs',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const LearnRouteRoute = LearnRouteRouteImport.update({
+  id: '/learn',
+  path: '/learn',
   getParentRoute: () => rootRouteImport,
 } as any)
 const LlmsFullDottxtRoute = LlmsFullDottxtRouteImport.update({
@@ -105,6 +113,16 @@ const DocsSplatRoute = DocsSplatRouteImport.update({
   path: '/$',
   getParentRoute: () => DocsRouteRoute,
 } as any)
+const LearnIndexRoute = LearnIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => LearnRouteRoute,
+} as any)
+const LearnLessonRoute = LearnLessonRouteImport.update({
+  id: '/$lesson',
+  path: '/$lesson',
+  getParentRoute: () => LearnRouteRoute,
+} as any)
 const LlmsDotmdxSplatRoute = LlmsDotmdxSplatRouteImport.update({
   id: '/llms.mdx/$',
   path: '/llms.mdx/$',
@@ -139,6 +157,7 @@ const HomeChangelogVersionRoute = HomeChangelogVersionRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof HomeIndexRoute
   '/docs': typeof DocsRouteRouteWithChildren
+  '/learn': typeof LearnRouteRouteWithChildren
   '/llms-full.txt': typeof LlmsFullDottxtRoute
   '/llms.txt': typeof LlmsDottxtRoute
   '/robots.txt': typeof RobotsDottxtRoute
@@ -150,9 +169,11 @@ export interface FileRoutesByFullPath {
   '/api/search': typeof ApiSearchRoute
   '/changelog/rss.xml': typeof ChangelogRssDotxmlRoute
   '/docs/$': typeof DocsSplatRoute
+  '/learn/$lesson': typeof LearnLessonRoute
   '/llms.mdx/$': typeof LlmsDotmdxSplatRoute
   '/og/$': typeof OgSplatRoute
   '/docs/': typeof DocsIndexRoute
+  '/learn/': typeof LearnIndexRoute
   '/blog/$slug': typeof HomeBlogSlugRoute
   '/changelog/$version': typeof HomeChangelogVersionRoute
   '/blog/': typeof HomeBlogIndexRoute
@@ -170,10 +191,12 @@ export interface FileRoutesByTo {
   '/api/search': typeof ApiSearchRoute
   '/changelog/rss.xml': typeof ChangelogRssDotxmlRoute
   '/docs/$': typeof DocsSplatRoute
+  '/learn/$lesson': typeof LearnLessonRoute
   '/llms.mdx/$': typeof LlmsDotmdxSplatRoute
   '/og/$': typeof OgSplatRoute
   '/': typeof HomeIndexRoute
   '/docs': typeof DocsIndexRoute
+  '/learn': typeof LearnIndexRoute
   '/blog/$slug': typeof HomeBlogSlugRoute
   '/changelog/$version': typeof HomeChangelogVersionRoute
   '/blog': typeof HomeBlogIndexRoute
@@ -183,6 +206,7 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/_home': typeof HomeRouteRouteWithChildren
   '/docs': typeof DocsRouteRouteWithChildren
+  '/learn': typeof LearnRouteRouteWithChildren
   '/llms-full.txt': typeof LlmsFullDottxtRoute
   '/llms.txt': typeof LlmsDottxtRoute
   '/robots.txt': typeof RobotsDottxtRoute
@@ -194,10 +218,12 @@ export interface FileRoutesById {
   '/api/search': typeof ApiSearchRoute
   '/changelog/rss.xml': typeof ChangelogRssDotxmlRoute
   '/docs/$': typeof DocsSplatRoute
+  '/learn/$lesson': typeof LearnLessonRoute
   '/llms.mdx/$': typeof LlmsDotmdxSplatRoute
   '/og/$': typeof OgSplatRoute
   '/_home/': typeof HomeIndexRoute
   '/docs/': typeof DocsIndexRoute
+  '/learn/': typeof LearnIndexRoute
   '/_home/blog/$slug': typeof HomeBlogSlugRoute
   '/_home/changelog/$version': typeof HomeChangelogVersionRoute
   '/_home/blog/': typeof HomeBlogIndexRoute
@@ -208,6 +234,7 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/docs'
+    | '/learn'
     | '/llms-full.txt'
     | '/llms.txt'
     | '/robots.txt'
@@ -219,9 +246,11 @@ export interface FileRouteTypes {
     | '/api/search'
     | '/changelog/rss.xml'
     | '/docs/$'
+    | '/learn/$lesson'
     | '/llms.mdx/$'
     | '/og/$'
     | '/docs/'
+    | '/learn/'
     | '/blog/$slug'
     | '/changelog/$version'
     | '/blog/'
@@ -239,10 +268,12 @@ export interface FileRouteTypes {
     | '/api/search'
     | '/changelog/rss.xml'
     | '/docs/$'
+    | '/learn/$lesson'
     | '/llms.mdx/$'
     | '/og/$'
     | '/'
     | '/docs'
+    | '/learn'
     | '/blog/$slug'
     | '/changelog/$version'
     | '/blog'
@@ -251,6 +282,7 @@ export interface FileRouteTypes {
     | '__root__'
     | '/_home'
     | '/docs'
+    | '/learn'
     | '/llms-full.txt'
     | '/llms.txt'
     | '/robots.txt'
@@ -262,10 +294,12 @@ export interface FileRouteTypes {
     | '/api/search'
     | '/changelog/rss.xml'
     | '/docs/$'
+    | '/learn/$lesson'
     | '/llms.mdx/$'
     | '/og/$'
     | '/_home/'
     | '/docs/'
+    | '/learn/'
     | '/_home/blog/$slug'
     | '/_home/changelog/$version'
     | '/_home/blog/'
@@ -275,6 +309,7 @@ export interface FileRouteTypes {
 export interface RootRouteChildren {
   HomeRouteRoute: typeof HomeRouteRouteWithChildren
   DocsRouteRoute: typeof DocsRouteRouteWithChildren
+  LearnRouteRoute: typeof LearnRouteRouteWithChildren
   LlmsFullDottxtRoute: typeof LlmsFullDottxtRoute
   LlmsDottxtRoute: typeof LlmsDottxtRoute
   RobotsDottxtRoute: typeof RobotsDottxtRoute
@@ -302,6 +337,13 @@ declare module '@tanstack/react-router' {
       path: '/docs'
       fullPath: '/docs'
       preLoaderRoute: typeof DocsRouteRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/learn': {
+      id: '/learn'
+      path: '/learn'
+      fullPath: '/learn'
+      preLoaderRoute: typeof LearnRouteRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/llms-full.txt': {
@@ -395,6 +437,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof DocsSplatRouteImport
       parentRoute: typeof DocsRouteRoute
     }
+    '/learn/': {
+      id: '/learn/'
+      path: '/'
+      fullPath: '/learn/'
+      preLoaderRoute: typeof LearnIndexRouteImport
+      parentRoute: typeof LearnRouteRoute
+    }
+    '/learn/$lesson': {
+      id: '/learn/$lesson'
+      path: '/$lesson'
+      fullPath: '/learn/$lesson'
+      preLoaderRoute: typeof LearnLessonRouteImport
+      parentRoute: typeof LearnRouteRoute
+    }
     '/llms.mdx/$': {
       id: '/llms.mdx/$'
       path: '/llms.mdx/$'
@@ -476,9 +532,24 @@ const DocsRouteRouteWithChildren = DocsRouteRoute._addFileChildren(
   DocsRouteRouteChildren,
 )
 
+interface LearnRouteRouteChildren {
+  LearnLessonRoute: typeof LearnLessonRoute
+  LearnIndexRoute: typeof LearnIndexRoute
+}
+
+const LearnRouteRouteChildren: LearnRouteRouteChildren = {
+  LearnLessonRoute: LearnLessonRoute,
+  LearnIndexRoute: LearnIndexRoute,
+}
+
+const LearnRouteRouteWithChildren = LearnRouteRoute._addFileChildren(
+  LearnRouteRouteChildren,
+)
+
 const rootRouteChildren: RootRouteChildren = {
   HomeRouteRoute: HomeRouteRouteWithChildren,
   DocsRouteRoute: DocsRouteRouteWithChildren,
+  LearnRouteRoute: LearnRouteRouteWithChildren,
   LlmsFullDottxtRoute: LlmsFullDottxtRoute,
   LlmsDottxtRoute: LlmsDottxtRoute,
   RobotsDottxtRoute: RobotsDottxtRoute,

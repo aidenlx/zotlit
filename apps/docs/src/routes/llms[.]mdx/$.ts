@@ -7,9 +7,9 @@
 
 import { createFileRoute } from "@tanstack/react-router";
 
-import { betaFallbackResponse } from "@/lib/beta-fallback";
+import { missingReleaseResponse } from "@/lib/beta-fallback";
 import { getMarkdownEdition, markdownHeaders } from "@/lib/markdown-editions";
-import { contentRouteUrl, parseContentRoute } from "@/lib/markdown-routes";
+import { parseContentRoute, suffixEditionUrl } from "@/lib/markdown-routes";
 import { getLocale, localizeHref } from "@/paraglide/runtime.js";
 
 export const Route = createFileRoute("/llms.mdx/$")({
@@ -20,13 +20,18 @@ export const Route = createFileRoute("/llms.mdx/$")({
         const page = parseContentRoute(params._splat ?? "");
         const edition = page && (await getMarkdownEdition(page, { locale }));
         if (edition === undefined) {
-          // A changelog version this build never published still has an
-          // edition on Pre-release Docs.
-          return page?.section === "changelog" && page.slugs.length > 0
-            ? betaFallbackResponse(
-                localizeHref(contentRouteUrl(page), { locale }),
-              )
-            : new Response("Not found", { status: 404 });
+          // A changelog version this build never published moves on, to the
+          // `.md` edition a reader can open (robots.txt keeps `/llms.mdx` out).
+          if (page?.section !== "changelog" || page.slugs.length === 0) {
+            return new Response("Not found", { status: 404 });
+          }
+          return missingReleaseResponse(page.slugs.join("/"), {
+            release: localizeHref(suffixEditionUrl(page), { locale }),
+            changelog: localizeHref(
+              suffixEditionUrl({ section: "changelog", slugs: [] }),
+              { locale },
+            ),
+          });
         }
 
         return new Response(edition, { headers: markdownHeaders });

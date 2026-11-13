@@ -1,0 +1,76 @@
+---
+title: "ZotLit vs Zotero Integration vs Citations for Obsidian"
+description: "Compare the three Zotero plugins for Obsidian: what each one does, what each one needs, and which one fits how you read, take notes and cite."
+faq:
+  - question: "Do I need Better BibTeX for ZotLit?"
+    answer: "Not to browse your library, read PDFs or write literature notes. To cite as you write, yes: ZotLit cites a paper by the key in Zotero's own Citation Key field, and Better BibTeX is the Zotero add-on that gives every paper that key."
+  - question: "Can I keep my Zotero Integration notes if I switch?"
+    answer: "Yes. They are ordinary Markdown files and stay in your vault. ZotLit leaves its %% begin notes %% markers in place as inert comments, and a note that carries a zotero-key property is recognised as a ZotLit literature note."
+  - question: "Which plugin works on iPad or Android?"
+    answer: "None of the three. All three plugins are marked desktop only in their own manifest files."
+  - question: "Which plugin should I use if I do not use Zotero?"
+    answer: "Citations. It reads a BibLaTeX or CSL-JSON file, and its README asks users of other reference managers to check whether theirs exports one. ZotLit and Zotero Integration work with Zotero only."
+---
+
+import { LessonLink } from "@/components/lesson-link";
+
+## Which Zotero plugin for Obsidian is best for you? [#which-plugin]
+
+Choose ZotLit to read and annotate PDFs, keep your highlights next to your own notes, cite, and export a Word file, all inside Obsidian. It needs a recent Obsidian (1.15.1 or later) and Zotero 9 or 10. Choose Citations if you want only citations and simple literature notes from an exported bibliography file, including from a reference manager other than Zotero. Choose Zotero Integration if your notes already depend on its templates and it still works with your Zotero and Better BibTeX.
+
+All facts about Zotero Integration and Citations below were checked on 11 November 2026 in their own repositories.
+
+|                                        | ZotLit                                                                                                                                            | Zotero Integration                                                                                                               | Citations                                                                                                                                                     |
+| -------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Needs Better BibTeX                    | To cite as you write, yes: it gives each paper its citation key. Not to read, annotate or take notes.                                             | Yes. Its README says it requires Better BibTeX.                                                                                  | Its README's Zotero steps export the library with Better BibTeX.                                                                                              |
+| Zotero must be running                 | No for browsing the library, searching it and reading PDFs. Yes for editing annotations and for export to Word.                                   | Yes. Without Zotero it shows "Cannot connect to Zotero. Please ensure it is running and the Better BibTeX plugin is installed".  | No. It reads an exported .bib or CSL-JSON file.                                                                                                               |
+| Reference managers                     | Zotero only.                                                                                                                                      | Zotero only, through Better BibTeX.                                                                                              | Any that exports BibLaTeX or CSL-JSON, says its README.                                                                                                       |
+| How highlights and notes arrive        | Highlights and comments go into a marked part of the note (the managed region). An update rewrites only that part; your writing outside it stays. | A template imports annotations into a note. Each import overwrites the note, except the parts the template marks with `persist`. | Not stated in its documentation. Its README lists four features: open a literature note, insert a link to it, insert its content, insert a Markdown citation. |
+| Read and annotate PDFs inside Obsidian | Yes. With Zotero 10, changes save to Zotero.                                                                                                      | Not stated in its documentation.                                                                                                 | Not stated in its documentation.                                                                                                                              |
+| Cite while writing                     | Type `[@` to search the library and insert a citation.                                                                                            | Commands insert a citation through Zotero's own picker, in Pandoc, LaTeX, BibLaTeX or formatted form.                            | A command inserts a Pandoc-style Markdown citation.                                                                                                           |
+| Export to Word                         | Built in: a .docx with formatted citations and a reference list. Needs the Pandoc engine installed and Zotero running.                            | Not stated in its documentation.                                                                                                 | Not stated in its documentation.                                                                                                                              |
+| Template language                      | Liquid by default, or Eta.                                                                                                                        | Nunjucks.                                                                                                                        | Handlebars, with 16 `{{variable}}` fields listed in its README.                                                                                               |
+| Phone or tablet                        | No. Desktop only.                                                                                                                                 | No. Desktop only.                                                                                                                | No. Desktop only.                                                                                                                                             |
+| Oldest Obsidian it accepts             | 1.15.1, with installer 1.13.4 or later.                                                                                                           | 1.1.1.                                                                                                                           | 0.9.20.                                                                                                                                                       |
+| Zotero versions                        | Zotero 9 and 10.                                                                                                                                  | Not stated in its documentation.                                                                                                 | Not stated in its documentation; it reads an export file.                                                                                                     |
+| Latest release                         | 2.2.3, 14 November 2026.                                                                                                                          | 3.2.1, 11 August 2024.                                                                                                           | 0.4.5, 24 September 2022.                                                                                                                                     |
+| Repository activity (11 November 2026) | Last change 9 November 2026 (main branch). 22 open issues.                                                                                        | Last change 6 March 2026. 248 open issues, 15 open pull requests.                                                                | Last change 24 September 2022. 160 open issues, 15 open pull requests.                                                                                        |
+
+## Where Zotero Integration fits
+
+- Your notes are built on its Nunjucks templates; moving to ZotLit means rewriting them in Liquid.
+- Its templates can keep several separate parts of a note on each import (several `persist` blocks) and pick annotations added since the last import (`lastImportDate`). ZotLit has one managed region per note and rewrites it in full on each update.
+- Its repository is held by the Obsidian Community Archive, which calls itself "a landing space for popular community plugins and themes which can no longer be taken care of by their creators".
+
+## Where Citations fits
+
+- You use a reference manager other than Zotero, or prefer a bibliography file to a live connection: Citations reads a BibLaTeX (.bib) or CSL-JSON export and needs nothing running.
+- You want only a literature note per paper and a Markdown citation.
+
+## Where ZotLit is the weaker choice
+
+- It needs Obsidian 1.15.1 or later; Zotero Integration accepts 1.1.1 and Citations 0.9.20.
+- It reads Zotero 9 or 10 only, and Zotero only.
+- Word export needs the Pandoc engine (a one-time install from ZotLit's settings) and Zotero running.
+
+## Questions [#questions]
+
+### Do I need Better BibTeX for ZotLit?
+
+Not to browse your library, read PDFs or write literature notes. To cite as you write, yes: ZotLit cites a paper by the key in Zotero's own Citation Key field, and Better BibTeX is the Zotero add-on that gives every paper that key.
+
+### Can I keep my Zotero Integration notes if I switch?
+
+Yes. They are ordinary Markdown files and stay in your vault. ZotLit leaves its `%% begin notes %%` markers in place as inert comments, and a note that carries a zotero-key property is recognised as a ZotLit literature note.
+
+### Which plugin works on iPad or Android?
+
+None of the three. All three plugins are marked desktop only in their own manifest files.
+
+### Which plugin should I use if I do not use Zotero?
+
+Citations. It reads a BibLaTeX or CSL-JSON file, and its README asks users of other reference managers to check whether theirs exports one. ZotLit and Zotero Integration work with Zotero only.
+
+## Next step [#next-step]
+
+New to ZotLit: start with <LessonLink slug="connect-zotero-to-obsidian" />. Coming from Zotero Integration: read the [migration guide](/docs/how-to/migrate-from-zotero-integration).

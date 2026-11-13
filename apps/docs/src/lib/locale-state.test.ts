@@ -90,15 +90,33 @@ describe("getPageLocaleState", () => {
     },
   );
 
-  it.each(["/", "/community", "/workbench", "/blog", "/changelog"])(
-    "uses the Chinese catalog for %s even when content files are missing",
+  it("uses the Chinese catalog for the Workbench even with no content files", () => {
+    expect(
+      getPageLocaleState("/workbench", "zh-CN", {
+        nativeChinesePages: new Set(),
+      }),
+    ).toMatchObject({
+      contentLocale: "zh-CN",
+      isFallback: false,
+      canonicalPath: "/zh-CN/workbench",
+    });
+  });
+
+  // The landing, community and listing pages carry English catalog copy, so
+  // their Chinese URLs must not compete with the English pages in search.
+  it.each(["/", "/community", "/blog", "/changelog"])(
+    "serves %s in Chinese as an English fallback",
     (path) => {
       expect(
         getPageLocaleState(path, "zh-CN", { nativeChinesePages: new Set() }),
-      ).toMatchObject({
-        contentLocale: "zh-CN",
-        isFallback: false,
-        canonicalPath: `/zh-CN${path === "/" ? "" : path}`,
+      ).toEqual({
+        contentLocale: "en",
+        isFallback: true,
+        canonicalPath: path,
+        alternates: [
+          { locale: "en", path },
+          { locale: "x-default", path },
+        ],
       });
     },
   );

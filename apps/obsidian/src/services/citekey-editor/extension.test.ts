@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import { EditorState } from "@codemirror/state";
-import { EditorView } from "@codemirror/view";
+import { Decoration, EditorView } from "@codemirror/view";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
@@ -787,6 +787,57 @@ describe("citekeyEditorExtension citation widgets", () => {
     view.dispatch({ effects: citekeyDecorationsChanged.of(undefined) });
 
     expect(view.dom.querySelector(".zt-citation")).not.toBe(drawn);
+  });
+
+  it("keeps the citation drawn over a bracket Obsidian hides when a new read redraws it", async () => {
+    // Live Preview reads `[@doe2024] [@roe2025]` as link syntax and hides the
+    // opening bracket with a widget-less replace of its own, listed ahead of
+    // every plugin's decorations. A redraw of the widget alone must still show
+    // the citation, not that empty replace stretched over its whole range.
+    livePreview.mockReturnValue(true);
+    const read = () =>
+      heldRead({
+        formatted: new Map([
+          ["[@doe2024]", occurrences(rendered("Doe (2024)"))],
+        ]),
+        entrySerials: false,
+        summaries: new Map([[DOE_KEY, "Doe (2024)"]]),
+        lookup: lookupForWorks(new Map([["doe2024", DOE_KEY]])),
+        literalWorks: new Map([["doe2024", DOE_KEY]]),
+      });
+    let held = read();
+    using view = await editorView({
+      parent: document.body,
+      state: EditorState.create({
+        doc: "[@doe2024] tail",
+        extensions: [
+          EditorView.decorations.of(
+            Decoration.set(Decoration.replace({}).range(0, 1)),
+          ),
+          editorInfoField,
+          citekeyEditorExtension(
+            lookupHandlers({
+              open: () => undefined,
+              showPopover: () => undefined,
+              hoverPreferences: () => hover(),
+              hoverNotePath: () => NOTE_PATH,
+              workspace: { trigger: () => {} },
+              resolveCitekey: () => unique(DOE_KEY),
+              navigationEnabled: () => false,
+              showFormatted: () => true,
+              citationText: () => held,
+            }),
+          ),
+        ],
+      }),
+    });
+    const line = () => view.contentDOM.querySelector(".cm-line")?.textContent;
+    expect(line()).toBe("Doe (2024) tail");
+
+    held = read();
+    view.dispatch({ effects: citekeyDecorationsChanged.of(undefined) });
+
+    expect(line()).toBe("Doe (2024) tail");
   });
 
   it("shows the drawn citation's popover while Citekey Navigation is off", async () => {

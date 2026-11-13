@@ -16,6 +16,7 @@ import { localizedPath } from "./lib/i18n";
 import type { SiteLocale } from "./lib/i18n";
 import { getPageLocaleState } from "./lib/locale-state";
 import { negotiatedContentRoute } from "./lib/markdown-routes";
+import { markdownEditionHeaders } from "./lib/shared";
 import { buildV1Redirects } from "./lib/v1-redirects";
 import { deLocalizeUrl } from "./paraglide/runtime.js";
 import { paraglideMiddleware } from "./paraglide/server";
@@ -36,6 +37,10 @@ function negotiate(request: Request, locale: SiteLocale): Request {
   else headers.set("accept", "text/html");
 
   return new Request(url, { method: request.method, headers });
+}
+
+function isMarkdown(headers: Headers): boolean {
+  return headers.get("content-type")?.startsWith("text/markdown") ?? false;
 }
 
 /** The asset layer's answer, or undefined when it holds no file for the request. */
@@ -93,6 +98,19 @@ export default createServerEntry({
       const headers = new Headers(response.headers);
       headers.set("content-language", state.contentLocale);
       if (state.isFallback) headers.set("x-robots-tag", "noindex, follow");
+      if (negotiatedContentRoute(unprefixedPath))
+        headers.append("vary", "Accept");
+      // A Markdown answer repeats its HTML page: the page is the one to index.
+      if (response.ok && isMarkdown(headers)) {
+        for (const [name, value] of Object.entries(
+          markdownEditionHeaders(state.canonicalPath),
+        ))
+          headers.set(name, value);
+      }
+      // Pre-release Docs repeats the production pages: the asset layer's
+      // `_headers` keeps its files out of the index, and this keeps out the
+      // pages the Worker answers.
+      if (env.DOCS_LINE === "beta") headers.set("x-robots-tag", "noindex");
       return new Response(response.body, {
         status: response.status,
         statusText: response.statusText,

@@ -1,0 +1,70 @@
+---
+title: "Which Zotero and Obsidian versions ZotLit works with"
+description: "Check whether your computer, Zotero, and Obsidian versions support ZotLit 2.2, annotation editing, and the optional ZotLit Companion add-on."
+faq:
+  - question: "Does ZotLit work with Zotero 8?"
+    answer: "ZotLit is tested with Zotero 9 and 10 only, and the Companion add-on does not install on Zotero 8. ZotLit still tries to read an older database and logs a warning about the unverified schema version, but those results are untested. You should update Zotero to version 9 or 10 before relying on ZotLit."
+  - question: "Does ZotLit work with Zotero closed?"
+    answer: "Yes, you can browse your library, search items, and read PDFs with their annotations while Zotero is completely closed. Zotero must be running only when you want to edit annotations from Obsidian or export your writing to Word."
+  - question: "Why can I not edit highlights on Zotero 9?"
+    answer: 'Saving annotation changes from Obsidian relies on a local connection feature that first appeared in Zotero 10. On Zotero 9, ZotLit shows "Zotero version is not supported" and asks you to update Zotero. You can still view existing annotations on Zotero 9, but updating to Zotero 10 is required to edit them.'
+  - question: "Does ZotLit work on iPad, iPhone or Android?"
+    answer: "No, ZotLit does not work on mobile devices or tablets. It is supported only as a desktop plugin for computers running Windows, macOS, or Linux."
+  - question: "Which Companion version do I need?"
+    answer: "You need the Companion version that matches your installed ZotLit plugin, meaning ZotLit 2.2 requires Companion 2.2. Until you update the Companion, live updates and actions that handle multiple items stop working, and ZotLit asks you to update it."
+---
+
+import { LessonLink } from "@/components/lesson-link";
+
+ZotLit 2.2.3 works with Zotero 9 and Zotero 10, and needs Obsidian 1.15.1 or later on Windows, macOS or Linux. Editing highlights and comments from Obsidian needs Zotero 10; on Zotero 9 you can read PDFs and their annotations but not edit them.
+
+| Part                                                   | Obsidian                                        | Zotero                            | Other needs                                                                                                                                                  |
+| ------------------------------------------------------ | ----------------------------------------------- | --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| ZotLit plugin (reading your library, notes, citations) | 1.15.1 or later, with installer 1.13.4 or later | 9 or 10                           | Windows, macOS or Linux. No phone or tablet.                                                                                                                 |
+| ZotLit Companion (optional Zotero add-on)              | —                                               | 9.0 up to 10.x                    | Its version must match the plugin: ZotLit 2.2 needs Companion 2.2.                                                                                           |
+| Editing annotations from Obsidian                      | 1.15.1 or later                                 | 10 or later, running              | In Zotero, "Allow other applications on this computer to communicate with Zotero" on (Settings → Advanced), and "Always Allow" chosen once when Zotero asks. |
+| Citation formatting and Word export                    | 1.15.1 or later                                 | 9 or 10; running while you export | The Pandoc engine, installed once per computer from ZotLit's Citations settings, with a network connection for the install.                                  |
+
+## With Zotero closed
+
+You can use the Library View, search your collection, and open a PDF in Obsidian with its annotations while Zotero is closed. ZotLit reads Zotero's database file directly from your disk and needs no add-on for this work.
+
+You need Zotero running when you edit annotations from Obsidian or export your draft to Word. With Zotero 10 on Windows, or on Linux with a file system such as ext4, ZotLit may show changes you made in Zotero a little late. Installing the Companion fixes this by having Zotero write recent changes into the main database file shortly after each change, whereas on macOS this is not needed.
+
+## Zotero 8 and older
+
+ZotLit is tested against the database of Zotero 9 and Zotero 10. With an older or newer Zotero, ZotLit still tries to read the database and writes a warning to its log: "Zotero schema version is outside the range ZotLit is verified against". What it reads in that case is not tested.
+
+The Companion does not install on Zotero 8 or earlier, as it accepts Zotero 9.0 up to 10.x only. On Zotero 8 or earlier, update Zotero to 9 or 10 before you rely on ZotLit.
+
+## When Obsidian is too old
+
+On an Obsidian version older than 1.15.1, ZotLit 2.2.3 does not install. On Obsidian 1.14.5 to 1.15.0, an existing install stays at 2.2.2; on an older version, it stays at 2.1.4. Neither updates until you update Obsidian.
+
+Obsidian's in-app update does not replace the installer. Check the installer version in Settings > About; if it is older than 1.13.4, ZotLit does not load. Follow the guide on [updating your Obsidian installer](/docs/how-to/update-obsidian-installer) to fix this.
+
+## Questions [#questions]
+
+### Does ZotLit work with Zotero 8?
+
+ZotLit is tested with Zotero 9 and 10 only, and the Companion add-on does not install on Zotero 8. ZotLit still tries to read an older database and logs a warning about the unverified schema version, but those results are untested. You should update Zotero to version 9 or 10 before relying on ZotLit.
+
+### Does ZotLit work with Zotero closed?
+
+Yes, you can browse your library, search items, and read PDFs with their annotations while Zotero is completely closed. Zotero must be running only when you want to edit annotations from Obsidian or export your writing to Word.
+
+### Why can I not edit highlights on Zotero 9?
+
+Saving annotation changes from Obsidian relies on a local connection feature that first appeared in Zotero 10. On Zotero 9, ZotLit shows "Zotero version is not supported" and asks you to update Zotero. You can still view existing annotations on Zotero 9, but updating to Zotero 10 is required to edit them.
+
+### Does ZotLit work on iPad, iPhone or Android?
+
+No, ZotLit does not work on mobile devices or tablets. It is supported only as a desktop plugin for computers running Windows, macOS, or Linux.
+
+### Which Companion version do I need?
+
+You need the Companion version that matches your installed ZotLit plugin, meaning ZotLit 2.2 requires Companion 2.2. Until you update the Companion, live updates and actions that handle multiple items stop working, and ZotLit asks you to update it.
+
+## Next step [#next-step]
+
+If you are new to ZotLit, begin with <LessonLink slug="connect-zotero-to-obsidian" />, or head to the setup guides to [install ZotLit](/docs/install-zotlit) and [install the Companion](/docs/install-companion).

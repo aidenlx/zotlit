@@ -1,210 +1,94 @@
 ---
 title: "Insert citations"
-description: "Insert Markdown citations while typing or from the command palette, as the main citation or the alternate citation."
+searchTitle: "Insert Zotero citations in Obsidian: every way to do it"
+description: "Insert a Zotero citation such as [@smith2024] in Obsidian as you type, or from the command palette. Citation keys come from Better BibTeX in Zotero."
 ---
 
-import { Steps, Step } from "fumadocs-ui/components/steps";
-import { Card, Cards } from "fumadocs-ui/components/card";
-import { Callout } from "@/components/callout";
+import { Accordion, Accordions } from "fumadocs-ui/components/accordion";
 import { Command } from "@/components/command";
+import { LessonLink } from "@/components/lesson-link";
 import { SettingsPath } from "@/components/settings-path";
 import { UiLabel } from "@/components/ui-label";
 import { m } from "@/paraglide/messages.js";
 
-Use the Citation Suggester or command palette to insert a Markdown citation from your Zotero library.
+If you have never cited a paper in Obsidian, start with <LessonLink slug="cite-in-obsidian-with-zotero" />.
 
-Both entry points search every library in your [library scope](/docs/reference/settings#library-scope) at once, in one relevance order. While more than one library can contribute results, each suggestion names the library its item comes from. With one library in scope, that label is left off.
-
-Before you enter a search, both lists place papers already cited in the current
-note first. Each group is ordered by Last Activity, newest first. This is the same order as
-[<UiLabel name={m.library_view_recent()} /> in the Library View](/docs/how-to/use-library-view#recent).
-
-When you type a search, both lists rank all results by relevance.
-
-A paper the current note already cites shows the <UiLabel name={m.citation_suggester_cited_in_note()} /> label, with or without a search.
-
-Citation insertion works independently of the Document Citation Set and In-text Citation Rendering. You can insert citations with both source settings off and with <UiLabel name={m.settings_citation_show_formatted_name()} /> off.
-
-## Give your items citation keys [#citation-keys]
-
-A citation names a Zotero item by its citation key, such as `smith2024`. ZotLit reads each item's key from Zotero's native citation key field. Better BibTeX writes the keys it generates into that field, so ZotLit sees them as well. In a group library you cannot edit, Better BibTeX keeps its keys to itself, and ZotLit sees only the keys already in the field.
-
-[Better BibTeX](https://retorque.re/zotero-better-bibtex/installation/), a Zotero add-on, is recommended once you start citing. It generates [stable citation keys](https://retorque.re/zotero-better-bibtex/citing/) from a pattern for every item, and it can keep a bibliography file up to date with [automatic exports](https://retorque.re/zotero-better-bibtex/exporting/auto/) for [native Pandoc export](/docs/how-to/export-with-native-pandoc). ZotLit does not require it.
+1. In your note, type `[@`. A list of papers from your Zotero library opens.
+2. Type a few words of the title or author, select the paper, and press `Enter`. ZotLit inserts `[@citationKey]` and a space, so you can keep typing.
+3. For the author-in-text form `@citationKey`, press `Shift+Enter` instead.
 
 ## Insert while typing
 
-The citation suggester opens when you type `[@` (or `【@`) in the editor. A dropdown appears with items from your Zotero library.
+1. Type `[@` in the note (`【@` also works). A list of papers from your Zotero library opens under your cursor. Before you type a search term, the papers this note already cites appear first, each marked <UiLabel name={m.citation_suggester_cited_in_note()} />.
 
-With the opt-in <UiLabel name={m.settings_citation_at_trigger_name()} /> enabled, a bare `@` at a word boundary (start of line, after a space, or after an opening bracket or quote) also opens the suggester.
+   ![A thesis chapter with `[@` typed at the end of a paragraph, and the citation suggester below it listing the two papers the chapter already cites, each marked "Cited in this note"](/img/how-to/citation-suggester-cited-in-note.webp)
 
-![A thesis chapter with "[@" typed at the end of a paragraph, and the citation suggester below it listing the two papers the chapter already cites, each marked "Cited in this note"](/img/how-to/citation-suggester-cited-in-note.webp)
+2. <span id="search-and-select" />
+   Keep typing words from the title or author to narrow the list. The list ranks
+   papers by how well they match, and any paper the note already cites keeps its
+   <UiLabel name={m.citation_suggester_cited_in_note()} /> mark.
+3. Select the paper and press `Enter`. The citation appears in your note (for example, `[@smith2024]`), followed by a space, with your cursor placed after the space.
+4. <span id="insert-the-alternate-citation-optional" />
+   For the author-in-text form, press `Shift+Enter` instead of `Enter`, or end
+   your search with `/` and press `Enter`. The note receives `@smith2024`. The
+   hint row at the bottom of the list confirms `↵`
+   <UiLabel name={m.instruction_insert_citation()} />, and `/ ↵` and `⇧↵`
+   <UiLabel name={m.instruction_insert_alternate_citation()} />.
 
-<Steps>
-  <Step>
-    ### Start a citation
+<Accordions multiple>
+<Accordion title="From the command palette" id="command-palette">
 
-    Type `[@` in the editor. A suggestion list appears.
+Open the command palette (`Ctrl+P` on Windows and Linux, `Cmd+P` on macOS) and run <Command inline name={m.command_insert_citation_name()} />. A picker showing your Zotero library opens. Search for the paper, then press `Enter` to insert the main citation or `Shift+Enter` for the alternate citation. A trailing `/` does not trigger the alternate form here; use `Shift+Enter`.
 
-    With <UiLabel name={m.settings_citation_at_trigger_name()} /> enabled, typing `@` at a word boundary does the same thing. A mid-word `@` (e.g. in an email address) is ignored.
+</Accordion>
+<Accordion title="Give your papers citation keys" id="citation-keys">
 
-  </Step>
-  <Step>
-    ### Search and select
+A citation names a paper by its citation key, such as `smith2024`. ZotLit reads this value from Zotero's own **Citation Key** field.
 
-    Continue typing to filter the list. Select an item and press `Enter` to insert the citation. The citation is inserted with a trailing space so you can keep typing immediately.
+Install [Better BibTeX](https://retorque.re/zotero-better-bibtex/installation/), a Zotero add-on, to cite as you write: it fills that field for every paper with stable keys generated from a pattern. A paper with an empty field cannot be cited. In a group library where you lack edit permissions, Better BibTeX keeps generated keys local; ZotLit can only read keys that already exist in the item's field.
 
-    `Enter` asks for the **main citation**, which the built-in citation text renders as `[@citationKey]`.
+</Accordion>
+<Accordion title="What each form looks like" id="citation-text">
 
-    An `@` query ends at the first space. Type `_` where the search needs a space: `@machine_learning` finds "machine learning". Bracket trigger queries (`[@`) accept real spaces.
+| You press                                   | You get        | With page 62            |
+| ------------------------------------------- | -------------- | ----------------------- |
+| `Enter` (main citation)                     | `[@smith2024]` | `[@smith2024, {p. 62}]` |
+| `Shift+Enter` or a trailing `/` (alternate) | `@smith2024`   | `@smith2024 [{p. 62}]`  |
 
-  </Step>
-  <Step>
-    ### Insert the alternate citation (optional)
+One template, <UiLabel name={m.settings_citation_text_name()} />, formats both outputs. To modify how they appear, run <Command inline name={m.command_customize_citation_text_name()} /> (see [Change the text a citation inserts](/docs/how-to/customize-a-template#citation-text)). The full rendering table is in the [Citation text](/docs/reference/templates/defaults#citation-text) reference.
 
-    To ask for the **alternate citation** instead, which the built-in citation text renders as `@citationKey`, do one of:
+Inserting citations works even if all display toggles are off; it does not require <UiLabel name={m.settings_citation_pandoc_citations_name()} /> or <UiLabel name={m.settings_citation_show_formatted_name()} />. When both are enabled (the default), both forms can render as formatted text in Live Preview and reading view if you have configured the <UiLabel name={m.settings_citation_engine_name()} /> and a style.
 
-    - End your query with `/` before pressing `Enter`.
-    - Press `Shift+Enter` on the selected item.
+</Accordion>
+<Accordion title="Cite with a link to the literature note" id="wikilink-citations">
 
-    The instruction row in the suggester shows these shortcuts as a reminder.
+Use this format when the citation must function as an Obsidian link to the paper's literature note.
 
-  </Step>
-</Steps>
+1. Open <SettingsPath page={m.settings_page_citations()} /> and enable <UiLabel name={m.settings_citation_wikilink_citations_name()} />.
+2. Type `[[` in your text, select the literature note, and keep the link without an alias: `This finding follows the earlier analysis [[Doe 2020]].`
+3. To cite a specific page, add it to the link: `[[Doe 2020#cite:locator=33]]`. Replace `Doe 2020` with the literature note's exact file name.
 
-If the selected item has no citation key, nothing is inserted and a notice appears: "Selected item has no citation key: `{key}`."
+`[[@doe2024]]` is not treated as a citation unless a literature note is named exactly that; write `[@doe2024]` to reference a citation key.
 
-### Suggester settings
+</Accordion>
+</Accordions>
 
-- <UiLabel name={m.settings_citation_suggester_name()} /> (default: on): enables
-  or disables the inline suggester. Find it in
-  <SettingsPath page={m.settings_page_citations()} />.
-- <UiLabel name={m.settings_citation_at_trigger_name()} /> (default: off): also
-  opens the suggester on a bare `@` at a word boundary. Visible only while
-  <UiLabel name={m.settings_citation_suggester_name()} /> is on. Find it in
-  <SettingsPath page={m.settings_page_citations()} />.
-- <UiLabel name={m.settings_citation_show_citekey_name()} /> (default: off):
-  shows each item's citation key beside its title in the suggester list. Find it
-  in <SettingsPath page={m.settings_page_citations()} />.
+## If you see something else
 
-## Insert from the command palette
+- <span id="suggester-settings" />
+  **Nothing happens when I type `@` alone:** A bare `@` opens the suggester only
+  when <UiLabel name={m.settings_citation_at_trigger_name()} /> is turned on in
+  <SettingsPath page={m.settings_page_citations()} /> (off by default). Type
+  `[@` instead, or turn that setting on.
+- **No list opens at all, even for `[@`:** <UiLabel name={m.settings_citation_suggester_name()} /> is turned off. Open <SettingsPath page={m.settings_page_citations()} /> and turn it back on.
+- **My search stops at the first space after `@`:** When using a bare `@`, type `_` instead of a space (for example, `@machine_learning` matches "machine learning"). Normal spaces work as expected after `[@`.
+- **Notice: "Selected item has no citation key: \{key\}."** The paper has an empty Citation Key field in Zotero. Add a citation key to the item in Zotero, then insert it again.
+- **Notice: "Citation key @\{citekey\} matches multiple Zotero items. Change it in Zotero before inserting a citation."** Two items share the same citation key, in one library or in two libraries ZotLit reads. Give one paper a distinct key in Zotero, or narrow your <UiLabel name={m.settings_library_scope_name()} /> to the intended library. For details, see [A key that matches several items](/docs/reference/citation-links#ambiguous-key).
+- **A citation already in my note shows as a problem, and the References sidebar says "@\{citekey\} matches multiple items in your Zotero library."** Two items share the same citation key. Change one key in Zotero or narrow your <UiLabel name={m.settings_library_scope_name()} />; until resolved, ZotLit leaves the raw key in place and omits it from the reference list.
+- **Each paper in the list names a library:** ZotLit is currently searching more than one library. The label indicates which library contains that item; when only one library is active in scope, the label is omitted.
 
-<Steps>
-  <Step>
-    ### Open the citation picker
+## Next
 
-    Open the command palette (`Ctrl+P` on Windows/Linux, `Cmd+P` on macOS) and run:
-
-    <Command name={m.command_insert_citation_name()} />
-
-    A picker appears with your Zotero library.
-
-  </Step>
-  <Step>
-    ### Select an item
-
-    Search for an item and press `Enter` to insert the main citation.
-
-    Press `Shift+Enter` to insert the alternate citation instead. The modal has no trailing-`/` shortcut; `Shift+Enter` is the only way to ask for the alternate citation here.
-
-  </Step>
-</Steps>
-
-## Cite with a Literature Note link
-
-Use this form when the citation must also remain an Obsidian link to its Literature Note.
-
-<Steps>
-  <Step>
-    ### Enable the citation source
-
-    Open <SettingsPath page={m.settings_page_citations()} /> and turn on <UiLabel name={m.settings_citation_wikilink_citations_name()} />.
-
-  </Step>
-  <Step>
-    ### Insert an unaliased Literature Note link
-
-    In the citing note, type `[[` and select the Literature Note for the item. Keep the link unaliased.
-
-    For example:
-
-    ```md
-    This finding follows the earlier analysis [[Doe 2020]].
-    ```
-
-  </Step>
-  <Step>
-    ### Add citation details when needed
-
-    Add a Citation Fragment to the link target. This example adds page locator `33`:
-
-    ```md
-    This finding follows the earlier analysis [[Doe 2020#cite:locator=33]].
-    ```
-
-    Replace `Doe 2020` with the exact target of your Literature Note.
-
-  </Step>
-</Steps>
-
-The link must resolve to a ZotLit Literature Note. Aliases, embeds, heading fragments, block fragments, unresolved targets, and malformed Citation Fragments stay outside the Document Citation Set.
-
-<Callout type="info">
-  A link such as `[[@doe2024]]` does not name a Literature Note unless a note
-  with that exact name is the Literature Note for the item. Use `[@doe2024]` for
-  a literal citation key.
-</Callout>
-
-## When a citation key matches several items [#ambiguous-key]
-
-A citation key can belong to more than one Zotero item, whether the twins sit in one library or in two libraries you have in scope. Inserted text carries the key alone, so it would no longer name the item you picked.
-
-ZotLit therefore refuses the insert, from either entry point, and shows: "Citation key `@{key}` matches multiple Zotero items. Change it in Zotero before inserting a citation." Give one of the items a distinct citation key in Zotero, or narrow your library scope to the library you meant, then insert again.
-
-Keys already written in your notes stay readable. See [How in-text citation rendering and navigation work](/docs/concepts/how-citekey-links-work) for what such a key does in the editor, the citation popover, and the References Sidebar.
-
-## What each gesture inserts [#citation-text]
-
-One template document, the **citation text**, renders every citation you insert. It receives [`zt.variant`](/docs/reference/templates/data#citation-variant), the string `main` or `alt`, and decides what each one renders.
-
-- `main` comes from `Enter` in the suggester or in the command palette picker.
-- `alt` comes from `Shift+Enter` in either, or from a trailing `/` in the suggester query. The trailing `/` wins without `Shift`, and the `/` is stripped from the search.
-
-The built-in citation text renders these:
-
-| What you cite                    | Main                    | Alternate                                    |
-| -------------------------------- | ----------------------- | -------------------------------------------- |
-| One key `smith2024`              | `[@smith2024]`          | `@smith2024`                                 |
-| Two keys                         | `[@a2020; @b2021]`      | The first item in text, the rest in brackets |
-| A locator of `62`                | `[@smith2024, {p. 62}]` | `@smith2024 [{p. 62}]`                       |
-| An item with a suppressed author | `[-@smith2024]`         | `[-@smith2024]`                              |
-| An item with a prefix            | `[see @smith2024]`      | A bracketed cluster, the fallback            |
-
-The alternate branch asks Pandoc to prefer the author in text. Where that is not possible (a prefix, or a suppressed author), Pandoc falls back to a bracketed cluster, so the two variants can render the same text. An item with no citation key is dropped from the output.
-
-The rendered citation is normalized to a single line: leading and trailing whitespace is trimmed, and any whitespace run containing a line break collapses to one space. Each insert ends with a trailing space and places the cursor after it; if a space already follows the insert position, it is reused rather than doubled.
-
-To change any of this, edit the <UiLabel name={m.settings_citation_text_name()} /> document. See [Customize the citation text](/docs/how-to/customize-a-template#citation-text), or run <Command inline name={m.command_customize_citation_text_name()} />. The fields your template can read are in [Citation templates](/docs/reference/templates/data#citation-templates).
-
-With <UiLabel name={m.settings_citation_pandoc_citations_name()} /> and <UiLabel name={m.settings_citation_show_formatted_name()} /> on, both variants can show formatted text in Live Preview and reading view. Formatting requires the Pandoc engine and selected style.
-
-With <UiLabel name={m.settings_citation_pandoc_citations_name()} /> and <UiLabel name={m.settings_citation_open_as_links_name()} /> on, you can open the cited Literature Note. Use a click in Live Preview or Ctrl-click or Cmd-click in Source mode. See [How in-text citation rendering and navigation work](/docs/concepts/how-citekey-links-work).
-
-## See also
-
-<Cards>
-  <Card
-    title="Create and open literature notes"
-    description="Open or create a note from the quick switcher or a citation key."
-    href="/docs/how-to/create-and-open-notes"
-  />
-  <Card
-    title="Keep notes up to date"
-    description="Update literature notes when your Zotero data changes."
-    href="/docs/how-to/keep-notes-updated"
-  />
-  <Card
-    title="Export a note with citations"
-    description="Export inserted citations to a Word document or web page."
-    href="/docs/how-to/export-note-with-citations"
-  />
-</Cards>
+- [How to review, copy, and troubleshoot references](/docs/how-to/review-copy-troubleshoot-references) — Inspect every paper cited in your note and copy the reference list.
+- [Export a note with citations](/docs/how-to/export-note-with-citations) — Convert your note into a Word document with formatted citations.
+- [Create and open literature notes](/docs/how-to/create-and-open-notes) — Jump directly from an inline citation to the paper's literature note.

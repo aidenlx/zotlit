@@ -89,7 +89,7 @@ const TAB_DOCS: Record<
   },
   annotation: {
     label: "workbench_docs_annotation",
-    path: "/docs/tutorial/customize-template",
+    path: "/docs/how-to/customize-template",
   },
   properties: {
     label: "workbench_docs_properties",
@@ -103,7 +103,10 @@ const TAB_DOCS: Record<
     label: "workbench_docs_name",
     path: "/docs/how-to/customize-a-template",
   },
-  profile: { label: "workbench_docs_profile", path: "/docs/concepts/profiles" },
+  profile: {
+    label: "workbench_docs_profile",
+    path: "/docs/reference/templates/how-templates-work#profiles",
+  },
   citation: {
     label: "workbench_docs_citation",
     path: "/docs/how-to/customize-a-template#citation-text",

@@ -49,3 +49,7 @@ Desktop Queue (FIFO, no overtaking)
 - N is a guard on contention (CPU, timeouts). Memory stays the Memory Gate's job.
 - A waiting Exclusive Hold makes later single-slot waiters wait behind it.
 - A test must not use the OS clipboard, and it must not open or remove a vault outside `obsidian-vault`.
+
+## Docs walk update (2026-11-13)
+
+The premise above, that all input is synthetic and vault windows stay behind other apps, holds for the End-to-end Run. A docs walk that records does not keep it: its Zotero and desktop shots bring Zotero to the front, hide Obsidian, and can send real pointer and key input. So a docs-walk run with `DOCS_WALK_CAPTURE=1` or `DOCS_WALK_RECORD=1` takes an Exclusive Hold, like `measure:query`. `DOCS_WALK_NATIVE=1` acts only in a step that records, so `DOCS_WALK_RECORD=1` decides the hold. A run that neither captures nor records takes one slot and leaves the focus where it is. The walk's global setup cannot tell which steps will record, so every recording run takes the hold. A run that captures or records under an outer hold of one slot fails at once and names `pnpm desktop-slot run --exclusive`.

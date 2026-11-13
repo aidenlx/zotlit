@@ -60,7 +60,9 @@ export function ProfileHandoff({
             </Button>
           )}
           <a
-            href={localizeHref("/docs/concepts/javascript-templates")}
+            href={localizeHref(
+              "/docs/reference/templates/how-templates-work#javascript-templates",
+            )}
             className="ms-auto text-fd-primary underline underline-offset-2"
           >
             {m.workbench_unsupported_docs()}

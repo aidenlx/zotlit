@@ -1,19 +1,23 @@
 ---
 title: "Open an item's PDF in Obsidian"
+searchTitle: "Open a Zotero PDF in Obsidian"
 description: "Open a Zotero PDF attachment in Obsidian's own PDF reader, from a literature note, the quick switcher, or Zotero."
 ---
 
 import { Card, Cards } from "fumadocs-ui/components/card";
 import { Command } from "@/components/command";
+import { LessonLink } from "@/components/lesson-link";
 import { SettingsPath } from "@/components/settings-path";
 import { UiLabel } from "@/components/ui-label";
 import { m } from "@/paraglide/messages.js";
+
+If you are opening your first PDF, follow <LessonLink slug="annotate-zotero-pdfs-in-obsidian" />.
 
 Read a Zotero item's PDF in an Obsidian tab instead of switching to Zotero.
 
 ZotLit opens the PDF in Obsidian's own PDF reader, whether the file sits inside your vault or in Zotero's storage folder. Only PDF attachments open this way; EPUBs, web snapshots, and other file types stay in Zotero.
 
-You need Obsidian 1.14.5 or later, which ZotLit 2.2 requires.
+You need Obsidian 1.15.1 or later, which ZotLit 2.2.3 requires.
 
 ## From a literature note
 
@@ -32,7 +36,7 @@ In the [Library View](/docs/how-to/use-library-view), double-click a paper's row
 
 ## From the quick switcher
 
-Run <Command inline name={m.command_open_lit_note_name()} />, search for the item, and press `Shift+Enter` on the result. The PDF opens without the literature note. See [Use the quick switcher](/docs/how-to/create-and-open-notes#quick-switcher) for every chord a result takes.
+Run <Command inline name={m.command_open_lit_note_name()} />, search for the item, and press `Shift+Enter` on the result. The PDF opens without the literature note. See the [Literature note quick switcher](/docs/reference/commands#quick-switcher) reference for every chord a result takes.
 
 ## From Zotero
 
@@ -52,6 +56,8 @@ File links work for any link in your vault that points at a PDF in your Zotero l
 To open one link in your system app anyway, right-click it and choose **Open in default browser**. An annotation link then opens in Zotero. To turn the whole behavior off, clear <UiLabel name={m.settings_reader_open_file_links_name()} /> in **Settings → ZotLit → Reader**.
 
 To send annotation links alone to Zotero, clear <SettingsPath page={m.settings_page_reader()} setting={m.settings_reader_open_annotation_links_name()} />. Hovering an annotation link still shows the annotation.
+
+Both settings also apply to the page link on an annotation card and on a Query View row. While either setting is off, that page link opens the annotation in Zotero.
 
 Hover over an annotation link in Live Preview, Source mode, or Reading view to see a popover preview. It shows the quoted text, your comment, the page number, and the highlight color. For an image or ink annotation, it displays the visual excerpt. Below the annotation, the popover shows the bibliography entry of the annotation's item, with the same actions as a citation popover. An annotation on a standalone PDF has no item, so its popover shows the annotation alone. The preview shows on every hover, whatever the citation hover settings are.
 

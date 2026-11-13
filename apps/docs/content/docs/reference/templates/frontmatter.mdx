@@ -107,7 +107,7 @@ zt.date.year                          -> 2023
 
 ### JavaScript expressions
 
-A `js` member holds a JavaScript expression. It requires the [JavaScript Templates](/docs/concepts/javascript-templates) gate. Any valid JavaScript expression works, with the full note context available as `zt`:
+A `js` member holds a JavaScript expression. It requires the [JavaScript Templates](/docs/reference/templates/how-templates-work#javascript-templates) gate. Any valid JavaScript expression works, with the full note context available as `zt`:
 
 ```
 zt.authors.map(c => c.fullName)   -> ["Jane Smith", "Bob Jones"]
@@ -162,7 +162,7 @@ ZotLit refuses a static key, or a key a spread entry produces, from this set:
 | `zotero-lastmod`  | The source child note's `dateModified`, which batch re-import reads to skip unchanged notes                       |
 | `zotlit-csl`      | The CSL style ID one note's citations and references render with, set from the profile's citation style           |
 
-A profile document that declares a reserved or duplicate static key fails to load, and ZotLit excludes it from the profiles it offers instead of repairing it. See [Profiles](/docs/concepts/profiles).
+A profile document that declares a reserved or duplicate static key fails to load, and ZotLit excludes it from the profiles it offers instead of repairing it. See [Profiles](/docs/reference/templates/how-templates-work#profiles).
 
 ## Validation
 
@@ -194,7 +194,7 @@ Removing `citekey` or another entry from the `frontmatter` list does not delete 
 
 ## JavaScript Templates gate
 
-The [JavaScript Templates](/docs/concepts/javascript-templates) gate controls whether `js` entries run:
+The [JavaScript Templates](/docs/reference/templates/how-templates-work#javascript-templates) gate controls whether `js` entries run:
 
 - **Gate off:** `js` entries are inert. They are not evaluated. Any operation that depends on an inert entry surfaces an error naming those keys. `expr` and `value` entries are unaffected.
 - **Gate on:** `expr`, `value`, and `js` entries evaluate normally.
@@ -226,7 +226,7 @@ A spread entry that uses `js` is refused by its entry position while the gate is
   <Card
     title="Profiles"
     description="How a profile selects a note's template, folder, and citation style."
-    href="/docs/concepts/profiles"
+    href="/docs/reference/templates/how-templates-work#profiles"
   />
   <Card
     title="Data reference"
@@ -236,6 +236,6 @@ A spread entry that uses `js` is refused by its entry position while the gate is
   <Card
     title="JavaScript templates"
     description="What the gate enables, risks, and disabled behavior."
-    href="/docs/concepts/javascript-templates"
+    href="/docs/reference/templates/how-templates-work#javascript-templates"
   />
 </Cards>

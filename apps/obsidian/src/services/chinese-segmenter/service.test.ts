@@ -58,7 +58,7 @@ describe("Chinese Segmenter", () => {
       await segmenter.handle.runPromise(segmenter.service.install);
 
       const { module } = (await segmenter.handle.runPromise(
-        segmenter.service.getEngine,
+        Effect.scoped(segmenter.service.getEngine),
       ))!;
       initSync({ module });
 

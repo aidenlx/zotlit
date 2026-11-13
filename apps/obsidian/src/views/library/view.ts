@@ -183,6 +183,7 @@ export class LibraryView extends ItemView {
   }
   /** The Reading Card's pane, once the tab has opened. */
   #cardEl: HTMLElement | null = null;
+  #columnEl: HTMLElement | null = null;
   /** The Reading Card's resizable inner edge, once the tab has opened. */
   #cardWidth: PaneWidth | null = null;
   /** The Reading Card's top edge under a narrow list, once the tab has opened. */
@@ -456,20 +457,22 @@ export class LibraryView extends ItemView {
     // An Item dragged from a row lands in a note, never back in the view.
     this.registerDomEvent(this.contentEl, "dragover", refuseItemDrop);
     // The Welcome View banner sits above the tree and the list at its full
-    // height. Where the tab is too short for both, the list keeps 20rem and
-    // the tab scrolls as a whole, with its scrollbar, so no part of the
-    // banner is cut off.
+    // height. Where the tab is too short for both, the list keeps 20rem, and
+    // the item details under a narrow list their own 16rem, and the tab
+    // scrolls as a whole, with its scrollbar, so no part of the banner or of
+    // the details is cut off.
     const column = this.contentEl.createDiv({
-      cls: "zt:flex zt:h-full zt:flex-col zt:overflow-y-auto",
+      cls: "zt:@container/column zt:flex zt:h-full zt:flex-col zt:overflow-y-auto",
       attr: { "data-library-column": "" },
     });
+    this.#columnEl = column;
     column.append(this.welcome.el);
     // The tree and the list share the top of the shell, and the item
     // details sit beside them on a wide pane, or under both, across the
     // whole pane, on a narrow one. The card is a container of its own, so
     // what sits in it and asks the pane's width names the shell's.
     const shell = column.createDiv({
-      cls: "zt:group zt:@container/library zt:relative zt:flex zt:min-h-[min(20rem,100%)] zt:flex-1 zt:overflow-hidden",
+      cls: "zt:group zt:@container/library zt:relative zt:flex zt:min-h-[min(20rem,100%)] zt:flex-1 zt:overflow-hidden zt:@max-4xl/column:not-data-zotero-missing:has-[[data-library-card]:not([hidden])]:min-h-[min(36rem,100%)]",
       attr: { "data-library-shell": "" },
     });
     // The shell's own width query reaches only what it holds, so a frame
@@ -699,7 +702,10 @@ export class LibraryView extends ItemView {
     this.card.load();
     this.card.render(cardBody);
     this.card.register(
-      this.#subscribeSelection(({ key }) => this.card.show(key)),
+      this.#subscribeSelection(({ key }) => {
+        this.card.show(key);
+        if (key !== null) this.#revealCard();
+      }),
     );
     // A selected row that leaves the list takes its selection with it, so
     // the Reading Card never shows an Item the list does not hold.
@@ -775,6 +781,21 @@ export class LibraryView extends ItemView {
     this.#cardWidth?.apply();
     this.#cardHeight?.apply();
     this.#treeWidth?.apply();
+  }
+
+  /**
+   * Scroll the tab so the item details of a selected paper show whole,
+   * with their Open PDF and Write literature note buttons: under a narrow
+   * list, the Welcome View banner above can push them below the tab's end.
+   */
+  #revealCard(): void {
+    const card = this.#cardEl;
+    const column = this.#columnEl;
+    if (!card || !column || card.hidden) return;
+    const below =
+      card.getBoundingClientRect().bottom -
+      column.getBoundingClientRect().bottom;
+    if (below > 0) column.scrollTop += below;
   }
 
   /**

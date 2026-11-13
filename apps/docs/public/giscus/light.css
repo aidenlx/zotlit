@@ -1,4 +1,4 @@
-/* "Manuscript & Machine" giscus theme — light. Inherits giscus' Primer base
+/* "Journal" giscus theme — light. Inherits giscus' Primer base
    (syntax highlighting, loader images) then overrides the surface variables
    with the site palette from src/styles.css :root. Served with CORS from
    /giscus/ (the header comes from renderHeadersFile in src/lib/v1-redirects.ts)
@@ -6,52 +6,52 @@
 @import url("https://giscus.app/themes/light.css");
 
 main {
-  /* Grounds — cream canvas, paper overlay, muted inset */
-  --color-canvas-default: oklch(97.33% 0.0111 89.72);
-  --color-canvas-overlay: oklch(99.39% 0.0082 91.48);
-  --color-canvas-inset: oklch(94.87% 0.0137 92.98);
-  --color-canvas-subtle: oklch(94.87% 0.0137 92.98);
+  /* Grounds — paper canvas, white overlay, quiet-fill inset */
+  --color-canvas-default: #f7f5f0;
+  --color-canvas-overlay: #ffffff;
+  --color-canvas-inset: #f0ede6;
+  --color-canvas-subtle: #f0ede6;
 
   /* Ink */
-  --color-fg-default: oklch(32.45% 0.0496 254.76);
-  --color-fg-muted: oklch(52.94% 0.0384 255.32);
-  --color-fg-subtle: oklch(52.94% 0.0384 255.32);
+  --color-fg-default: #1b2029;
+  --color-fg-muted: #5f6672;
+  --color-fg-subtle: #5f6672;
 
   /* Rules */
-  --color-border-default: oklch(86.42% 0.0226 89.81);
-  --color-border-muted: oklch(90.5% 0.0182 90);
-  --color-neutral-muted: oklch(86.42% 0.0226 89.81 / 0.4);
+  --color-border-default: #e3dfd6;
+  --color-border-muted: #ebe8e1;
+  --color-neutral-muted: rgb(227 223 214 / 0.4);
 
-  /* Accent — deep orange links/focus */
-  --color-accent-fg: oklch(0.58 0.17 40.45);
-  --color-accent-emphasis: oklch(0.58 0.17 40.45);
-  --color-accent-muted: oklch(65.74% 0.1789 40.45 / 0.4);
-  --color-accent-subtle: oklch(95.04% 0.0204 62.86);
+  /* Accent — the accent text tone for links, the accent for marks */
+  --color-accent-fg: #b9461a;
+  --color-accent-emphasis: #b9461a;
+  --color-accent-muted: rgb(232 98 44 / 0.4);
+  --color-accent-subtle: #fbf1e6;
 
-  /* Default (paper) buttons */
-  --color-btn-text: oklch(32.45% 0.0496 254.76);
-  --color-btn-bg: oklch(99.39% 0.0082 91.48);
-  --color-btn-border: oklch(86.42% 0.0226 89.81);
-  --color-btn-hover-bg: oklch(94.87% 0.0137 92.98);
-  --color-btn-hover-border: oklch(86.42% 0.0226 89.81);
-  --color-btn-active-bg: oklch(92% 0.015 92);
-  --color-btn-selected-bg: oklch(94.87% 0.0137 92.98);
+  /* Default (surface) buttons */
+  --color-btn-text: #1b2029;
+  --color-btn-bg: #ffffff;
+  --color-btn-border: #e3dfd6;
+  --color-btn-hover-bg: #f0ede6;
+  --color-btn-hover-border: #e3dfd6;
+  --color-btn-active-bg: #e9e6de;
+  --color-btn-selected-bg: #f0ede6;
 
-  /* Primary (submit) button — orange fill, the site's single interactive accent */
-  --color-btn-primary-text: oklch(96.13% 0.0111 89.72);
-  --color-btn-primary-bg: oklch(0.58 0.17 40.45);
-  --color-btn-primary-border: oklch(0.5 0.17 40.45 / 0.5);
-  --color-btn-primary-hover-bg: oklch(0.53 0.17 40.45);
-  --color-btn-primary-hover-border: oklch(0.5 0.17 40.45 / 0.5);
-  --color-btn-primary-selected-bg: oklch(0.5 0.17 40.45);
-  --color-btn-primary-disabled-text: oklch(96.13% 0.0111 89.72 / 0.8);
-  --color-btn-primary-disabled-bg: oklch(0.58 0.1 40.45 / 0.5);
+  /* Primary (submit) button — the accent text tone as a fill, white text */
+  --color-btn-primary-text: #ffffff;
+  --color-btn-primary-bg: #b9461a;
+  --color-btn-primary-border: rgb(143 54 19 / 0.5);
+  --color-btn-primary-hover-bg: #a33d16;
+  --color-btn-primary-hover-border: rgb(143 54 19 / 0.5);
+  --color-btn-primary-selected-bg: #8f3613;
+  --color-btn-primary-disabled-text: rgb(255 255 255 / 0.8);
+  --color-btn-primary-disabled-bg: rgb(185 70 26 / 0.5);
 
   /* Sort tabs, reactions, list hovers */
-  --color-segmented-control-bg: oklch(94.87% 0.0137 92.98);
-  --color-segmented-control-button-bg: oklch(99.39% 0.0082 91.48);
-  --color-segmented-control-button-selected-border: oklch(0.58 0.17 40.45);
-  --color-social-reaction-bg-hover: oklch(95.04% 0.0204 62.86);
-  --color-social-reaction-bg-reacted-hover: oklch(65.74% 0.1789 40.45 / 0.3);
-  --color-action-list-item-default-hover-bg: oklch(86.42% 0.0226 89.81 / 0.3);
+  --color-segmented-control-bg: #f0ede6;
+  --color-segmented-control-button-bg: #ffffff;
+  --color-segmented-control-button-selected-border: #e8622c;
+  --color-social-reaction-bg-hover: #fbf1e6;
+  --color-social-reaction-bg-reacted-hover: rgb(232 98 44 / 0.3);
+  --color-action-list-item-default-hover-bg: rgb(227 223 214 / 0.3);
 }

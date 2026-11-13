@@ -106,7 +106,9 @@ export class TargetOpener extends Context.Service<
      * other one opens in Zotero, which finds any Attachment by its key. Waits
      * a bounded time for the Attachment index while it is still being built,
      * and opens in Zotero once that wait ends. A failed build is retried, so
-     * the index never fails outright; it is only late.
+     * the index never fails outright; it is only late. An Annotation opens in
+     * Zotero at once while the Reader settings leave annotation links to
+     * Zotero.
      *
      * An interrupt opens nothing and shows nothing. A reader or system
      * handler that fails shows a notice and ends `failed`; so does a defect.
@@ -191,6 +193,19 @@ export function layerTargetOpener<R>({
         absolutePath: file.absolutePath,
         ...(subpath ? { subpath } : {}),
       });
+
+      /**
+       * Whether ZotLit, not Zotero, opens an Annotation: the Reader settings
+       * keep both PDF file links and annotation links in Obsidian. A followed
+       * Durable Annotation Link and a ZotLit gesture on an Annotation, such as
+       * the page chip, decide by this one rule.
+       */
+      const opensAnnotations = Effect.map(
+        settings.current,
+        (current) =>
+          current["reader.open-file-links"] &&
+          current["reader.open-annotation-links"],
+      );
 
       const toZotero = (url: string) =>
         Effect.try({
@@ -289,17 +304,16 @@ export function layerTargetOpener<R>({
        * Annotation's own page wins over it whenever the reader can place the
        * Annotation.
        *
-       * The link is ZotLit's to follow only while
-       * `reader.open-annotation-links` is on; otherwise the click is Zotero's
-       * and the link reaches Zotero as written.
+       * The link is ZotLit's to follow only while the Reader settings keep
+       * annotation links in Obsidian; otherwise the click is Zotero's and the
+       * link reaches Zotero as written.
        */
       const followDurable = Effect.fnUntraced(function* (
         url: string,
       ): Effect.fn.Return<Claim | null> {
         const link = parseAnnotationOpenUri(url);
         if (link === null) return null;
-        const current = yield* settings.current;
-        if (!current["reader.open-annotation-links"]) {
+        if (!(yield* opensAnnotations)) {
           yield* Effect.logDebug("Durable Annotation Link left to Zotero").pipe(
             Effect.annotateLogs({
               attachmentKey: link.attachmentKey,
@@ -352,6 +366,15 @@ export function layerTargetOpener<R>({
               Effect.annotateLogs({ attachmentKey: target.attachmentKey }),
             );
             return { kind: "unknown" } satisfies OpenOutcome;
+          }
+          if (target.kind === "annotation" && !(yield* opensAnnotations)) {
+            yield* Effect.logDebug("Target handed to Zotero").pipe(
+              Effect.annotateLogs({
+                attachmentKey: target.attachmentKey,
+                reason: "settings",
+              }),
+            );
+            return yield* toZotero(uri);
           }
           const attachment = yield* lookup(target.attachmentKey);
           if (attachment.kind !== "resolved" || !attachment.openable) {

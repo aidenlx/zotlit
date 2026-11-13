@@ -1,0 +1,111 @@
+---
+title: Annotate Zotero PDFs in Obsidian
+description: "Open a Zotero PDF in Obsidian, highlight and comment as you read, and see each highlight in Zotero and in your literature note."
+lesson: 2
+minutes: 10
+media: annotate-pdfs-in-obsidian
+lede: Highlight a PDF in Obsidian and see the annotation in Zotero and your literature note.
+chore: I copy highlights into my notes by hand
+instead: Highlight the PDF in Obsidian to add a card to your literature note.
+needs:
+  - item: Lesson 1
+    detail: Completed literature note
+  - item: Zotero 10
+    detail: Open on this computer
+steps:
+  - title: Open the paper's PDF
+    alt: The PDF opens in Obsidian with dimmed annotation tools and the sidebar heading Following the active tab · Reading only.
+  - title: Allow editing in Zotero
+    alt: Obsidian displays Zotero editing is enabled. and the annotation tools at the top right appear in colour.
+  - title: Select a passage
+    alt: A floating toolbar beneath the selected sentence shows Highlight, Underline, four colours, and Add comment.
+  - title: Add a comment and highlight
+    alt: The highlighted text turns yellow, and a card showing the page number, excerpt, and comment appears in the sidebar.
+  - title: See it in Zotero
+    alt: The PDF opened in Zotero shows the same yellow highlight and comment.
+  - title: See it in your note
+    alt: The literature note shows the new highlight card automatically added under the Annotations section.
+end:
+  title: A new highlight and comment in your note
+  caption: You can now highlight PDFs in Obsidian and see annotations in your literature note.
+  next: Cite papers and insert page numbers in Obsidian.
+further:
+  - slug: how-to/open-pdf-in-obsidian
+    when: "for opening PDFs from literature notes, the quick switcher, or Zotero."
+  - slug: how-to/edit-pdf-annotations
+    when: "if you need to change colors, edit comments, or delete highlights."
+  - slug: how-to/use-annotation-view
+    when: "to drag highlights into drafts and filter by tag or color."
+---
+
+import { Check, Fix, Step } from "@/components/learn/lesson-mdx";
+import { UiLabel } from "@/components/ui-label";
+import { m } from "@/paraglide/messages.js";
+
+<Step n={1}>
+
+In <UiLabel name={m.library_view_name()} />, select your paper from Lesson 1 (here Sandve et al. 2013), then <UiLabel name={m.library_view_menu_open_pdf()} /> on its card.
+
+<Check>
+  The PDF opens with dimmed annotation tools, and the sidebar reads{" "}
+  <UiLabel name={m.annot_view_header_following_active_tab()} /> ·{" "}
+  <UiLabel name={m.annot_view_header_reading_only()} />.
+</Check>
+
+</Step>
+
+<Step n={2}>
+
+Select the sidebar heading, then <UiLabel name={m.capability_enable_editing()} />. Switch to Zotero. In the dialog, select **Always Allow**.
+
+<Check>
+  Back in Obsidian, the notice appears:{" "}
+  <UiLabel name={m.notice_zotero_editing_enabled()} /> The tools appear in
+  colour.
+</Check>
+
+<Fix title="The tools stay dimmed">
+  Do this step again and select **Always Allow**.
+</Fix>
+
+</Step>
+
+<Step n={3}>
+
+Drag across a sentence in the PDF.
+
+<Check>
+  A toolbar appears under the selection with{" "}
+  <UiLabel name={m.pdf_toolbar_highlight()} />,{" "}
+  <UiLabel name={m.pdf_toolbar_underline()} />, four colours, and{" "}
+  <UiLabel name={m.annot_view_card_add_comment()} />.
+</Check>
+
+</Step>
+
+<Step n={4}>
+
+Select <UiLabel name={m.annot_view_card_add_comment()} />, type a comment of your own, and select <UiLabel name={m.pdf_toolbar_highlight()} />.
+
+<Check>
+  The passage turns yellow, and a card showing the page, excerpt, and comment
+  appears in the sidebar.
+</Check>
+
+</Step>
+
+<Step n={5}>
+
+Switch to Zotero and open the same PDF.
+
+<Check>The PDF in Zotero shows the same yellow highlight and comment.</Check>
+
+</Step>
+
+<Step n={6}>
+
+In Obsidian, open the note for your paper.
+
+<Check>The **Annotations** section shows a new card for the highlight.</Check>
+
+</Step>

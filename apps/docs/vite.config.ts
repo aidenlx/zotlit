@@ -14,7 +14,11 @@ import { paraglideVitePlugin } from "@zotlit/paraglide-vite";
 import { paraglideOptions } from "./paraglide.config.js";
 import { agentSkillAssets } from "./src/lib/agent-skills.js";
 import { chinesePagesPlugin } from "./src/lib/chinese-pages-plugin.js";
-import { renderHeadersFile } from "./src/lib/headers.js";
+import { firstCommitsPlugin } from "./src/lib/first-commits.js";
+import { buildHeaderRules, renderHeadersFile } from "./src/lib/headers.js";
+import { learnMediaPlugin } from "./src/lib/learn-media.js";
+import { mediaStorePlugin, scanVideos } from "./src/lib/media-store.js";
+import type { StoredVideo } from "./src/lib/media-store.js";
 import { createOgCardRenderer } from "./src/lib/og-card.js";
 import { ogCards } from "./src/lib/og-cards.js";
 import { prerenderPages } from "./src/lib/prerender-pages.js";
@@ -22,6 +26,9 @@ import { renderSiteRedirectsFile } from "./src/lib/redirects.js";
 import type { DocsLine } from "./src/lib/shared.js";
 
 const packageRoot = import.meta.dirname;
+/** One read of the recordings per config load, for the lesson media and the media-store URLs. */
+let recordings: StoredVideo[] | undefined;
+const videos = () => (recordings ??= scanVideos(packageRoot));
 // Keep Miniflare's local Worker registry with the package's other ignored
 // runtime state, so a build needs no access to the user's global config path.
 process.env.MINIFLARE_REGISTRY_PATH ??= resolve(
@@ -89,7 +96,12 @@ function cloudflareAssetRules(): Plugin {
       this.emitFile({
         type: "asset",
         fileName: "_headers",
-        source: renderHeadersFile(),
+        source: renderHeadersFile(
+          buildHeaderRules(
+            prerenderPages(packageRoot).map(({ path }) => path),
+            { docsLine: resolvedDocsLine() },
+          ),
+        ),
       });
     },
   };
@@ -201,6 +213,9 @@ export default defineConfig(({ command }) => ({
   },
   plugins: [
     chinesePagesPlugin(packageRoot),
+    firstCommitsPlugin(packageRoot),
+    learnMediaPlugin(packageRoot, videos),
+    mediaStorePlugin(packageRoot, videos),
     fumadocsServerOnWorker(),
     paraglideVitePlugin({
       ...paraglideOptions,

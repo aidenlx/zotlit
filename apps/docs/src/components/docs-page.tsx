@@ -33,10 +33,21 @@ import { ztProse } from "@/lib/prose";
 import { getReleaseSnapshot } from "@/lib/release-data";
 import type { ReleaseSnapshot } from "@/lib/release-data";
 import { pageHead } from "@/lib/seo";
-import { appName, docsRoute, docsSourceBranch, gitConfig } from "@/lib/shared";
+import {
+  appName,
+  docsPageTitle,
+  docsRoute,
+  docsSourceBranch,
+  gitConfig,
+  ogImageUrl,
+} from "@/lib/shared";
 import { source } from "@/lib/source";
 import type { Crumb } from "@/lib/structured-data";
-import { breadcrumbListSchema } from "@/lib/structured-data";
+import {
+  breadcrumbListSchema,
+  docsArticleSchema,
+  faqPageSchema,
+} from "@/lib/structured-data";
 import * as m from "@/paraglide/messages.js";
 import { getLocale, localizeHref } from "@/paraglide/runtime.js";
 
@@ -54,12 +65,18 @@ export const resolveDocsPage = createServerFn({ method: "GET" })
         typeof crumb.name === "string" && typeof crumb.url === "string",
     );
 
+    // The git date rides with the compiled body, as the sitemap reads it.
+    const { lastModified } = await page.data.load();
+
     return {
       path: page.path,
       url: page.url,
       slugs: page.slugs,
-      title: page.data.title,
+      title: docsPageTitle(page.data),
       description: page.data.description,
+      published: __FIRST_COMMIT_DAYS__[`docs/${page.path}`],
+      modified: lastModified?.toISOString().slice(0, 10),
+      faq: page.data.faq ?? [],
       trail,
       markdownUrl: localizeHref(
         contentRouteUrl({ section: "docs", slugs: page.slugs }),
@@ -93,7 +110,7 @@ function DocsPageContent({
   return (
     <DocsPage toc={toc} full={page.full} slots={{ footer: DocsPageFooter }}>
       <DocsTitle className="font-serif text-4xl leading-[1.16] font-medium text-balance">
-        {page.title}
+        {docsPageTitle(page)}
       </DocsTitle>
       <DocsDescription className="mb-0 font-serif text-lg italic">
         {page.description}
@@ -120,7 +137,12 @@ export async function loadDocsPage(splat: string) {
 
 type DocsPageData = Awaited<ReturnType<typeof loadDocsPage>>;
 
-/** Head shared by both docs routes. The docs index carries no trail of its own, so it publishes no breadcrumb. */
+/**
+ * Head shared by both docs routes. Every page publishes a TechArticle, and a
+ * page with a `faq` list publishes a FAQPage. The docs index carries no trail
+ * of its own, and neither does a folder outside the sidebar, so those publish
+ * no breadcrumb.
+ */
 export function docsPageHead(page: DocsPageData | undefined) {
   if (page === undefined) return {};
 
@@ -139,7 +161,20 @@ export function docsPageHead(page: DocsPageData | undefined) {
       slugs: page.slugs,
       alt: m.docs_documentation_card_alt({ title: page.title }),
     },
-    schemas: page.trail.length > 0 ? [breadcrumbListSchema(crumbs)] : [],
+    schemas: [
+      docsArticleSchema({
+        title: page.title,
+        description: page.description,
+        published: page.published,
+        modified: page.modified,
+        url: page.url,
+        image: ogImageUrl("docs", page.slugs),
+      }),
+      ...(page.faq.length > 0
+        ? [faqPageSchema({ url: page.url, entries: page.faq })]
+        : []),
+      ...(page.trail.length > 0 ? [breadcrumbListSchema(crumbs)] : []),
+    ],
   });
 }
 

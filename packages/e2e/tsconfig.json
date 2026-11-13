@@ -16,6 +16,7 @@
         "../../apps/obsidian/src/lib/i18n/generated/messages.ts"
       ],
       "@/*": ["../../apps/obsidian/src/*"],
+      "@e2e/*": ["./src/*"],
       "@brand/*": ["../../assets/logo/*"]
     },
     "jsx": "react-jsx"

@@ -304,6 +304,7 @@ const prepareExport = Effect.fn("PandocExport.prepareExport")(function* (
           }),
         ).pipe(Effect.provideService(CitationParse, citationParse));
       }).pipe(
+        Effect.scoped,
         // This outcome keeps the engine's actual detail; its fallback depends
         // on the cause rather than the fixed fallback that recover accepts.
         Effect.catchCause((cause) => {

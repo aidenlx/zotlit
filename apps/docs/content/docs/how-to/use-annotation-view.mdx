@@ -1,180 +1,103 @@
 ---
 title: "Use the annotation view"
-description: "Open the annotation sidebar, choose what it follows, and pull highlights into your notes."
+searchTitle: "Import Zotero annotations into Obsidian notes"
+description: "Bring a Zotero paper's highlights and annotations into your Obsidian notes: drag them from the annotation sidebar, filter by tag or color, and sort them."
 ---
 
-import { Steps, Step } from "fumadocs-ui/components/steps";
-import { Card, Cards } from "fumadocs-ui/components/card";
-import { Callout } from "@/components/callout";
+import { Accordion, Accordions } from "fumadocs-ui/components/accordion";
 import { Command } from "@/components/command";
+import { LessonLink } from "@/components/lesson-link";
+import { SettingsPath } from "@/components/settings-path";
 import { UiLabel } from "@/components/ui-label";
 import { m } from "@/paraglide/messages.js";
 
-The annotation view is a sidebar panel that lists a Zotero item's annotations. You can browse highlights, drag them into your notes, and choose whether the view follows your active tab, the Zotero reader, or one item you pin.
+Before you pull highlights into your notes, try the guided lesson <LessonLink slug="annotate-zotero-pdfs-in-obsidian" />.
 
-## Open the annotation view
+1. Run <Command inline name={m.command_open_annot_view_name()} /> from the command palette, or select the highlighter icon in the ribbon. The <UiLabel name={m.annot_view_name()} /> panel opens in the right sidebar.
+2. Open the paper's literature note or its PDF. The panel lists that paper's highlights.
+3. To write in another note, such as a chapter draft, first pin the paper: open the menu at the top of the panel and select <UiLabel name={m.annot_view_mode_pin_current_item()} />.
+4. Drag a highlight from the panel into your note.
 
-Open the command palette and run:
+## Pull highlights into a note [#pull-into-note]
 
-<Command name={m.command_open_annot_view_name()} />
+1. <span id="open-the-annotation-view" />
+   Open the command palette and run
+   <Command inline name={m.command_open_annot_view_name()} />, or select the
+   highlighter icon in the ribbon. The <UiLabel name={m.annot_view_name()} />
+   panel opens in the right sidebar.
+2. Open the paper's literature note, or open its PDF in an Obsidian tab. The panel shows a card for each of the paper's annotations. The panel follows the tab you are in (<UiLabel name={m.annot_view_mode_active_tab()} /> mode).
+3. If the note you write in is not that paper's literature note, open the menu at the top of the panel and select <UiLabel name={m.annot_view_mode_pin_current_item()} />. The panel stays on this paper when you switch to your draft.
+4. Open the note, then drag a card from the panel to the place in the note where the highlight should go. The highlight appears at that place. An image or ink annotation takes a moment while ZotLit prepares its image, then inserts the link. One Undo removes the whole insert.
 
-The <UiLabel name={m.annot_view_name()} /> panel opens in the right sidebar. A ribbon icon (highlighter) also opens the view.
+To insert without dragging: put the cursor in the note, right-click the card (or open its <UiLabel name={m.annot_view_more_tooltip()} /> menu) and select <UiLabel name={m.annot_view_menu_insert()} />.
 
-By default, the view follows your active tab. When that tab is neither a literature note nor a Zotero PDF, it shows <UiLabel name={m.annot_view_empty_active_tab()} />
+<Accordions multiple>
+<span id="choose-what-the-view-follows" data-accordion-value="Choose what the panel follows" />
+<Accordion title="Choose what the panel follows" id="follow">
 
-To open a Zotero PDF in an Obsidian tab, see [Open an item's PDF in Obsidian](/docs/how-to/open-pdf-in-obsidian).
+Open the menu at the top of the panel (the paper's title with a down arrow). Its first group is headed <UiLabel name={m.annot_view_header_menu_label()} />.
 
-## Choose what the view follows
+| Mode                                                        | The panel shows                                                                                                   |
+| ----------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| <UiLabel name={m.annot_view_mode_active_tab()} /> (default) | The paper of the literature note or PDF tab you are in.                                                           |
+| <UiLabel name={m.annot_view_mode_zotero_reader()} />        | The PDF open in Zotero's own reader. Needs live updates: [Set up live updates](/docs/how-to/set-up-live-updates). |
+| <UiLabel name={m.annot_view_mode_pinned()} />               | One paper you chose, until you unpin it.                                                                          |
 
-The annotation view has three follow modes:
+- <UiLabel name={m.annot_view_mode_pin_current_item()} /> pins the paper on
+  screen; <UiLabel name={m.annot_view_pin_choose_item()} /> searches Zotero for
+  another one; <UiLabel name={m.annot_view_mode_unpin()} /> returns to the mode
+  you had before.
+- The panel keeps the mode you chose. When that source has nothing to show, the panel says so in place; it does not switch mode for you.
 
-| Mode                                                        | Behavior                                                                                   |
-| ----------------------------------------------------------- | ------------------------------------------------------------------------------------------ |
-| <UiLabel name={m.annot_view_mode_active_tab()} /> (default) | Follows your active tab: the item of a literature note, or the attachment of a Zotero PDF. |
-| <UiLabel name={m.annot_view_mode_zotero_reader()} />        | Follows the attachment open in Zotero's reader. Needs live updates.                        |
-| <UiLabel name={m.annot_view_mode_pinned()} />               | Stays on one item you chose, with its attachment remembered.                               |
-
-Select the mode button at the start of the view's toolbar to switch. The same
-three switches are in the view's pane menu, and each has a command of its own.
-
-The view keeps the mode you chose until you choose another one. When its source
-cannot answer, the view says so in place instead of switching for you.
-
-<Steps>
-  <Step>
-    ### Follow the Zotero reader
-
-    Select <UiLabel name={m.annot_view_mode_zotero_reader()} /> from the mode button. When you open or switch items in the Zotero reader, the view updates to show that attachment's annotations.
-
-    This mode needs live updates, which carry the reader's position from Zotero to Obsidian. While live updates is off, the view offers <UiLabel name={m.annot_view_enable_live_updates()} /> in place of the list. See [Set up live updates](/docs/how-to/set-up-live-updates).
-
-    Closing the reader in Zotero leaves the last attachment on screen under <UiLabel name={m.annot_view_reader_closed()} />
-
-  </Step>
-  <Step>
-    ### Pin one item
-
-    Select <UiLabel name={m.annot_view_mode_pin_current_item()} /> to pin the item the view already shows, or <UiLabel name={m.annot_view_pin_choose_item()} /> to search Zotero for another one.
-
-    Pinning from a Zotero PDF tab releases that tab's hold on the attachment, so you can switch between the item's attachments while the pin stands.
-
-    Select <UiLabel name={m.annot_view_mode_unpin()} /> to return to the mode you were in before the pin.
-
-    A PDF that Zotero stores with no parent item cannot be pinned, and the control says so.
-
-  </Step>
-</Steps>
-
-## Choose an attachment
-
-When the item has more than one attachment, a picker under the toolbar names the one on screen with its annotation count, and remembers your choice per item.
-
-A Zotero PDF tab and the Zotero reader each choose the attachment themselves, so the picker stands down while one of them does.
-
-To read the attachment on screen in Obsidian, select the mode button, then select <UiLabel name={m.command_open_pdf_name()} />. The same item is in the view's pane menu. It is not shown when an Obsidian PDF tab already shows that attachment.
-
-## Filter the list [#filter]
-
-The toolbar has two filters. Each opens as a small popover under its button.
-
-- <UiLabel name={m.annot_view_filter_tag_trigger()} />: lists the tags on the
-  annotations. Type in the search field to find a tag, then select one or more
-  tags.
-- <UiLabel name={m.annot_view_filter_color_trigger()} />: lists the colors of
-  the annotations. Select one or more colors.
-
-The list shows the annotations that have any of the selected tags and any of the selected colors. After you select a tag or a color, the button shows your choice. To clear it, open the popover and select <UiLabel name={m.annot_view_filter_tag_clear()} /> or <UiLabel name={m.annot_view_filter_color_clear()} />.
-
-## Sort, group, and save the view [#more-options]
-
-The view's <UiLabel name={m.annot_view_more_tooltip()} /> menu (⋮) has <UiLabel name={m.annot_view_sort()} />, <UiLabel name={m.annot_view_group_by()} />, and <UiLabel name={m.annot_view_filter()} /> for the cards. <UiLabel name={m.annot_view_save_as_query_file()} /> keeps what the view shows as a query file that you can open in a tab or embed in notes. See [Save the annotation sidebar as a query file](/docs/how-to/use-query-files#save-sidebar).
-
-## Select several cards [#select-several]
-
-Select a card to select it alone. To select more than one card:
+</Accordion>
+<Accordion title="Select several cards" id="select-several">
 
 ![The Rougier paper open in the PDF reader beside the annotation view, with three cards selected and their highlights outlined on the page, and the card menu open with Change color, Copy annotation text, and Delete 3 annotations](/img/how-to/annotation-view-multi-select.webp)
 
-| Action                                                      | Result                                                         |
-| ----------------------------------------------------------- | -------------------------------------------------------------- |
-| `Ctrl`-click (Windows and Linux) or `Command`-click (macOS) | Adds a card to the selection, or removes it.                   |
-| `Shift`-click                                               | Selects all cards from the last card you selected to this one. |
-| `Ctrl+A` (Windows and Linux) or `Command+A` (macOS)         | Selects all cards that the list shows.                         |
+| Do this                                                  | To                                                           |
+| -------------------------------------------------------- | ------------------------------------------------------------ |
+| `Ctrl`-click (Windows, Linux) or `Command`-click (macOS) | Add or remove one card                                       |
+| `Shift`-click                                            | Select every card from the last one you selected to this one |
+| `Ctrl+A` / `Command+A`                                   | Select every card the list shows                             |
 
-You can also press `Shift+Up` or `Shift+Down` to extend the selection one card at a time. Press `Escape` to clear the selection.
+`Shift+Up` and `Shift+Down` extend the selection one card at a time; `Escape` clears it.
 
-With the cards selected, you can:
+With cards selected:
 
-- Delete them: press `Delete` or `Backspace`, then confirm. You can also right-click a selected card and select the delete item, which shows the number of cards.
-- Change their color: press a key from `1` to `8`. The keys follow the order of Zotero's color palette. You can also right-click a selected card and select <UiLabel name={m.annot_view_card_color()} />.
-- Copy their text: press `Ctrl+C` (Windows and Linux) or `Command+C` (macOS), or right-click a selected card and select <UiLabel name={m.annot_view_menu_copy_text()} />. ZotLit copies the quoted text of each card, or its comment when it has no quoted text, with a blank line between cards.
+- Copy their text: press `Ctrl+C` / `Command+C`, or right-click and select <UiLabel name={m.annot_view_menu_copy_text()} />. Cards are separated by a blank line.
+- Change their color: press a key from `1` to `8` (Zotero's palette order), or right-click and select <UiLabel name={m.annot_view_card_color()} />.
+- Delete them: press `Delete` or `Backspace` and confirm, or right-click and select the delete item (for example, <UiLabel name={m.annot_view_menu_delete_group({ count: 3 })} />).
+- Changing color and deleting change Zotero, so editing must be on; one undo reverses the change on all the cards. See [How to edit PDF annotations in Obsidian](/docs/how-to/edit-pdf-annotations).
 
-Deleting and changing colors are edits, so editing must be enabled. One undo reverses the change on all the cards. See [How to edit PDF annotations in Obsidian](/docs/how-to/edit-pdf-annotations) for undo and for the other edits.
+</Accordion>
+<Accordion title="Show only some highlights" id="filter">
 
-## Locked annotations [#locked]
+- <UiLabel name={m.annot_view_filter_tag_trigger()} />: type to find a tag, then
+  select one or more.
+- <UiLabel name={m.annot_view_filter_color_trigger()} />: select one or more
+  colors.
+- The list shows cards with any selected tag and any selected color. The button then names your choice. To clear, open it and select <UiLabel name={m.annot_view_filter_tag_clear()} /> or <UiLabel name={m.annot_view_filter_color_clear()} />.
+- To keep what the panel shows as a file you can embed in notes, open the panel's <UiLabel name={m.annot_view_more_tooltip()} /> menu and select <UiLabel name={m.annot_view_save_as_query_file()} />; see [Save the annotation sidebar as a query file](/docs/how-to/use-query-files#save-sidebar).
 
-A lock icon beside a card's page number marks an annotation that ZotLit cannot change. Point to the icon to see the reason. For example, Zotero imported the annotation from the PDF file, or another member of a group library created it. See [How to edit PDF annotations in Obsidian](/docs/how-to/edit-pdf-annotations) for what you can still do with a locked annotation.
+</Accordion>
+</Accordions>
 
-## Pull annotations into a note [#pull-into-note]
+## If you see something else
 
-1. Open the note where you want to insert the annotation.
-2. Drag an annotation row from the sidebar to the required editor position.
-3. Wait for the insertion to complete. Image and ink excerpts are prepared before their links are inserted.
+- **"<UiLabel name={m.annot_view_empty_active_tab()} />":** The tab you are in is neither. Open the paper's literature note or PDF, or pin the paper. To open a Zotero PDF in Obsidian, see [Open an item's PDF in Obsidian](/docs/how-to/open-pdf-in-obsidian).
+- **A button "<UiLabel name={m.annot_view_enable_live_updates()} />" instead of the list:** <UiLabel name={m.annot_view_mode_zotero_reader()} /> mode needs live updates. Select the button, or see [Set up live updates](/docs/how-to/set-up-live-updates).
+- **"<UiLabel name={m.annot_view_reader_closed()} />":** You closed the reader in Zotero; the panel keeps the last PDF. Open a paper in Zotero's reader again, or switch the mode back to <UiLabel name={m.annot_view_mode_active_tab()} />.
+- **The panel shows another PDF of the same paper:** A paper with several attachments has an attachment picker under the panel's header. Choose another attachment from the picker; ZotLit remembers it for that paper. To read it, open the header menu and select <UiLabel name={m.command_open_pdf_name()} />.
+- **A lock icon beside a card's page number:** ZotLit cannot change that annotation. Point to the icon for the reason, such as external import from the PDF or creation by another group member. See [How to edit PDF annotations in Obsidian](/docs/how-to/edit-pdf-annotations).
+- **<UiLabel name={m.annot_view_menu_insert()} /> is missing from the card menu:** No note editor is active. Click into the note, then open the menu again.
+- **A card reads "<UiLabel name={m.annot_view_image_unavailable()} />":** ZotLit tried its image cache, the PDF, and Zotero's saved image, and none gave an image. The card's text and the other cards still work. Viewing cards never saves an image file in your vault.
+- **The inserted note shows "<UiLabel name={m.excerpt_image_import_disabled()} />":** <UiLabel name={m.settings_attachment_import_name()} /> is off in <SettingsPath page={m.settings_page_attachments()} />. Turn it on, then insert the image highlight again. The panel itself shows images either way.
+- **A notice "Excerpt images: … from Zotero with uncertain freshness, … with unchecked PDF freshness, … unavailable, … kept from the note and not refreshed.":** The insert finished; the notice names images ZotLit could not check against the PDF, or could not create. Details: [Import outcomes](/docs/reference/excerpt-images#import-outcomes).
+- **An image in the panel still shows the old PDF after you replaced the file:** ZotLit reuses a cached image when the PDF keeps the same file size and modification time. Clear the cache in <SettingsPath page={m.settings_page_advanced()} /> → <UiLabel name={m.settings_excerpt_cache_clear_name()} /> → <UiLabel name={m.settings_excerpt_cache_clear_action()} />. Details: [Cache and freshness](/docs/reference/excerpt-images#freshness).
 
-To insert without dragging, put the cursor in the note where you want the annotation. Then right-click the annotation card, or open its <UiLabel name={m.annot_view_more_tooltip()} /> menu, and select <UiLabel name={m.annot_view_menu_insert()} />. ZotLit inserts the same text that a drag inserts. The item is not available when no note editor is active.
+## Next
 
-ZotLit uses the [profile](/docs/concepts/profiles) of the annotation item's literature note, or the Default profile when that item has no note. Edits made while you wait move the insertion position with the text. Press Escape to cancel a pending insertion. After insertion, one Undo removes the inserted content.
-
-With <UiLabel name={m.settings_attachment_import_name()} /> enabled, inserted excerpts are saved as image files in the vault. With it disabled, new excerpts use an unavailable-image explanation and source link. Viewing cards or selecting a target note creates no saved image files.
-
-You can view and insert [excerpt images](/docs/concepts/excerpt-images) with both PDF readers closed. A failed image request produces fallback text or a preserved image, and the operation reports uncertain or unavailable results in one summary.
-
-### Context menu actions
-
-Right-click an annotation row, or open its <UiLabel name={m.annot_view_more_tooltip()} /> menu, for additional options:
-
-- <UiLabel name={m.annot_view_menu_edit_text()} />: opens an editor for the
-  quoted text of a highlight or underline. See [Edit the quoted
-  text](/docs/how-to/edit-pdf-annotations#edit-the-quoted-text).
-- <UiLabel name={m.annot_view_menu_copy_backlink()} />: copies a link back to
-  the annotation's location in the PDF.
-- <UiLabel name={m.annot_view_menu_copy_text()} />: copies the quoted text, or
-  the comment when the annotation has no quoted text.
-- <UiLabel name={m.annot_view_menu_copy_citation()} />: copies a formatted
-  citation for the annotation's parent item.
-- <UiLabel name={m.indexed_key_menu_copy_annotation()} />: copies the
-  annotation's Zotero key.
-- <UiLabel name={m.annot_view_menu_insert()} />: inserts the annotation at the
-  cursor in the active note, as a drag does.
-- <UiLabel name={m.template_data_explorer_menu_explore()} />: opens the Template
-  Data Explorer with the annotation's data.
-- <UiLabel name={m.annot_view_menu_delete()} />: deletes the annotation from
-  Zotero after you confirm. See [Delete an
-  annotation](/docs/how-to/edit-pdf-annotations#delete-an-annotation).
-
-When several cards are selected, the menu has only the items that act on all of them. See [Select several cards](#select-several).
-
-## See also
-
-<Cards>
-  <Card
-    title="How to edit PDF annotations in Obsidian"
-    description="Create every annotation type, edit colors, comments, tags, and quoted text, or delete annotations."
-    href="/docs/how-to/edit-pdf-annotations"
-  />
-  <Card
-    title="Import Zotero notes"
-    description="Import child notes from Zotero as standalone Markdown files."
-    href="/docs/how-to/import-zotero-notes"
-  />
-  <Card
-    title="Set up live updates"
-    description="Enable automatic push from Zotero to Obsidian."
-    href="/docs/how-to/set-up-live-updates"
-  />
-  <Card
-    title="Keep notes up to date"
-    description="Update literature notes when your Zotero data changes."
-    href="/docs/how-to/keep-notes-updated"
-  />
-</Cards>
+- [How to edit PDF annotations in Obsidian](/docs/how-to/edit-pdf-annotations) — change a highlight's color, comment, tags or text, or delete it.
+- [Set up live updates](/docs/how-to/set-up-live-updates) — let the panel follow Zotero's reader.
+- [Keep notes up to date](/docs/how-to/keep-notes-updated) — update literature notes when Zotero changes.
+- [Import Zotero notes into Obsidian as Markdown](/docs/how-to/import-zotero-notes) — import child notes and standalone notes as Markdown files.

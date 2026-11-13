@@ -1,5 +1,6 @@
 ---
 title: "Export a note with citations"
+searchTitle: "Export an Obsidian note to Word or HTML with a bibliography"
 description: "Export an active Markdown note with citations and a bibliography to DOCX or HTML."
 ---
 
@@ -7,13 +8,16 @@ import { Card, Cards } from "fumadocs-ui/components/card";
 import { Steps, Step } from "fumadocs-ui/components/steps";
 import { Callout } from "@/components/callout";
 import { Command } from "@/components/command";
+import { LessonLink } from "@/components/lesson-link";
 import { SettingsPath } from "@/components/settings-path";
 import { UiLabel } from "@/components/ui-label";
 import { m } from "@/paraglide/messages.js";
 
+For your first export to Word with formatted citations, see <LessonLink slug="export-obsidian-to-word-with-citations" />.
+
 Export the active Markdown note as a Word document or web page with formatted citations and a bibliography.
 
-For a guided comparison with native Pandoc, follow [Build a Pandoc citation workflow](/docs/tutorial/pandoc-citation-workflow).
+For a guided comparison with native Pandoc, follow [Build a Pandoc citation workflow](/docs/how-to/pandoc-citation-workflow).
 
 ## Before you start
 
@@ -115,7 +119,7 @@ For conversion with a user-installed Pandoc CLI, see [Native Pandoc workflow](/d
   <Card
     title="How in-text citation rendering and navigation work"
     description="Understand the separate citation rules used inside Obsidian."
-    href="/docs/concepts/how-citekey-links-work"
+    href="/docs/reference/citation-links"
   />
   <Card
     title="Settings"

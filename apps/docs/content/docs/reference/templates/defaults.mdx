@@ -146,6 +146,8 @@ The `pandoc_cite` filter behaves the same in both branches:
 
 ZotLit normalizes the rendered citation to inline form: leading and trailing whitespace is trimmed, and any whitespace run containing a line break collapses to a single space. This normalization applies everywhere a citation renders: the inline suggester, the command-palette picker, the `zt.citation` annotation field, <UiLabel name={m.annot_view_menu_copy_citation()} />, and citation resolution during note import.
 
+Each insert ends with a trailing space and places the cursor after it; if a space already follows the insert position, it is reused rather than doubled.
+
 Only the Liquid edition is built in. The same template in Eta reads:
 
 ```eta
@@ -199,7 +201,7 @@ Editing a template document in your vault triggers live recompilation through a 
   <Card
     title="How templates work"
     description="Template documents, languages, and where each template lives."
-    href="/docs/concepts/how-templates-work"
+    href="/docs/reference/templates/how-templates-work"
   />
   <Card
     title="Customize a template"
@@ -209,6 +211,6 @@ Editing a template document in your vault triggers live recompilation through a 
   <Card
     title="Customize your annotations"
     description="Tutorial lesson 2: change how annotations render."
-    href="/docs/tutorial/customize-template"
+    href="/docs/how-to/customize-template"
   />
 </Cards>

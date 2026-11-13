@@ -1,0 +1,11 @@
+{
+  "title": "Cite and export",
+  "pages": [
+    "../how-to/insert-citations",
+    "../how-to/review-copy-troubleshoot-references",
+    "../how-to/export-note-with-citations",
+    "../how-to/export-with-native-pandoc",
+    "../how-to/pandoc-citation-workflow",
+    "../how-to/explore-citations-in-graph"
+  ]
+}

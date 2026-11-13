@@ -1,5 +1,6 @@
 ---
 title: "Keep Zotero and Obsidian in sync"
+searchTitle: "Sync Zotero with Obsidian: keep notes up to date"
 description: "Install ZotLit Companion so recent Zotero changes reach Obsidian and Zotero's menus can open your notes."
 ---
 
@@ -34,7 +35,7 @@ Whether ZotLit sees your latest Zotero changes depends on how it reads the datab
 
 On macOS, and on Linux filesystems that can clone files, such as Btrfs and reflink-enabled XFS, ZotLit reads a copy of the database that already holds your recent changes. You can skip the Companion there unless you want its Zotero menu actions or live updates.
 
-[How ZotLit connects to Zotero](/docs/concepts/how-zotlit-connects-to-zotero#reading-the-zotero-database) explains the read modes in full.
+[How ZotLit connects to Zotero](/docs/reference/zotero-connection#reading-the-zotero-database) explains the read modes in full.
 
 ## Install the Companion [#install]
 
@@ -42,7 +43,7 @@ On macOS, and on Linux filesystems that can clone files, such as Btrfs and refli
   <Step>
     ### Install the add-on in Zotero
 
-    Follow [Install ZotLit Companion](/docs/install-companion) to download the `.xpi` file and install it from Zotero's **Tools > Add-ons**.
+    Follow [Install ZotLit Companion](/docs/install-companion) to download the `.xpi` file and install it from Zotero's **Tools > Plugins**.
 
   </Step>
   <Step>
@@ -79,6 +80,6 @@ Live updates push changes from Zotero to Obsidian as you read and annotate, and 
   <Card
     title="How ZotLit connects to Zotero"
     description="How database reads, Zotero actions, and live updates fit together."
-    href="/docs/concepts/how-zotlit-connects-to-zotero"
+    href="/docs/reference/zotero-connection"
   />
 </Cards>

@@ -144,7 +144,7 @@ The block renders in isolation: variables assigned outside it are not visible in
 
 Zero blocks is valid. The document you get when you customize or duplicate the Default profile has none. A body without a block is static, and updates to such a note touch frontmatter only. That holds even for a note that still has managed-region markers from an earlier default: ZotLit reports <UiLabel name={m.notice_updated_note_no_managed_block()} /> Add a `{% managed %}` block to the document if you want the region re-rendered. Two blocks, an unclosed block, and an unmatched `{% endmanaged %}` each fail validation.
 
-The markers ZotLit writes around the block's output in the note, `%%zt-managed%%` and `%%/zt-managed%%`, belong to the note rather than to the document. See [Literature notes and the managed region](/docs/concepts/literature-notes-and-the-managed-region).
+The markers ZotLit writes around the block's output in the note, `%%zt-managed%%` and `%%/zt-managed%%`, belong to the note rather than to the document. See [Literature notes and the managed region](/docs/reference/literature-notes).
 
 ## File naming and classification [#file-naming-and-classification]
 
@@ -154,7 +154,7 @@ A `zotlit-` Markdown file that fits none of these three patterns registers nothi
 
 The 2.1 slot files (`zotlit-<name>.liquid.md` and `zotlit-<name>.eta.md`) still back the Default profile until the conversion runs. See [Migrate from 2.1 templates](/docs/how-to/migrate-from-2.1-templates).
 
-See [How templates work](/docs/concepts/how-templates-work) for how the folder is discovered and how the three kinds relate.
+See [How templates work](/docs/reference/templates/how-templates-work) for how the folder is discovered and how the three kinds relate.
 
 ## See also
 
@@ -177,6 +177,6 @@ See [How templates work](/docs/concepts/how-templates-work) for how the folder i
   <Card
     title="Profiles"
     description="What a profile decides and how ZotLit selects one."
-    href="/docs/concepts/profiles"
+    href="/docs/reference/templates/how-templates-work#profiles"
   />
 </Cards>

@@ -10,7 +10,6 @@ import {
 import { TanStackRouterDevtoolsPanel } from "@tanstack/react-router-devtools";
 import { HomeLayout } from "fumadocs-ui/layouts/home";
 
-import { LegacyBanner } from "@/components/legacy-banner";
 import { LocaleFallbackNotice } from "@/components/locale-fallback-notice";
 import { LocaleProvider } from "@/components/locale-provider";
 import { Message } from "@/components/message";
@@ -94,7 +93,6 @@ function RootDocument({ children }: { children: React.ReactNode }) {
       <body className="flex min-h-screen flex-col">
         {/* The search dialog fetches `/api/search`, the fumadocs default. */}
         <LocaleProvider>
-          <LegacyBanner />
           <LocaleFallbackNotice state={localeState} />
           {children}
           <Toaster />

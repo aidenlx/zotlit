@@ -1,6 +1,7 @@
 ---
 title: "Template syntax"
-description: "Liquid markup reference: outputs, tags, filters, whitespace control, and ZotLit's custom vocabulary."
+searchTitle: "Liquid template syntax for Zotero literature notes"
+description: "Liquid syntax for ZotLit note templates: outputs, tags, filters, date formats, whitespace control, and the zt variable that holds your Zotero data."
 ---
 
 import { Card, Cards } from "fumadocs-ui/components/card";
@@ -232,7 +233,7 @@ Prefixes a non-empty string with `!` to produce the Obsidian embed syntax. Null,
 | `null`              | `""`                 |
 | `""`                | `""`                 |
 
-For `zt.imgLink`, the filter uses the prepared excerpt image. If no image is available, it returns an explanation and source link without adding `!`. See [Excerpt images](/docs/concepts/excerpt-images) for saved snapshots and import outcomes.
+For `zt.imgLink`, the filter uses the prepared excerpt image. If no image is available, it returns an explanation and source link without adding `!`. See [Excerpt images](/docs/reference/excerpt-images) for saved snapshots and import outcomes.
 
 ### Link filters [#link-filters]
 
@@ -558,6 +559,27 @@ A partial name is one or more letters, digits, and hyphens. The <UiLabel name={m
 
 Five names are reserved, because another ZotLit template already answers to each: `filename`, `note`, `annotation`, `content`, and `citation`. A partial file that takes one registers nothing and is reported at <SettingsPath page={m.settings_page_profiles()} setting={m.settings_partials_heading()} />. See [Partials](/docs/reference/settings#partials).
 
+## From Eta to Liquid [#eta-to-liquid]
+
+v2's default engine is Liquid. Converting your templates to Liquid removes the need for the <UiLabel name={m.settings_template_js_enable_name()} /> gate entirely. For each construct, the table below shows the Liquid equivalent and links to the relevant syntax reference section.
+
+| Eta construct                                         | Liquid equivalent                                 | Reference                                                                      |
+| ----------------------------------------------------- | ------------------------------------------------- | ------------------------------------------------------------------------------ |
+| `<%= zt.title %>`                                     | `{{ zt.title }}`                                  | [Outputs and tags](/docs/reference/templates/syntax#outputs-and-tags)          |
+| `<% if (zt.abstract) { %> ... <% } %>`                | `{% if zt.abstract %} ... {% endif %}`            | [Control flow](/docs/reference/templates/syntax#if-elsif-else-endif)           |
+| `<% for (const a of zt.annotations) { %> ... <% } %>` | `{% for a in zt.annotations %} ... {% endfor %}`  | [for / endfor](/docs/reference/templates/syntax#for-endfor)                    |
+| `<%~ include("content", zt) %>`                       | `{% render "content" with zt as zt %}`            | [Includes with render](/docs/reference/templates/syntax#includes-with-render)  |
+| `<% bq(() => { %> ... <% }) %>`                       | `{% bq %} ... {% endbq %}`                        | [bq: blockquote block](/docs/reference/templates/syntax#bq-blockquote-block)   |
+| `embed(zt.imgLink)`                                   | `{{ zt.imgLink \| embed }}`                       | [embed filter](/docs/reference/templates/syntax#embed-embed-filter)            |
+| `<%= suffix() %>`                                     | `{% suffix %}`                                    | [suffix tag](/docs/reference/templates/syntax#suffix-filename-collision-guard) |
+| `zt.attachments[0].fileLink()`                        | `{{ zt.attachments[0] \| file_link }}`            | [Link filters](/docs/reference/templates/syntax#link-filters)                  |
+| `zt.collections.map(c => c.path.join(" > "))`         | `{{ zt.collections \| collection_paths: " > " }}` | [collection_paths](/docs/reference/templates/syntax#collection-paths)          |
+| `zt.tags.map(t => t.name).join(", ")`                 | `{{ zt.tags \| map: "name" \| join: ", " }}`      | [Array filters](/docs/reference/templates/syntax#array-filters)                |
+| `zt.dateAdded` (Temporal.Instant formatting)          | `{{ zt.dateAdded \| date: "%Y-%m-%d" }}`          | [date filter](/docs/reference/templates/syntax#date-formatting-filter)         |
+| `-%>` (trim one newline after tag)                    | `-%}` / `-}}`                                     | [Whitespace control](/docs/reference/templates/syntax#whitespace-control)      |
+
+A renamed 2.1 Liquid file uses the `.liquid.md` extension (e.g. `zotlit-note.liquid.md`); a converted template document carries no language in its name. The data variable is still `zt` and the property names are identical to the Eta equivalents in [Eta template syntax](/docs/reference/templates/eta-syntax).
+
 ## See also
 
 <Cards>
@@ -579,7 +601,7 @@ Five names are reserved, because another ZotLit template already answers to each
   <Card
     title="How templates work"
     description="Template documents, languages, and where each template lives."
-    href="/docs/concepts/how-templates-work"
+    href="/docs/reference/templates/how-templates-work"
   />
   <Card
     title="Customize a template"

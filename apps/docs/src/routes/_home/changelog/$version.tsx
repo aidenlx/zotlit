@@ -5,7 +5,7 @@ import { ArrowUpRight } from "lucide-react";
 import { BackCrumb } from "@/components/back-crumb";
 import { CompanionNote } from "@/components/companion-note";
 import { getMDXComponents } from "@/components/mdx";
-import { betaFallbackUrl } from "@/lib/beta-fallback";
+import { missingReleaseRedirect } from "@/lib/beta-fallback";
 import { cn } from "@/lib/cn";
 import { changelogs } from "@/lib/collections";
 import { localeInput } from "@/lib/i18n";
@@ -17,6 +17,7 @@ import {
   changelogFeedRoute,
   changelogRoute,
   formatReleaseDate,
+  ogImageUrl,
   repoUrl,
 } from "@/lib/shared";
 import { changelog, getChangelogPages } from "@/lib/source";
@@ -32,13 +33,13 @@ const getRelease = createServerFn({ method: "GET" })
   .handler(({ data: { version, locale } }) => {
     const page = changelog.getPage([version], locale);
     if (!page) {
-      // A version this build never published still lives on Pre-release Docs.
-      const href = betaFallbackUrl(
-        localizeHref(`${changelogRoute}/${version}`, { locale }),
-      );
-      throw href === undefined
+      const target = missingReleaseRedirect(version, {
+        release: localizeHref(`${changelogRoute}/${version}`, { locale }),
+        changelog: localizeHref(changelogRoute, { locale }),
+      });
+      throw target === undefined
         ? notFound()
-        : redirect({ href, statusCode: 307 });
+        : redirect({ href: target.href, statusCode: target.status });
     }
     return {
       path: page.path,
@@ -67,13 +68,18 @@ export const Route = createFileRoute("/_home/changelog/$version")({
     release === undefined
       ? {}
       : pageHead({
-          title: `v${release.version}`,
-          description:
-            release.description ??
-            m.docs_changelog_release_description({
-              version: release.version,
-              date: formatReleaseDate(release.date, { locale: getLocale() }),
-            }),
+          fullTitle: m.docs_changelog_release_title({
+            version: release.version,
+          }),
+          description: release.description
+            ? m.docs_changelog_release_summary({
+                version: release.version,
+                summary: release.description,
+              })
+            : m.docs_changelog_release_description({
+                version: release.version,
+                date: formatReleaseDate(release.date, { locale: getLocale() }),
+              }),
           path: release.url,
           card: {
             type: "changelog",
@@ -88,6 +94,7 @@ export const Route = createFileRoute("/_home/changelog/$version")({
               version: release.version,
               date: release.date,
               url: getPageLocaleState(release.url, getLocale()).canonicalPath,
+              image: ogImageUrl("changelog", release.slugs),
             }),
             breadcrumbListSchema([
               { name: appName, url: "/" },

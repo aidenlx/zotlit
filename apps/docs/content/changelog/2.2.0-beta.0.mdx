@@ -84,7 +84,7 @@ A profile can also select itself. A Profile Match tests an item's library, item 
 
 Every note records the profile that made it, so a later update uses the same template. <Command inline name={m.command_switch_literature_note_profile_name()} /> moves a note, and the imported notes that follow it, onto another profile.
 
-[Profiles](/docs/concepts/profiles) explains how ZotLit picks one and how a note keeps it, [How templates work](/docs/concepts/how-templates-work) covers the three kinds of document, and [converting 2.1 template files](/docs/how-to/migrate-from-2.1-templates) the upgrade.
+[Profiles](/docs/reference/templates/how-templates-work#profiles) explains how ZotLit picks one and how a note keeps it, [How templates work](/docs/reference/templates/how-templates-work) covers the three kinds of document, and [converting 2.1 template files](/docs/how-to/migrate-from-2.1-templates) the upgrade.
 
 ### The Template Workbench
 
@@ -98,7 +98,7 @@ The preview refreshes as you type. Its pane menu switches between <UiLabel name=
 
 Repeated text becomes a partial in one step. Select it, then choose <UiLabel name={m.template_workbench_extract_partial()} />. <UiLabel name={m.workbench_partial_new()} /> starts one from scratch, the <UiLabel name={m.template_workbench_partials()} /> menu lists every partial in the vault, and <UiLabel name={m.template_workbench_open_markdown()} /> opens the same document in Obsidian's own editor.
 
-[Template Workbench View](/docs/concepts/template-workbench-view) describes every way in, [Customize a template](/docs/how-to/customize-a-template) walks through the profile, the citation text, and partials, and [Edit a profile as Markdown](/docs/how-to/edit-a-profile-as-markdown) is the route for anyone who would rather type the document.
+[Template Workbench View](/docs/reference/template-workbench-view) describes every way in, [Customize a template](/docs/how-to/customize-a-template) walks through the profile, the citation text, and partials, and [Edit a profile as Markdown](/docs/how-to/edit-a-profile-as-markdown) is the route for anyone who would rather type the document.
 
 ### Inside the Template Workbench View
 
@@ -108,7 +108,7 @@ The editor knows the document's language. Liquid templates get their tags, varia
 
 When something fails, <UiLabel name={m.workbench_problems_heading()} /> sits under the editor with what went wrong, which part of the document it came from, and the actions to reach it, including <UiLabel name={m.workbench_problems_copy()} /> when you want to ask for help. [Collect debug logs](/docs/how-to/collect-debug-logs#template-error-report) says what that report carries.
 
-[Properties](/docs/how-to/configure-frontmatter-properties) covers the properties tab, and [Template Workbench View](/docs/concepts/template-workbench-view) the tabs, the languages, and the panes. The workbench view is part of the desktop app.
+[Properties](/docs/how-to/configure-frontmatter-properties) covers the properties tab, and [Template Workbench View](/docs/reference/template-workbench-view) the tabs, the languages, and the panes. The workbench view is part of the desktop app.
 
 ## Breaking Changes
 
@@ -139,7 +139,7 @@ Nine commands in ZotLit's `obsidian` CLI namespace now refuse every call and rep
 
 `zotlit:template-schema`, `zotlit:template-render`, `zotlit:template-document-render`, `zotlit:template-source`, `zotlit:frontmatter-status`, `zotlit:frontmatter-eval`, `zotlit:frontmatter-set`, `zotlit:frontmatter-remove`, `zotlit:frontmatter-reorder`.
 
-An agent that wrote templates through them must move to `zotlit:template-inspect`, which reads a saved document and how current it is; `zotlit:template-data`, which lists fields with real values from an item; and `zotlit:template-check`, which renders every part and reports what fails. Frontmatter is edited in the profile document and checked with `output=frontmatter`. These are command line commands, not command palette entries. [The Template Workbench CLI](/docs/concepts/template-workbench) explains the loop, and the [Template Workbench CLI reference](/docs/reference/template-workbench-cli#retired) lists every live command beside the retired one it replaces.
+An agent that wrote templates through them must move to `zotlit:template-inspect`, which reads a saved document and how current it is; `zotlit:template-data`, which lists fields with real values from an item; and `zotlit:template-check`, which renders every part and reports what fails. Frontmatter is edited in the profile document and checked with `output=frontmatter`. These are command line commands, not command palette entries. [The Template Workbench CLI](/docs/reference/template-workbench-cli) explains the loop, and the [Template Workbench CLI reference](/docs/reference/template-workbench-cli#retired) lists every live command beside the retired one it replaces.
 
 ### The settings tab is reorganized
 
@@ -191,7 +191,7 @@ One filter covers both formats Zotero Integration gave a command of its own, `la
 
 ### Batch update and import
 
-The confirmation for a vault-wide run now groups its rows by profile and says which items match no profile or several, which profiles are unavailable, and what happens to the notes you keep as they are. The import dialog names the notes that will arrive without a parent literature note before you confirm. See [Keep notes up to date](/docs/how-to/keep-notes-updated#batch) for a batch run, and [Create and open literature notes](/docs/how-to/create-and-open-notes#bulk-profiles) for the profile a bulk run gives new notes.
+The confirmation for a vault-wide run now groups its rows by profile and says which items match no profile or several, which profiles are unavailable, and what happens to the notes you keep as they are. The import dialog names the notes that will arrive without a parent literature note before you confirm. See [Keep notes up to date](/docs/how-to/keep-notes-updated#batch) for a batch run, and [Profile for new notes in a batch](/docs/reference/settings#batch-profiles) for the profile a bulk run gives new notes.
 
 ### Other improvements
 

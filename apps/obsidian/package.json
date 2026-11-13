@@ -1,6 +1,6 @@
 {
   "name": "@zotlit/obsidian",
-  "version": "2.2.2",
+  "version": "2.2.3",
   "private": true,
   "description": "Your Zotero research desk in Obsidian: browse and query your library, read and annotate PDFs, take literature notes, cite as you write, and export to Word with a formatted reference list.",
   "author": "AidenLx",
@@ -32,8 +32,8 @@
   "dependencies": {
     "@bjorn3/browser_wasi_shim": "^0.4.2",
     "@effect/atom-react": "catalog:",
-    "@effect/platform-browser": "4.1.0",
-    "@effect/platform-node": "4.1.0",
+    "@effect/platform-browser": "4.1.2",
+    "@effect/platform-node": "4.1.2",
     "@hono/node-server": "catalog:",
     "@hono/valibot-validator": "^0.6.1",
     "@lezer/markdown": "catalog:",
@@ -114,7 +114,7 @@
   "obsidian": {
     "id": "zotlit",
     "name": "ZotLit",
-    "minAppVersion": "1.14.5",
+    "minAppVersion": "1.15.1",
     "minElectronVersion": "43.0.0",
     "isDesktopOnly": true,
     "fundingUrl": {
