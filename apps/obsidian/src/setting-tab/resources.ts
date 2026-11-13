@@ -15,7 +15,7 @@ import { PluginSettings } from "@/services/settings/service";
 import {
   BUG_REPORT,
   COMMUNITY,
-  DOCS_GETTING_STARTED,
+  DOCS_HOME,
   MIGRATION_GUIDE,
 } from "@/views/welcome/links";
 import { openWelcomeView } from "@/views/welcome/register";
@@ -153,7 +153,7 @@ function resourcesItems(
         setting.addButton((btn) =>
           btn
             .setButtonText(m.settings_resources_docs_button())
-            .onClick(() => window.open(DOCS_GETTING_STARTED)),
+            .onClick(() => window.open(DOCS_HOME)),
         );
       },
     },

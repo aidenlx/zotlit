@@ -89,7 +89,7 @@ const TAB_DOCS: Record<
   },
   annotation: {
     label: "workbench_docs_annotation",
-    path: "/docs/tutorial/customize-template",
+    path: "/docs/how-to/customize-template",
   },
   properties: {
     label: "workbench_docs_properties",
