@@ -91,10 +91,12 @@ export default function RecordingPlayer({
   );
   // A clip that waits for the reader rests on its poster, as under reduced motion.
   const still = reduced || (!autoplay && !playNow);
-  // "auto" plays mid-viewport, "manual" plays from the reader's press until it leaves view, "paused" stays still.
-  const [mode, setMode] = useState<"auto" | "manual" | "paused">(() =>
-    still ? "paused" : playNow ? "manual" : "auto",
+  // The reader's choice for this clip, a play or pause here or a press elsewhere (`playNow`). It holds when the page later lets the clip start on its own.
+  const [chosen, setChosen] = useState<"manual" | "paused" | null>(() =>
+    playNow && !reduced ? "manual" : null,
   );
+  // "auto" plays mid-viewport, "manual" plays from the reader's press until it leaves view, "paused" stays still.
+  const mode = chosen ?? (still ? "paused" : "auto");
   // The reader has played or paused the clip, so its changes are announced.
   const [touched, setTouched] = useState(false);
   // The play and the pause this player asked for itself, which the reader did not.
@@ -184,7 +186,7 @@ export default function RecordingPlayer({
     }
     takeTurn(me, rest);
     setTouched(true);
-    setMode("manual");
+    setChosen("manual");
   }
 
   function onPause() {
@@ -194,7 +196,7 @@ export default function RecordingPlayer({
     }
     holdTurn(me);
     setTouched(true);
-    setMode("paused");
+    setChosen("paused");
   }
 
   return (
