@@ -67,13 +67,18 @@ export const Route = createFileRoute("/_home/changelog/$version")({
     release === undefined
       ? {}
       : pageHead({
-          title: `v${release.version}`,
-          description:
-            release.description ??
-            m.docs_changelog_release_description({
-              version: release.version,
-              date: formatReleaseDate(release.date, { locale: getLocale() }),
-            }),
+          fullTitle: m.docs_changelog_release_title({
+            version: release.version,
+          }),
+          description: release.description
+            ? m.docs_changelog_release_summary({
+                version: release.version,
+                summary: release.description,
+              })
+            : m.docs_changelog_release_description({
+                version: release.version,
+                date: formatReleaseDate(release.date, { locale: getLocale() }),
+              }),
           path: release.url,
           card: {
             type: "changelog",

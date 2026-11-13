@@ -7,7 +7,12 @@ import { rcompare } from "semver";
 import { describe, expect, it } from "vitest";
 
 import { docsPageTitle } from "./shared";
-import { getBlogPages, getChangelogPages, source } from "./source";
+import {
+  getBlogPages,
+  getChangelogPages,
+  getLessonPages,
+  source,
+} from "./source";
 
 describe("docs collection", () => {
   it("loads every page but the `_` partials", () => {
@@ -21,13 +26,21 @@ describe("docs collection", () => {
   });
 
   // A search result shows about 60 characters of title and 160 of
-  // description; two pages with one title compete for the same query.
-  it("titles each page once, within search-result limits", () => {
-    const pages = source.getPages("en").map((page) => ({
-      url: page.url,
-      title: docsPageTitle(page.data),
-      description: page.data.description ?? "",
-    }));
+  // description; two pages with one title compete for the same query, and a
+  // lesson competes with the docs page on its task.
+  it("titles each page and lesson once, within search-result limits", () => {
+    const pages = [
+      ...source.getPages("en").map((page) => ({
+        url: page.url,
+        title: docsPageTitle(page.data),
+        description: page.data.description ?? "",
+      })),
+      ...getLessonPages().map((page) => ({
+        url: page.url,
+        title: page.data.title,
+        description: page.data.description,
+      })),
+    ];
     expect(pages.filter(({ title }) => title.length > 60)).toEqual([]);
     expect(pages.filter(({ description }) => description.length > 160)).toEqual(
       [],

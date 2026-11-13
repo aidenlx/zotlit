@@ -86,7 +86,10 @@ export const Route = createFileRoute("/_home/blog/$slug")({
     post === undefined
       ? {}
       : pageHead({
-          title: post.title,
+          // A title that names the site needs no " | ZotLit" after it.
+          ...(post.title.includes(appName)
+            ? { fullTitle: post.title }
+            : { title: post.title }),
           description: post.description,
           path: post.url,
           card: {

@@ -31,6 +31,7 @@ const getCourse = createServerFn({ method: "GET" })
     getLessonPages({ locale }).map((page) => ({
       slug: page.slugs.join("/"),
       lesson: page.data.lesson,
+      title: page.data.title,
       chore: page.data.chore,
       minutes: page.data.minutes,
       media: page.data.media,
@@ -231,11 +232,14 @@ function StartHere({
     >
       <span aria-hidden className="absolute inset-y-0 start-0 w-1 bg-fd-ring" />
       <div className="grid min-w-0 gap-2 ps-1.5">
+        <p className={cn(titleClass, "font-serif font-medium text-balance")}>
+          {lesson.chore}
+        </p>
         <h2
           id="learn-start"
-          className={cn(titleClass, "font-serif font-medium text-balance")}
+          className={cn(bodyClass, "font-semibold text-pretty")}
         >
-          {lesson.chore}
+          {lesson.title}
         </h2>
         <Meta lesson={lesson} progress={progress} />
         <div className="mt-1">
@@ -262,7 +266,7 @@ function StartHere({
   );
 }
 
-/** One chore: its result, the reader's words and the minutes. */
+/** One chore: its result, the reader's words, the lesson's title and the minutes. */
 function ChoreCard({
   lesson,
   progress,
@@ -273,7 +277,10 @@ function ChoreCard({
   return (
     <div className="relative grid h-full gap-4 rounded-[14px] border border-transparent bg-fd-card p-4 shadow-ring transition-shadow duration-150 hover:shadow-ring-hover min-[561px]:grid-cols-[minmax(0,1fr)_minmax(0,0.8fr)] min-[561px]:items-start min-[561px]:p-5 xl:grid-cols-1 xl:content-start">
       <div className="grid min-w-0 gap-2">
-        <h3 className={cn(titleClass, "font-serif font-medium text-balance")}>
+        <p className={cn(titleClass, "font-serif font-medium text-balance")}>
+          {m.docs_learn_chore_quote({ chore: lesson.chore })}
+        </p>
+        <h3 className={cn(bodyClass, "font-semibold text-pretty")}>
           <Link
             to="/learn/$lesson"
             params={{ lesson: lesson.slug }}
@@ -282,7 +289,7 @@ function ChoreCard({
               focusClass,
             )}
           >
-            {m.docs_learn_chore_quote({ chore: lesson.chore })}
+            {lesson.title}
           </Link>
         </h3>
         <Meta lesson={lesson} progress={progress} />
