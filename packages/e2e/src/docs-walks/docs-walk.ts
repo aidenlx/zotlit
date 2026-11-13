@@ -22,7 +22,12 @@ import type {
 } from "@e2e/docs-walks/docs-browser.ts";
 import { bringToFront, recordDesktop } from "@e2e/docs-walks/macos-desktop.ts";
 import type { DesktopShot } from "@e2e/docs-walks/macos-desktop.ts";
-import { pointerGlide, pointerLook } from "@e2e/docs-walks/pointer-look.ts";
+import {
+  arrowStyle,
+  pointerGlide,
+  pointerLook,
+  ringStyle,
+} from "@e2e/docs-walks/pointer-look.ts";
 import {
   outputSizes,
   takeRecipe,
@@ -213,25 +218,24 @@ export function recordRequested(name?: string): boolean {
 /**
  * Whether the run needs every Desktop Slot: it captures, or it records. A
  * recording brings Zotero to the front, hides Obsidian, and can send real
- * pointer and key input, so no other run may use the desktop meanwhile. The global setup cannot tell which steps
- * record, so every recording run takes the hold.
+ * pointer and key input, so no other run may use the desktop meanwhile. The
+ * global setup cannot tell which steps record, so every recording run takes
+ * the hold.
  */
 export function exclusiveHoldRequested(): boolean {
-  return (
-    captureRequested() ||
-    recordRequested() ||
-    process.env.DOCS_WALK_NATIVE === "1"
-  );
+  return captureRequested() || recordRequested();
 }
 
 export interface DocsWalkOptions {
   /**
-   * The walk's name: its file name and its media folder under
-   * `apps/docs/public/img/learn/`, which can differ from the lesson's page
+   * The walk's name: its file name, which can differ from the lesson's page
    * slug. Names the layout, camera and capture folders and the take record.
    */
   slug: string;
-  /** The folder under `apps/docs/public/img/` that receives the images. */
+  /**
+   * The folder under `apps/docs/public/img/` that receives the images and
+   * clips: `learn/<slug>` for a lesson.
+   */
   collection: string;
   /** @default "demo" */
   vaultCase?: string;
@@ -660,7 +664,9 @@ export async function openDocsWalk(
         { stdio: "ignore" },
       );
       const ended = new Promise((r) => capture.once("exit", r));
-      // `screencapture -v` shows no sign that it records: this lets it start.
+      // No signal is known that tells when `screencapture -v` starts to
+      // record, so this waits. A desktop probe must check whether the
+      // `.mov` appears when the recording starts.
       await new Promise((r) => setTimeout(r, 800));
       let stopped = false;
       const stop = async () => {
@@ -747,11 +753,12 @@ async function startRecording(
   dir: string,
   settings: ClipSettings,
 ): Promise<void> {
+  const { glideMs, transitionMs } = pointerGlide(settings);
   await obRun(
     vaultId,
     async (
       { page },
-      { dir, opening, glideMs, transitionMs, typing, lookMs, look },
+      { dir, opening, glideMs, arrowCss, ringCss, typing, lookMs, look },
     ) => {
       const fs = require("fs") as typeof import("node:fs");
       const path = require("path") as typeof import("node:path");
@@ -791,13 +798,12 @@ async function startRecording(
       const pointer = document.body.createDiv({
         attr: { "data-docs-walk-pointer": "" },
       });
-      pointer.style.cssText = `position:fixed;left:0;top:0;z-index:2147483647;pointer-events:none;transition:transform ${transitionMs}ms cubic-bezier(.4,0,.2,1);`;
+      pointer.style.cssText = arrowCss;
       pointer.innerHTML = look.arrow;
       const ring = document.body.createDiv({
         attr: { "data-docs-walk-pointer": "" },
       });
-      ring.style.cssText =
-        "position:fixed;left:0;top:0;width:28px;height:28px;margin:-14px 0 0 -14px;border-radius:50%;border:2px solid hsl(var(--interactive-accent-hsl));background:hsla(var(--interactive-accent-hsl),.18);z-index:2147483646;pointer-events:none;opacity:0;";
+      ring.style.cssText = `position:fixed;left:0;top:0;${ringCss}opacity:0;`;
       const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
       const start = {
         x: Math.round(window.innerWidth * 0.55),
@@ -814,13 +820,10 @@ async function startRecording(
       const mark = async (x: number, y: number) => {
         ring.style.left = `${x}px`;
         ring.style.top = `${y}px`;
-        ring.animate(
-          [
-            { opacity: 1, transform: "scale(.5)" },
-            { opacity: 0, transform: "scale(1.4)" },
-          ],
-          { duration: look.ringMs, easing: "ease-out" },
-        );
+        ring.animate(look.ringKeyframes, {
+          duration: look.ringMs,
+          easing: "ease-out",
+        });
         await wait(look.markMs);
       };
       const typeKeys = async (
@@ -991,7 +994,12 @@ async function startRecording(
     {
       dir,
       opening: settings.opening * 1000,
-      ...pointerGlide(settings),
+      glideMs,
+      arrowCss: arrowStyle(transitionMs),
+      ringCss: ringStyle({
+        border: "hsl(var(--interactive-accent-hsl))",
+        fill: "hsla(var(--interactive-accent-hsl),.18)",
+      }),
       look: pointerLook,
       typing: settings.typing,
       // With the camera off, a look moves nothing, so it does not wait.
@@ -1055,7 +1063,9 @@ async function zoteroWindow(
 
 /**
  * {@link zoteroWindow} once the raised window is in front of every other
- * app's window: it asks again for up to 2 s, then throws its last error.
+ * app's window: it asks again for up to 2 s.
+ * @throws the last error of {@link zoteroWindow} when the window is still
+ * missing or covered after 2 s.
  */
 async function raisedZoteroWindow(
   pid: number,
@@ -1083,19 +1093,19 @@ async function zoteroPointer(
 ): Promise<void> {
   if (!recordRequested()) return;
   const { transitionMs, glideMs } = pointerGlide(settings);
-  const { arrow, ring, ringMs, markMs } = pointerLook;
+  const { arrow, ringKeyframes, ringMs, markMs } = pointerLook;
   await zotero.json<boolean>(`(async()=>{const w=${window};const d=w.document;
     const ns='http://www.w3.org/1999/xhtml';const wait=(ms)=>new Promise(r=>w.setTimeout(r,ms));
     let p=d.querySelector('[data-docs-walk-pointer="arrow"]');
     if(!p){p=d.createElementNS(ns,'div');p.setAttribute('data-docs-walk-pointer','arrow');
-      p.style.cssText='position:fixed;left:0;top:0;z-index:2147483647;pointer-events:none;transition:transform ${transitionMs}ms cubic-bezier(.4,0,.2,1);transform:translate('+Math.round(w.innerWidth*0.5)+'px,'+Math.round(w.innerHeight*0.25)+'px)';
+      p.style.cssText=${JSON.stringify(arrowStyle(transitionMs))}+'transform:translate('+Math.round(w.innerWidth*0.5)+'px,'+Math.round(w.innerHeight*0.25)+'px)';
       p.innerHTML=${JSON.stringify(arrow)};
       d.documentElement.appendChild(p);await wait(300);}
     const e=${element};const b=e.getBoundingClientRect();
     const x=Math.round(b.left+b.width/2),y=Math.round(b.top+b.height/2);
     p.style.transform='translate('+x+'px,'+y+'px)';await wait(${glideMs});
     const r=d.createElementNS(ns,'div');r.setAttribute('data-docs-walk-pointer','ring');
-    r.style.cssText='position:fixed;left:'+x+'px;top:'+y+'px;width:28px;height:28px;margin:-14px 0 0 -14px;border-radius:50%;border:2px solid ${ring.border};background:${ring.fill};z-index:2147483646;pointer-events:none;';
-    d.documentElement.appendChild(r);r.animate([{opacity:1,transform:'scale(.5)'},{opacity:0,transform:'scale(1.4)'}],{duration:${ringMs},easing:'ease-out',fill:'forwards'});
+    r.style.cssText='position:fixed;left:'+x+'px;top:'+y+'px;'+${JSON.stringify(ringStyle())};
+    d.documentElement.appendChild(r);r.animate(${JSON.stringify(ringKeyframes)},{duration:${ringMs},easing:'ease-out',fill:'forwards'});
     await wait(${markMs});return true;})()`);
 }

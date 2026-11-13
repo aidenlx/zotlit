@@ -13,11 +13,34 @@ export const pointerLook = {
    * accent colour instead.
    */
   ring: { border: "#7c5cff", fill: "rgba(124,92,255,.18)" },
+  /** The click ring grows from half size and fades. */
+  ringKeyframes: [
+    { opacity: 1, transform: "scale(.5)" },
+    { opacity: 0, transform: "scale(1.4)" },
+  ],
   /** How long the click ring grows and fades, in ms. */
   ringMs: 450,
   /** How long the pointer stays on its target after the click mark, in ms. */
   markMs: 150,
 };
+
+/**
+ * The arrow's CSS: at the top-left corner, over the page, gliding with a
+ * `transitionMs` transition when its `transform` moves it.
+ */
+export function arrowStyle(transitionMs: number): string {
+  return `position:fixed;left:0;top:0;z-index:2147483647;pointer-events:none;transition:transform ${transitionMs}ms cubic-bezier(.4,0,.2,1);`;
+}
+
+/**
+ * The click ring's CSS that follows its position: a 28 px circle centred on
+ * that position, under the arrow.
+ */
+export function ringStyle(
+  colors: { border: string; fill: string } = pointerLook.ring,
+): string {
+  return `width:28px;height:28px;margin:-14px 0 0 -14px;border-radius:50%;border:2px solid ${colors.border};background:${colors.fill};z-index:2147483646;pointer-events:none;`;
+}
 
 /**
  * The glide of `settings` in ms: the arrow's CSS transition ends 50 ms

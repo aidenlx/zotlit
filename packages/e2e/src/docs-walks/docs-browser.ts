@@ -12,7 +12,12 @@ import { join } from "node:path";
 
 import type { CameraEvent } from "./camera.ts";
 import type { ClipSettings } from "./clip-settings.ts";
-import { pointerGlide, pointerLook } from "./pointer-look.ts";
+import {
+  arrowStyle,
+  pointerGlide,
+  pointerLook,
+  ringStyle,
+} from "./pointer-look.ts";
 
 /** The Chrome binary; `DOCS_WALK_CHROME` names another. */
 const CHROME =
@@ -300,9 +305,12 @@ export async function openDocsBrowser(options: {
           .send("Page.screencastFrameAck", { sessionId: p.sessionId })
           .catch(() => {});
       });
+      const { glideMs, transitionMs } = pointerGlide(settings);
       await evaluate(
         `(${installPointer.toString()})(${JSON.stringify({
-          ...pointerGlide(settings),
+          glideMs,
+          arrowCss: arrowStyle(transitionMs),
+          ringCss: ringStyle(),
           lookMs: settings.camera ? settings.ease * 1000 : 0,
           look: pointerLook,
         })})`,
@@ -398,7 +406,8 @@ export async function openDocsBrowser(options: {
  */
 function installPointer(o: {
   glideMs: number;
-  transitionMs: number;
+  arrowCss: string;
+  ringCss: string;
   lookMs: number;
   look: typeof pointerLook;
 }): void {
@@ -408,11 +417,11 @@ function installPointer(o: {
   const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
   const arrow = document.createElement("div");
   arrow.dataset.docsWalkPointer = "";
-  arrow.style.cssText = `position:fixed;left:0;top:0;z-index:2147483647;pointer-events:none;transition:transform ${o.transitionMs}ms cubic-bezier(.4,0,.2,1);`;
+  arrow.style.cssText = o.arrowCss;
   arrow.innerHTML = o.look.arrow;
   const ring = document.createElement("div");
   ring.dataset.docsWalkPointer = "";
-  ring.style.cssText = `position:fixed;left:0;top:0;width:28px;height:28px;margin:-14px 0 0 -14px;border-radius:50%;border:2px solid ${o.look.ring.border};background:${o.look.ring.fill};z-index:2147483646;pointer-events:none;opacity:0;`;
+  ring.style.cssText = `position:fixed;left:0;top:0;${o.ringCss}opacity:0;`;
   document.body.append(arrow, ring);
   const at = {
     x: Math.round(innerWidth * 0.55),
@@ -442,13 +451,10 @@ function installPointer(o: {
       events.push({ kind: "point", t: now(), x, y, rect: rect(b) });
       ring.style.left = `${x}px`;
       ring.style.top = `${y}px`;
-      ring.animate(
-        [
-          { opacity: 1, transform: "scale(.5)" },
-          { opacity: 0, transform: "scale(1.4)" },
-        ],
-        { duration: o.look.ringMs, easing: "ease-out" },
-      );
+      ring.animate(o.look.ringKeyframes, {
+        duration: o.look.ringMs,
+        easing: "ease-out",
+      });
       await wait(o.look.markMs);
     },
     async park(x: number, y: number) {

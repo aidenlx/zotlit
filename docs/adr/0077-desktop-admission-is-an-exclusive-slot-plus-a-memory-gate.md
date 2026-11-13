@@ -60,4 +60,6 @@ A docs-walk run that captures or records takes an Exclusive Hold of every
 slot, because its shots bring apps to the front and can send real input
 (ADR 0078, "Docs walk update"). Other docs-walk runs take one slot. The
 queue, the Memory Gate, the Admission Deadline and the Leases are the same
-for both.
+for both. A docs-walk run that captures or records under an outer hold of
+one slot fails at once, before its walks open, and names
+`pnpm desktop-slot run --exclusive`.

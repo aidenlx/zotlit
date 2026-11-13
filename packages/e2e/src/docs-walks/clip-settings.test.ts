@@ -7,7 +7,7 @@ import {
 } from "./clip-settings.ts";
 
 /** Set `DOCS_WALK_CLIP` to `value` until disposal, which restores the old value. */
-function runClip(value: string): Disposable {
+function withClipEnv(value: string): Disposable {
   const old = process.env.DOCS_WALK_CLIP;
   process.env.DOCS_WALK_CLIP = value;
   return {
@@ -26,7 +26,7 @@ describe("clipSettings", () => {
       opening: 0.3,
       zoom: defaultClipSettings.zoom,
     });
-    using _clip = runClip('{"zoom":1.5,"opening":2}');
+    using _clip = withClipEnv('{"zoom":1.5,"opening":2}');
     expect(clipSettings({ opening: 0.3 })).toMatchObject({
       zoom: 1.5,
       opening: 2,
@@ -61,13 +61,13 @@ describe("clipSettings", () => {
     });
 
     it("lays the run's overrides over today's camera", () => {
-      using _clip = runClip('{"zoom":1.2,"endPad":0}');
+      using _clip = withClipEnv('{"zoom":1.2,"endPad":0}');
       expect(recutSettings(recorded)).toMatchObject({ zoom: 1.2, endPad: 0 });
     });
   });
 
   it("refuses a setting it does not know", () => {
-    using _clip = runClip('{"zoon":1.5}');
+    using _clip = withClipEnv('{"zoon":1.5}');
     expect(() => clipSettings()).toThrow("unknown clip setting zoon");
   });
 });
