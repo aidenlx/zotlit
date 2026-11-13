@@ -21,7 +21,6 @@ import {
   Check as CheckIcon,
   ChevronDown,
   CircleCheck,
-  Eye,
 } from "lucide-react";
 import { Children, isValidElement, use, useId, useState } from "react";
 import type { ReactNode } from "react";
@@ -52,19 +51,56 @@ export const preHydration = {
   unscripted: "[html[data-lesson-js]_[data-lesson]:not([data-ready])_&]:hidden",
 };
 
+// The `/learn` type scale, in rem. A lesson page sets five sizes — label,
+// meta, body, title and display — and the course page adds the section size.
+// See DESIGN.md → Learn (Type).
+
+/** 11px mono uppercase: a section label, where position and grouping cannot say it. */
 export const labelClass =
-  "font-mono text-[11px] leading-tight font-medium tracking-[0.08em] text-fd-muted-foreground uppercase";
+  "font-mono text-[0.6875rem] leading-[1.25] font-medium tracking-[0.08em] text-fd-muted-foreground uppercase";
 
-/** Action text: sans 18px, each ZotLit label as a UI chip, links in the accent text tone. */
-const captionClass =
-  "text-lg leading-normal [&_a]:rounded-sm [&_a]:font-medium [&_a]:text-fd-primary [&_a]:underline [&_a]:decoration-fd-primary/40 [&_a]:underline-offset-4 [&_a]:hover:decoration-fd-primary [&_a]:focus-visible:outline-2 [&_a]:focus-visible:outline-offset-2 [&_a]:focus-visible:outline-fd-ring [&_code]:rounded-sm [&_code]:bg-fd-muted [&_code]:px-1 [&_code]:font-mono [&_code]:text-[0.84em] [&_p+p]:mt-3 [&>:not(:first-child)]:mt-3 [&_strong]:rounded-[5px] [&_strong]:bg-fd-muted [&_strong]:px-1.5 [&_strong]:py-px [&_strong]:text-[0.94em] [&_strong]:font-semibold [&_strong]:[box-decoration-break:clone]";
+/** 15px: secondary text, meta lines, buttons and links beside the step text. */
+export const metaClass = "text-[0.9375rem] leading-[1.45]";
 
-export const buttonClass =
-  "inline-flex min-h-11 cursor-pointer items-center gap-2 rounded-[10px] bg-fd-foreground px-5 py-2.5 font-semibold text-fd-background transition-[background-color,scale] duration-150 hover:bg-fd-foreground/90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fd-ring motion-safe:active:scale-[0.96]";
+/** 17px: every step text — action, check, fix and figure — and the lede. */
+export const bodyClass = "text-[1.0625rem] leading-[1.55]";
+
+/** 20px: step titles, the panel title and card titles. */
+export const titleClass = "text-[1.25rem] leading-[1.25]";
+
+/** 28px: a section heading on the course page. */
+export const sectionClass = "text-[1.75rem] leading-[1.2] tracking-[-0.01em]";
+
+/** 38px, 34px in a narrow window: the page's H1. */
+export const displayClass =
+  "text-[2.125rem] leading-[1.12] tracking-[-0.01em] text-balance min-[561px]:text-[2.375rem]";
+
+/** Marks inside step text: bold UI labels at the text's size, inline code at 15px. */
+const marksClass =
+  "[&_code]:rounded-sm [&_code]:bg-fd-muted [&_code]:px-1 [&_code]:font-mono [&_code]:text-[0.9375rem] [&_strong]:font-semibold";
+
+/**
+ * Action text: links in the accent text tone. A shared block device inside it
+ * (an `ActionLink` or a `Command`, each `not-prose`) takes the meta size, its
+ * command name the title size and its copy affordance the label size.
+ */
+const captionClass = cn(
+  bodyClass,
+  marksClass,
+  "[&_a]:rounded-sm [&_a]:font-medium [&_a]:text-fd-primary [&_a]:underline [&_a]:decoration-fd-primary/40 [&_a]:underline-offset-4 [&_a]:hover:decoration-fd-primary [&_a]:focus-visible:outline-2 [&_a]:focus-visible:outline-offset-2 [&_a]:focus-visible:outline-fd-ring [&_p+p]:mt-3 [&>:not(:first-child)]:mt-3",
+  "[&_.not-prose]:text-[0.9375rem] [&_.not-prose_*]:text-[length:inherit] [&_.not-prose_.font-serif]:text-[1.25rem] [&_.not-prose_button]:text-[0.6875rem]",
+);
+
+export const buttonClass = cn(
+  metaClass,
+  "inline-flex min-h-11 cursor-pointer items-center gap-2 rounded-[10px] bg-fd-foreground px-5 py-2.5 font-semibold text-fd-background transition-[background-color,scale] duration-150 hover:bg-fd-foreground/90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fd-ring motion-safe:active:scale-[0.96]",
+);
 
 /** The secondary action: the raised surface with the shadow ring. */
-const secondaryButtonClass =
-  "inline-flex min-h-11 cursor-pointer items-center gap-2 rounded-[10px] border border-transparent bg-fd-background px-5 py-2.5 font-semibold text-fd-foreground shadow-ring transition-[box-shadow,scale] duration-150 hover:shadow-ring-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fd-ring motion-safe:active:scale-[0.96]";
+const secondaryButtonClass = cn(
+  metaClass,
+  "inline-flex min-h-11 cursor-pointer items-center gap-2 rounded-[10px] border border-transparent bg-fd-background px-5 py-2.5 font-semibold text-fd-foreground shadow-ring transition-[box-shadow,scale] duration-150 hover:shadow-ring-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fd-ring motion-safe:active:scale-[0.96]",
+);
 
 export const focusClass =
   "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fd-ring";
@@ -89,12 +125,16 @@ async function leadIn(lead: ReactNode, children: ReactNode) {
 /** What the reader sees when the step worked. */
 export function Check({ children }: { children: ReactNode }) {
   if (asMarkdown()) return leadIn(m.docs_learn_md_check(), children);
+  // The green band says what it is; a screen reader hears its name first.
   return (
-    <div className="grid gap-1.5 rounded-[10px] bg-check-bg px-3.5 py-3 text-[17px] leading-normal text-check [&_strong]:font-semibold">
-      <p className={cn(labelClass, "flex items-center gap-1.5 text-check")}>
-        <Eye aria-hidden strokeWidth={1.5} className="size-3.5" />
-        {m.docs_learn_check_label()}
-      </p>
+    <div
+      className={cn(
+        "rounded-[10px] bg-check-bg px-3.5 py-3 text-check",
+        bodyClass,
+        marksClass,
+      )}
+    >
+      <p className="sr-only">{m.docs_learn_check_label()}</p>
       <div className={oneLine}>{children}</div>
     </div>
   );
@@ -117,11 +157,9 @@ export function Fix({
 }) {
   if (asMarkdown()) return leadIn(title, children);
   return (
-    <div className="grid gap-1.5">
-      <h3 className="text-[17px] leading-snug font-semibold">{title}</h3>
-      <div className={cn("text-[17px] leading-normal", oneLine)}>
-        {children}
-      </div>
+    <div className={cn("grid gap-1", bodyClass, marksClass)}>
+      <h3 className="font-semibold">{title}</h3>
+      <div className={oneLine}>{children}</div>
     </div>
   );
 }
@@ -130,7 +168,13 @@ export function Fix({
 export function Figure({ children }: { children: ReactNode }) {
   if (asMarkdown()) return md`${children}`;
   return (
-    <div className="text-[16.5px] [&_table]:my-0 [&_table]:w-full [&_table]:border-collapse [&_td]:border-t [&_td]:border-fd-border [&_td]:py-2.5 [&_td]:pe-2.5 [&_td]:align-top [&_th]:pe-2.5 [&_th]:pb-2 [&_th]:text-start [&_th]:font-mono [&_th]:text-[11px] [&_th]:font-medium [&_th]:tracking-[0.08em] [&_th]:text-fd-muted-foreground [&_th]:uppercase [&>div]:my-0 [&>div]:overflow-x-auto [&>div]:rounded-none [&>div]:border-0 [&>div]:bg-transparent">
+    <div
+      className={cn(
+        bodyClass,
+        marksClass,
+        "[&_table]:my-0 [&_table]:w-full [&_table]:border-collapse [&_td]:border-t [&_td]:border-fd-border [&_td]:py-2.5 [&_td]:pe-2.5 [&_td]:align-top [&_th]:pe-2.5 [&_th]:pb-2 [&_th]:text-start [&_th]:text-[0.9375rem] [&_th]:font-semibold [&_th]:text-fd-muted-foreground [&>div]:my-0 [&>div]:overflow-x-auto [&>div]:rounded-none [&>div]:border-0 [&>div]:bg-transparent",
+      )}
+    >
       {children}
     </div>
   );
@@ -160,32 +204,33 @@ export function Step({ n, children }: { n: number; children: ReactNode }) {
   const { live } = lesson;
   const open = live === null || live.open === n;
   const ticked = live?.ticks.has(n) ?? false;
-  const labelId = `step-${n}-label`;
-  const titleId = `step-${n}-title`;
   const bodyId = `step-${n}-body`;
 
+  // The number shows the order; a screen reader hears "Step 2 of 6" instead.
   const heading = (
-    <>
-      <span
-        id={labelId}
-        className={cn(
-          labelClass,
-          "block",
-          live?.open === n && !ticked && "text-fd-primary",
-        )}
-      >
+    <span
+      className={cn(
+        "flex gap-2.5",
+        titleClass,
+        ticked ? "text-fd-muted-foreground" : "font-semibold",
+      )}
+    >
+      <span className="sr-only">
         {m.docs_learn_step_label({ number: n, total })}
       </span>
       <span
-        id={titleId}
+        aria-hidden
         className={cn(
-          "mt-0.5 block text-lg leading-snug text-balance",
-          ticked ? "text-fd-muted-foreground" : "font-semibold",
+          "shrink-0 font-normal tabular-nums",
+          live?.open === n && !ticked
+            ? "text-fd-primary"
+            : "text-fd-muted-foreground",
         )}
       >
-        {meta.title}
+        {n}
       </span>
-    </>
+      <span className="min-w-0 text-balance">{meta.title}</span>
+    </span>
   );
 
   return (
@@ -202,7 +247,7 @@ export function Step({ n, children }: { n: number; children: ReactNode }) {
       <div className="flex items-start gap-3">
         <span
           className={cn(
-            "relative mt-0.5 grid size-7 shrink-0 place-items-center",
+            "relative -mt-px grid size-7 shrink-0 place-items-center",
             preHydration.scripted,
           )}
         >
@@ -211,7 +256,11 @@ export function Step({ n, children }: { n: number; children: ReactNode }) {
             checked={ticked}
             disabled={live === null}
             onChange={(event) => live?.tick(n, event.target.checked)}
-            aria-labelledby={`${labelId} ${titleId}`}
+            aria-label={m.docs_learn_step_name({
+              number: n,
+              total,
+              title: meta.title,
+            })}
             className={cn(
               "peer size-7 cursor-pointer appearance-none rounded-lg bg-fd-card shadow-[inset_0_0_0_1.5px_var(--color-fd-muted-foreground)] transition-[background-color,box-shadow] duration-150 checked:bg-check-label checked:shadow-none hover:shadow-[inset_0_0_0_1.5px_var(--color-fd-foreground)] checked:hover:shadow-none",
               focusClass,
@@ -241,7 +290,7 @@ export function Step({ n, children }: { n: number; children: ReactNode }) {
                 aria-hidden
                 strokeWidth={1.5}
                 className={cn(
-                  "mt-2 size-5 shrink-0 text-fd-muted-foreground motion-safe:transition-transform motion-safe:duration-150",
+                  "mt-0.5 size-5 shrink-0 text-fd-muted-foreground motion-safe:transition-transform motion-safe:duration-150",
                   open && "rotate-180",
                 )}
               />
@@ -315,7 +364,12 @@ function TickAction({
   const next = nextOpenStep(live.ticks, n, total) ?? total + 1;
   return (
     <>
-      <span className="inline-flex items-center gap-1.5 text-base font-semibold text-check-label">
+      <span
+        className={cn(
+          metaClass,
+          "inline-flex items-center gap-1.5 font-semibold text-check-label",
+        )}
+      >
         <CircleCheck aria-hidden strokeWidth={2.25} className="size-[18px]" />
         {m.docs_learn_ticked()}
       </span>
@@ -364,7 +418,8 @@ function StepFixes({
           aria-controls={panel}
           onClick={() => setOpen(!open)}
           className={cn(
-            "inline-flex min-h-11 cursor-pointer items-center gap-1 rounded-sm text-base text-fd-muted-foreground underline decoration-1 underline-offset-4 transition-colors duration-150 hover:text-fd-foreground",
+            metaClass,
+            "inline-flex min-h-11 cursor-pointer items-center gap-1 rounded-sm text-fd-muted-foreground underline decoration-1 underline-offset-4 transition-colors duration-150 hover:text-fd-foreground",
             focusClass,
           )}
         >
@@ -393,7 +448,7 @@ function StepFixes({
           {m.docs_learn_fix_heading()}
         </h3>
         {children}
-        <p className="text-[17px]">
+        <p className={bodyClass}>
           <a
             href={localizeHref("/community")}
             className="font-medium text-fd-primary underline decoration-fd-primary/40 underline-offset-[3px] hover:decoration-fd-primary"

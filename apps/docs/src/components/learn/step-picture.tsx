@@ -3,8 +3,9 @@
 //
 // Every picture prerenders its still, so a reader without JavaScript gets
 // every picture. Only an active picture mounts its player (`Recording`), so
-// only its clip loads. The still is the step's poster when the build found
-// one, the step's screenshot otherwise.
+// only its clip loads; a picture with autoplay off shows the still with a play
+// button until the reader plays it. The still is the step's poster when the
+// build found one, the step's screenshot otherwise.
 
 import { DocsImage } from "@/components/docs-image";
 import { Recording } from "@/components/recording";
@@ -28,6 +29,7 @@ export function StepPicture({
   n,
   alt,
   active,
+  autoplay = true,
   thumb = false,
 }: {
   media: string;
@@ -35,6 +37,8 @@ export function StepPicture({
   alt: string;
   /** The page runs and wants this step's recording. */
   active: boolean;
+  /** The recording plays on its own while it crosses the middle of the window. */
+  autoplay?: boolean;
   /** A card's picture: the still in a window-shaped frame, cropped from its top. */
   thumb?: boolean;
 }) {
@@ -66,14 +70,16 @@ export function StepPicture({
     >
       {active && entry.clip && !thumb ? (
         <Recording
-          key={entry.base}
+          // A player starts in its autoplay mode, so a change of mode remounts it.
+          key={`${entry.base}:${autoplay}`}
           base={entry.base}
           webm={entry.clip.webm}
           mp4={entry.clip.mp4}
           poster={entry.still.src}
           alt={alt}
           fit="contain"
-          preload="auto"
+          preload={autoplay ? "auto" : "metadata"}
+          autoplay={autoplay}
           fallback={still}
         />
       ) : (

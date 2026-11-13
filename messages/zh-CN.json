@@ -2847,6 +2847,7 @@
   "docs_learn_course_done": "You finished the course. Each lesson stays here to do again.",
   "docs_learn_you_need": "You need",
   "docs_learn_step_label": "Step {number} of {total}",
+  "docs_learn_step_name": "Step {number} of {total}: {title}",
   "docs_learn_fix_heading": "If you see something else",
   "docs_learn_ask_none_of_these": "None of these. Ask in the community →",
   "docs_learn_ask": "Ask in the community →",

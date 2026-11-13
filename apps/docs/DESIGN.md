@@ -15,8 +15,7 @@ Visual references: the landing at
 `prototype/landing-desk` (see Landing), and
 the `/learn` checklist at
 `prototypes/learn-prototype/prototype-learn.html` on
-`prototype/learn-tutorial` (variant D, opened by variant B's today and
-instead lists).
+`prototype/learn-tutorial` (variant D's course page and checklist).
 Where this spec and a prototype differ, this spec wins.
 
 ## Key points
@@ -157,15 +156,22 @@ On editorial and docs-chrome surfaces, apparatus labels are mono uppercase:
 
 - Home nav links
 - Landing labels ("The research sequence", "Literature review", "Step 1", the
-  desk's tape labels) and the `/learn` lesson labels ("Lesson 1 of 6", "Step
-  2 of 6")
+  desk's tape labels) and the `/learn` outcome label ("You end with")
 - Changelog/blog dates and meta lines; version-ledger row labels
 - Docs sidebar folder + `links`-prop rows, the TOC "On this page" title, docs
   prose h4, and the command `Copy →` affordance
 
 Numerals that count or order — "02 / 05", "Step 1", "01" in a caption trail
 — take the mono face in normal case, with the current or leading number in the
-accent text tone.
+accent text tone. A `/learn` step number sits inside its title instead, so it
+takes the title's sans face, regular and tabular (see Learn).
+
+**The layout explains; a label appears only where position and grouping
+cannot.** Before adding a label or a secondary description, check whether
+the element's place, its group or the element itself already says it: a
+numbered row needs no "Step 2 of 6" above it, a green check band needs no
+"You should see", and the first, wider card needs no "Start here". A
+screen reader that cannot see the layout gets the name as `sr-only` text.
 
 Docs-chrome labels ride the same voice at a smaller size (~0.72rem) and quieter
 weight — micro-apparatus inside the sans body rather than marketing display, but
@@ -222,7 +228,10 @@ Values follow the `better-ui` skill.
 - **Loops.** At most one loop plays in view at a time — a lesson recording, a
   landing recording or the landing's table demo: a recording runs while it
   crosses the middle band of the viewport, and the demo while half of it is
-  on screen; each rests elsewhere, and a loop that starts rests the one that
+  on screen. A loop starts on its own only where the
+  reader is already looking at it: a recording that shows an outcome rather
+  than the step at hand (a lesson's result) rests on its poster with its
+  play button until the reader plays it. Each loop rests elsewhere, and a loop that starts rests the one that
   played. A recording plays in the recording player, whose play button
   pauses it; a recording the reader paused holds the turn while it stays in
   view, so no other loop starts behind the pause. The table demo carries a
@@ -265,7 +274,7 @@ heading, one caption and one check line.
   muted tone at 70%, 3:1 on the surface; the fill and a 14px thumb in the
   accent through
   `--media-accent-color`, a 36px tall hit area, half-second arrow steps),
-  the current and total time (mono 12px, muted, tabular; hidden when the
+  the current and total time (mono 11px, muted, tabular; hidden when the
   player is under 18rem wide) and a 36px fullscreen button. The clips are
   silent, so there is no volume control. Lucide icons swap in place on the
   control's state. The bar shows while the clip is paused or the reader is
@@ -273,7 +282,9 @@ heading, one caption and one check line.
   it back. The player is a focusable group named by the recording's alt
   text; Space plays or pauses and the arrow keys seek while it has focus.
   A clip plays muted and looping while it crosses the middle of the
-  viewport; once the reader plays or pauses it, the reader's choice holds.
+  viewport; a page can turn this off for a clip (`autoplay={false}`), which
+  then rests on its poster, as under reduced motion, until the reader plays
+  it. Once the reader plays or pauses a clip, the reader's choice holds.
   A clip rested by another loop while still in view plays again when that
   loop rests. In fullscreen the whole clip shows (`object-fit: contain`).
 - **Words stay page text.** Captions, numbered-mark references and check lines
@@ -457,101 +468,126 @@ closing call. Sections run 1152px wide (`max-w-6xl`) with 32px side gutters
 ### Learn (`/learn`)
 
 Target. Prototype: round 1 of `prototypes/learn-prototype/prototype-learn.html`
-on `prototype/learn-tutorial`: variant D's course page and checklist, opened by
-variant B's today and instead lists.
+on `prototype/learn-tutorial`: variant D's course page and checklist.
 
 The course page lets a non-technical researcher pick the chore they want
 gone; a lesson is a checklist they follow in the real app. The reader keeps
 Obsidian open on the other half of the screen, so every layout is drawn
-first for a 700px window, then checked at 390px and 1440px.
+first for a 700px window, then checked at 390px and 1440px. A lesson page
+holds what the reader needs to do the steps and little else: the layout
+explains, and each fact appears once (see The label voice).
 
+- **Type.** One scale in rem for every `/learn` page, each size with its
+  unitless line-height, from the role classes in
+  `src/components/learn/lesson-mdx.tsx`:
+
+  | Role | Size | Line-height | Carries |
+  | --- | --- | --- | --- |
+  | Label | 11px (0.6875rem), mono uppercase | 1.25 | "You end with", the shell's "Learn", the player's time |
+  | Meta | 15px (0.9375rem) | 1.45 | the minutes, the needs and note, the progress count, buttons, card meta |
+  | Body | 17px (1.0625rem) | 1.55 | the lede and every step text: action, check line, fix, figure table |
+  | Title | 20px (1.25rem) | 1.25 | step titles, the panel title, the outcome, card titles, the wordmark |
+  | Section | 28px (1.75rem) | 1.2 | the course page's section heading only |
+  | Display | 38px (2.375rem), 34px below 561px | 1.12 | the H1 |
+
+  A lesson page sets five sizes (label, meta, body, title, display) and the
+  course page six. Inline code in step text is mono 15px; a UI label is
+  semibold at the text's own size. A shared block device in a step (an
+  `ActionLink`, a `Command`) takes the meta size, its command name the
+  title size. Step titles carry the lesson's only H2 style.
 - **Shell.** The course sits outside the docs layout: a top bar (the
   wordmark, a mono "Learn" label, then "All lessons" and "Docs" as muted
   links, over a hairline) and one centred column, 720px at most, with 20px
   side padding. From 1280px (`xl`) the course page widens to 1180px and a
   running lesson to 1400px with its media panel; below that, every page
   keeps the one column.
-- **Course page.** The question as the H1 (serif 500, 34px, 42px from
-  561px) over a sans lede; a **Continue Lesson N** button (ink fill) once
-  the reader has progress. Then **Start here**: lesson 1 as a raised card
-  with a 4px accent bar on its leading edge — a mono "Start here" label in
-  the accent text tone, the chore as a serif title, one muted line on why
-  every lesson needs it, the minutes, the start button and the result
-  picture beside it from 561px (above it below). Once lesson 1 is done, the
-  card becomes a strip on the check tint: a check disc, "Start here · Done",
-  the chore, and an **Open it again** link. Then "Then pick a chore" with
-  "In any order" as a mono label, and one raised card per chore: the
-  minutes and the progress (a "Done" badge, or "N of M done" in the accent
-  text tone), the chore in the reader's words as a quoted serif title that
-  links the whole card, a "Today you …" line in muted sans, and the
-  lesson's result picture. From 1280px the header keeps 680px, and the
+- **Course page.** The question as the H1 over a muted lede; a **Continue
+  Lesson N** button (ink fill) once the reader has progress. Then lesson 1
+  as a raised card with a 4px accent bar on its leading edge — the chore as
+  a serif title, the minutes, the start button and the result picture
+  beside it from 561px (above it below); its place and width say "start
+  here". Once lesson 1 is done, the card becomes a strip on the check tint:
+  a check disc, the chore and an **Open it again** link. Then the section
+  heading "Then pick a chore" and one raised card per chore: the lesson's
+  result picture, the chore in the reader's words as a quoted serif title
+  that links the whole card, and one muted meta line with the minutes and
+  the progress ("Done" with a check in the check green, `#2f7d4f`, 4.6:1 on ground, or "N of M done"
+  in the accent text tone). From 1280px the header keeps 680px, and the
   chore cards sit in a six-column grid, three cards over two (spans 2, 2,
   2, 3, 3), each with its picture on top.
 - **Result picture.** The lesson's last step: its poster
   (`step-<n>.poster.webp`, the clip's final frame framed on the result) or,
   until one exists, its screenshot. On a card it fills a window-shaped
   frame from the top.
-- **Opener.** The lesson label ("Lesson 1 of 6 · about 10 minutes · 6
-  steps"), the lesson title as the H1 (serif 500, 34px, 38px from 561px),
-  then a raised panel of two halves — "What you do today" on the quiet fill
-  in muted text, a bulleted list with no numbers, and "What you'll do
-  instead" on the surface with the one action — side by side from 561px.
-  Below it the result: the last step's recording, captioned with a mono
-  "You end with" label in the accent text tone and the outcome. Then "You
-  need" as one line, and the lesson's note with an info mark, in muted
-  text.
-- **Progress bar.** Sticky under the banner as the checklist scrolls: the
-  lesson title, truncated, and "N of M done" as a mono label (check green
-  when all are done) over one segment per step — check green when ticked,
-  ink for the open row, the line colour otherwise.
+- **Opener.** The minutes ("About 12 minutes", muted meta), the lesson
+  title as the H1, the lesson's `instead` as one lede sentence, then one
+  compact block in meta size: "You need" and the needs on one line (each
+  need semibold, its detail muted in brackets) and the lesson's note as a
+  muted second line.
+- **Outcome.** Below 1280px, and on the prerendered page, the result shows
+  once, directly above the checklist: the mono "You end with" label in the
+  accent text tone and the outcome as a serif title beside the last step's
+  recording from 561px (above it below). The recording rests on its poster
+  with its play button and plays only when the reader plays it.
+- **Progress bar.** Sticky under the banner as the checklist scrolls: one
+  segment per step across the column — check green when ticked, ink for
+  the open row, the line colour otherwise — and the count as "3/7" in meta
+  size, tabular, muted (check green when all are done). A screen reader
+  reads "3 of 7 done".
 - **Row.** Each step is a row: a 28px checkbox (a 1.5px muted ring, filled
-  check green with a ground-coloured check when ticked), then a disclosure
-  button holding a mono "Step 2 of 6" label and the step title (sans 18px,
-  semibold; muted and regular once ticked) with a chevron. Closed rows sit
-  on hairlines. The open row is a raised card (14px radius) and, below the
-  title, shows the action, the picture, the check line, any figure, then
-  **Tick step N** (the ink-filled leading action, with a check) beside
-  **Not what you see?**. Ticking a row, by its checkbox or by Tick step N,
-  closes it and opens the next row not ticked; any row reopens from its
-  title. A ticked row opened again shows a check with "Ticked" in check
-  green and **Go to step N** (**See the end** once every step is ticked)
-  on the surface with the shadow ring. After either button, focus moves to
-  the title of the row that opens, or to the end. The body fades and rises
-  6px over 220 ms when it opens (none under reduced motion).
+  check green with a ground-coloured check when ticked; named "Step 2 of 6:
+  title"), then a disclosure button holding the step number (regular,
+  tabular, muted; the accent text tone on the open row) and the step title
+  (sans semibold at the title size; muted and regular once ticked) with a
+  chevron. Closed rows sit on hairlines. The open row is a raised card
+  (14px radius) and, below the title, shows the action, the picture, the
+  check line, any figure, then **Tick step N** (the ink-filled leading
+  action, with a check) beside **Not what you see?**. Ticking a row, by its
+  checkbox or by Tick step N, closes it and opens the next row not ticked;
+  any row reopens from its title. A ticked row opened again shows a check
+  with "Ticked" in check green and **Go to step N** (**See the end** once
+  every step is ticked) on the surface with the shadow ring. After either
+  button, focus moves to the title of the row that opens, or to the end.
+  The body fades and rises 6px over 220 ms when it opens (none under
+  reduced motion).
 - **Media panel.** From 1280px, on a running page, the lesson is a 580px
-  checklist column and, 48px beside it, a sticky panel that follows the
-  open row: its step label (accent text tone; check green with a check and
-  "Done" once ticked), its title in serif 24px, its recording and one muted
-  line on what to do. With no row open, the panel shows the result picture
-  under "You end with". The rows then show no picture of their own, so one
-  player mounts per step. The prerendered page and a reader without
-  JavaScript keep the one column, with every picture in its row.
+  checklist column and, 48px beside it, a sticky panel. It opens on the
+  outcome: "You end with", the outcome as a serif title and the last
+  step's recording at rest on its poster. Once the reader reaches the
+  checklist — the first row rises into the top 35% of the window, or the
+  reader opens, toggles or ticks a row — the panel follows the open row:
+  the step number (a check in check green once ticked) and title in serif
+  at the title size, then its recording, which plays while it crosses the
+  middle of the window. A reader with ticks saved, or one who follows a
+  link to a step, starts there. With no row open, the panel shows the
+  outcome again. The rows then show no picture of their own, so one player
+  mounts per step. The prerendered page and a reader without JavaScript
+  keep the one column, with every picture in its row.
 - **Picture.** One recording of the step in the real app, in the recording
   player (see Illustration), 10px radius, with the shadow ring, at most
   560px or 70% of the window tall. Only the open row's clip and the
-  opener's result load; each plays while it crosses the middle of the
-  window, one at a time. There is no zoom control: the recordings frame the
-  action themselves.
-- **Action.** Sans 18px / 1.5, naming each control as a UI chip (sans
-  semibold on the quiet fill, 5px radius); a link, such as the
-  `obsidian://` shortcut in lesson 1, is underlined in the accent text
-  tone.
-- **Check line.** A mono "In Obsidian you should see" label with an eye
-  mark over what the reader should now see, in a 10px-radius band: dark
-  green `#1f5c39` text on `#e9f3ec` (7.0:1) in light; `#7cc79a` on `#17261d`
-  (7.9:1) in dark².
+  outcome load. The open row's clip plays while it crosses the middle of
+  the window; the outcome waits for the reader's play; one plays at a
+  time. There is no zoom control: the recordings frame the action
+  themselves.
+- **Action.** Body size, each control named in semibold at the text's size;
+  a link, such as the `obsidian://` shortcut in lesson 1, is underlined in
+  the accent text tone.
+- **Check line.** What the reader should now see, in a 10px-radius band:
+  dark green `#1f5c39` text on `#e9f3ec` (7.0:1) in light; `#7cc79a` on
+  `#17261d` (7.9:1) in dark². The band names itself; a screen reader hears
+  "You should see" first.
 - **Fix panel.** **Not what you see?** — a muted underlined link-style
   button with a chevron — toggles (`aria-expanded`) a panel on the warm
-  tint, 10px radius, 14px padding: each likely failure as a sans-semibold
-  17px heading and the fix in one or two sentences; it closes on "None of
-  these. Ask in the community →" in the accent text tone.
-- **End.** Until every step is ticked, a line-ringed box with how many
-  steps are left. Then a raised card: a check disc, a "Lesson 1 complete"
-  label in the check green (`#2f7d4f`, 4.6:1 on ground), "All 6 done" as the
-  serif title, one line on what ZotLit now does, "Two more chores" — small
-  cards with the result picture, the minutes and the quoted chore, lesson 1
-  first while it is not done — and **See all chores** in the accent text
-  tone.
+  tint, 10px radius, 14px padding: each likely failure as a semibold
+  heading at body size and the fix in one or two sentences; it closes on
+  "None of these. Ask in the community →" in the accent text tone.
+- **End.** Once every step is ticked, a raised card: a check disc beside
+  "Lesson 1 complete" (the row title style), one line on what ZotLit now
+  does, "Two more chores" in muted semibold meta — small cards with the
+  result picture, the quoted chore and the minutes, lesson 1 first while it
+  is not done — and **See all chores** in the accent text tone. Until then
+  the checklist ends on its last row.
 - **Focus and state.** Every control is a button, link or checkbox with a
   2px accent outline at 2px offset on keyboard focus. Ticked state shows as
   a check and as the count text, never by colour alone.

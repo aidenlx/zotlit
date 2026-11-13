@@ -1,5 +1,5 @@
 // A recording in a Video.js player: play, seek, time and fullscreen, and no volume control because the clips are silent.
-// It loops in the middle of the viewport one at a time, obeys the reader once they play or pause, and rests under reduced motion.
+// It loops in the middle of the viewport one at a time, obeys the reader once they play or pause, and rests under reduced motion or when its page turns autoplay off.
 // @see apps/docs/DESIGN.md → Illustration (The recording player)
 
 import {
@@ -58,6 +58,8 @@ export interface RecordingPlayerProps {
   fit: "contain" | "cover";
   /** How much of the clip loads before it plays, with motion on. */
   preload: "auto" | "metadata";
+  /** Plays on its own while it crosses the middle of the viewport; false rests it on its poster until the reader plays it. */
+  autoplay?: boolean;
 }
 
 const buttonClass =
@@ -75,11 +77,15 @@ export default function RecordingPlayer({
   alt,
   fit,
   preload,
+  autoplay = true,
 }: RecordingPlayerProps) {
   const video = useRef<HTMLVideoElement>(null);
   // This mounts after hydration only, so the preference is safe to read here.
+  // A clip that waits for the reader rests on its poster, as under reduced motion.
   const [still] = useState(
-    () => window.matchMedia("(prefers-reduced-motion: reduce)").matches,
+    () =>
+      !autoplay ||
+      window.matchMedia("(prefers-reduced-motion: reduce)").matches,
   );
   // "auto" plays mid-viewport, "manual" plays from the reader's press until it leaves view, "paused" stays still.
   const [mode, setMode] = useState<"auto" | "manual" | "paused">(
@@ -234,7 +240,7 @@ export default function RecordingPlayer({
                   </TimeSlider.Track>
                   <TimeSlider.Thumb className="absolute left-(--media-slider-fill) size-3.5 -translate-x-1/2 rounded-full border-2 border-fd-card bg-(--media-accent-color) shadow-ring group-data-dragging/slider:left-(--media-slider-pointer) focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fd-ring" />
                 </TimeSlider.Root>
-                <Time.Group className="shrink-0 px-1 font-mono text-xs text-fd-muted-foreground tabular-nums @max-[18rem]:hidden">
+                <Time.Group className="shrink-0 px-1 font-mono text-[0.6875rem] text-fd-muted-foreground tabular-nums @max-[18rem]:hidden">
                   <Time.Value type="current" />
                   <Time.Separator className="mx-1" />
                   <Time.Value type="duration" />

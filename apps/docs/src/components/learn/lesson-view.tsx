@@ -1,5 +1,5 @@
-// One lesson page: the opener, the checklist of steps from the lesson body,
-// and the end. See DESIGN.md → Learn.
+// One lesson page: the opener, the outcome, the checklist of steps from the
+// lesson body, and the end. See DESIGN.md → Learn.
 //
 // The page prerenders every step open, in order, so search engines and readers
 // without JavaScript get the whole lesson. Once it runs, one row is open at a
@@ -8,7 +8,7 @@
 // the page runs, CSS alone opens the row the hash targets — see `preHydration`.
 
 import { Link, useLocation, useNavigate } from "@tanstack/react-router";
-import { Check, Info } from "lucide-react";
+import { Check } from "lucide-react";
 import {
   useEffect,
   useLayoutEffect,
@@ -21,7 +21,14 @@ import type { ReactNode } from "react";
 import { cn } from "@/lib/cn";
 import * as m from "@/paraglide/messages.js";
 
-import { focusClass, labelClass } from "./lesson-mdx";
+import {
+  bodyClass,
+  displayClass,
+  focusClass,
+  labelClass,
+  metaClass,
+  titleClass,
+} from "./lesson-mdx";
 import {
   firstOpenStep,
   LessonContext,
@@ -56,7 +63,6 @@ export interface LessonViewData {
   minutes: number;
   note?: string;
   media: string;
-  today: string[];
   instead: string;
   needs: { item: string; detail: string }[];
   steps: LessonStepMeta[];
@@ -71,6 +77,13 @@ function prefersReducedMotion() {
 
 // Tailwind's `xl`, from which the lesson shows its media panel.
 const wideQuery = "(min-width: 80rem)";
+
+/**
+ * How far down the window the checklist's first row must rise before the
+ * panel turns from the outcome to the open step: the reader has reached the
+ * checklist. Every lesson's first row loads below this line at 1440 × 900.
+ */
+const reachedLine = 0.35;
 
 /** Whether the window is `xl` wide; false while the page prerenders. */
 function useWide() {
@@ -100,6 +113,8 @@ export function LessonView({
   const [ready, setReady] = useState(false);
   const [ticks, setTicks] = useState<ReadonlySet<number>>(new Set());
   const [open, setOpen] = useState<number | null>(null);
+  // The reader has reached the checklist, so the panel follows the open row.
+  const [engaged, setEngaged] = useState(false);
   const [progress, setProgress] = useState<Record<string, LessonProgress>>({});
   const [say, setSay] = useState("");
   // The hash this page wrote itself, which the hash effect leaves alone.
@@ -116,10 +131,38 @@ export function LessonView({
   // Saved ticks live in this browser only, so they are read after mount.
   useLayoutEffect(() => {
     const all = readProgress();
+    const saved = all[lesson.slug]?.ticks ?? [];
     setProgress(all);
-    setTicks(new Set(all[lesson.slug]?.ticks));
+    setTicks(new Set(saved));
+    // A reader who began, or who follows a link to a step, is already at work.
+    const part = partFromHash(window.location.hash, total);
+    setEngaged(saved.length > 0 || (part >= 1 && part <= total));
     setReady(true);
-  }, [lesson.slug]);
+  }, [lesson.slug, total]);
+
+  // From `xl`, the panel shows the outcome until the reader scrolls the
+  // checklist into the upper part of the window. Every row is watched, so a
+  // jump past the first one (End, a restored scroll) counts too; a page that
+  // has not scrolled has not been read yet.
+  useEffect(() => {
+    if (!ready || !wide || engaged) return;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        const line = window.innerHeight * reachedLine;
+        if (
+          window.scrollY > 0 &&
+          entries.some((entry) => entry.boundingClientRect.top < line)
+        )
+          setEngaged(true);
+      },
+      { rootMargin: `0px 0px -${Math.round((1 - reachedLine) * 100)}% 0px` },
+    );
+    for (let n = 1; n <= total; n++) {
+      const row = document.getElementById(String(n));
+      if (row) observer.observe(row);
+    }
+    return () => observer.disconnect();
+  }, [ready, wide, engaged, total]);
 
   // The hash names the open row; with none, the first row not ticked opens.
   useLayoutEffect(() => {
@@ -155,6 +198,7 @@ export function LessonView({
   /** Opens row `n`, or closes every row, and brings `into` view: a row, or the end. */
   function show(n: number | null, into: number | null = n) {
     setOpen(n);
+    setEngaged(true);
     reveal.current = into;
     const next = n === null ? "" : String(n);
     written.current = next;
@@ -227,180 +271,160 @@ export function LessonView({
         className="mx-auto grid w-full max-w-[720px] grid-cols-[minmax(0,1fr)] gap-12 px-5 pt-6 pb-24 [html[data-lesson-js]_&]:xl:max-w-[1400px] [html[data-lesson-js]_&]:xl:grid-cols-[minmax(0,580px)_minmax(0,1fr)]"
       >
         <div className="grid grid-cols-[minmax(0,1fr)] content-start gap-8">
-          <Opener lesson={lesson} ready={ready} />
+          <Opener lesson={lesson} />
+          <Outcome lesson={lesson} active={ready && !wide} />
           <div>
             <div
               data-lesson-bar=""
-              className="sticky top-(--fd-banner-height,0px) z-10 -mx-5 flex items-center gap-4 border-b border-fd-border bg-fd-background px-5 py-3"
+              className="sticky top-(--fd-banner-height,0px) z-10 -mx-5 flex items-center gap-3 border-b border-fd-border bg-fd-background px-5 py-3"
             >
-              {/* The H1 again, for a reader scrolled down the checklist. */}
+              <span aria-hidden className="flex min-w-0 flex-1 gap-1">
+                {lesson.steps.map((_, index) => {
+                  const n = index + 1;
+                  return (
+                    <span
+                      key={n}
+                      className={cn(
+                        "h-1.5 flex-1 rounded-full transition-colors duration-150",
+                        ticks.has(n)
+                          ? "bg-check-label"
+                          : ready && open === n
+                            ? "bg-fd-foreground"
+                            : "bg-fd-border",
+                      )}
+                    />
+                  );
+                })}
+              </span>
               <p
-                aria-hidden
-                className="min-w-0 flex-1 truncate font-serif text-base font-medium"
+                className={cn(
+                  metaClass,
+                  "shrink-0 tabular-nums",
+                  allDone ? "text-check-label" : "text-fd-muted-foreground",
+                )}
               >
-                {lesson.title}
-              </p>
-              <div className="grid shrink-0 justify-items-end gap-1.5">
-                <p
-                  className={cn(
-                    labelClass,
-                    "tabular-nums",
-                    allDone ? "text-check-label" : "text-fd-foreground",
-                  )}
-                >
-                  {m.docs_learn_count_done({ count, total })}
-                </p>
-                <span aria-hidden className="flex gap-0.5">
-                  {lesson.steps.map((_, index) => {
-                    const n = index + 1;
-                    return (
-                      <span
-                        key={n}
-                        className={cn(
-                          "h-1.5 w-3 rounded-full transition-colors duration-150",
-                          ticks.has(n)
-                            ? "bg-check-label"
-                            : ready && open === n
-                              ? "bg-fd-foreground"
-                              : "bg-fd-border",
-                        )}
-                      />
-                    );
-                  })}
+                <span aria-hidden>
+                  {count}/{total}
                 </span>
-              </div>
+                <span className="sr-only">
+                  {m.docs_learn_count_done({ count, total })}
+                </span>
+              </p>
             </div>
             <p aria-live="polite" className="sr-only">
               {say}
             </p>
             <ol className="mt-2">{children}</ol>
           </div>
-          <End
-            lesson={lesson}
-            done={!ready || allDone}
-            left={total - count}
-            progress={progress}
-          />
+          {(!ready || allDone) && <End lesson={lesson} progress={progress} />}
         </div>
         {ready && wide && (
-          <MediaPanel lesson={lesson} open={open} ticks={ticks} />
+          <MediaPanel
+            lesson={lesson}
+            open={engaged ? open : null}
+            ticks={ticks}
+          />
         )}
       </div>
     </LessonContext>
   );
 }
 
-function Opener({ lesson, ready }: { lesson: LessonViewData; ready: boolean }) {
-  const total = lesson.steps.length;
-  const last = lesson.steps[total - 1];
-
+function Opener({ lesson }: { lesson: LessonViewData }) {
   return (
-    <section aria-labelledby="lesson-title" className="grid gap-5">
-      <div className="grid gap-3">
-        <p className={labelClass}>
-          {m.docs_learn_lesson_meta({
-            number: lesson.lesson,
-            total: lesson.lessonCount,
-            minutes: lesson.minutes,
-            steps: total,
-          })}
+    <section aria-labelledby="lesson-title" className="grid gap-4">
+      <div className="grid gap-2">
+        <p className={cn(metaClass, "text-fd-muted-foreground")}>
+          {m.docs_learn_minutes({ minutes: lesson.minutes })}
         </p>
         <h1
           id="lesson-title"
-          className="font-serif text-[34px] leading-[1.12] font-medium tracking-[-0.01em] text-balance min-[561px]:text-[38px]"
+          className={cn(displayClass, "font-serif font-medium")}
         >
           {lesson.title}
         </h1>
       </div>
-      <div className="grid overflow-hidden rounded-[14px] border border-transparent shadow-ring min-[561px]:grid-cols-2">
-        <section
-          aria-labelledby="lesson-today"
-          className="grid content-start gap-3 bg-fd-muted p-4 min-[561px]:p-5"
-        >
-          <h2
-            id="lesson-today"
-            className="font-serif text-xl leading-tight font-medium text-fd-muted-foreground"
-          >
-            {m.docs_learn_today_heading()}
-          </h2>
-          <ul className="grid gap-2 text-base leading-snug text-fd-muted-foreground">
-            {lesson.today.map((chore) => (
-              <li key={chore} className="flex gap-2.5">
-                <span
-                  aria-hidden
-                  className="mt-[0.55em] size-1.5 shrink-0 rounded-full bg-fd-muted-foreground/60"
-                />
-                <span className="first-letter:uppercase">{chore}</span>
-              </li>
-            ))}
-          </ul>
-        </section>
-        <section
-          aria-labelledby="lesson-instead"
-          className="grid content-start gap-3 border-t border-fd-border bg-fd-card p-4 min-[561px]:border-s min-[561px]:border-t-0 min-[561px]:p-5"
-        >
-          <h2
-            id="lesson-instead"
-            className="font-serif text-xl leading-tight font-medium"
-          >
-            {m.docs_learn_instead_heading()}
-          </h2>
-          <p className="text-lg leading-normal">{lesson.instead}</p>
-        </section>
-      </div>
-      {last && (
-        <figure className="grid gap-2.5">
-          <StepPicture
-            media={lesson.media}
-            n={total}
-            alt={last.alt}
-            active={ready}
-          />
-          <figcaption className="text-base leading-normal">
-            <span className={cn(labelClass, "me-2 text-fd-primary")}>
-              {m.docs_learn_ends_with()}
-            </span>
-            {lesson.end.title}
-          </figcaption>
-        </figure>
-      )}
-      <p className="text-base leading-normal">
-        <span className={cn(labelClass, "me-2")}>
-          {m.docs_learn_you_need()}
-        </span>
-        {lesson.needs.map(({ item, detail }, index) => (
-          <span key={item}>
-            {index > 0 && (
-              <span aria-hidden className="text-fd-muted-foreground">
-                {" · "}
-              </span>
-            )}
-            <span className="font-semibold">{item}</span>{" "}
-            <span className="text-fd-muted-foreground">({detail})</span>
+      <p className={cn(bodyClass, "text-pretty")}>{lesson.instead}</p>
+      <div className={cn(metaClass, "grid gap-1")}>
+        <p>
+          <span className="text-fd-muted-foreground">
+            {m.docs_learn_you_need()}{" "}
           </span>
-        ))}
-      </p>
-      {lesson.note && (
-        <p className="flex gap-2.5 text-base leading-normal text-fd-muted-foreground">
-          <Info
-            aria-hidden
-            strokeWidth={1.5}
-            className="mt-1 size-4 shrink-0"
-          />
-          <span>{lesson.note}</span>
+          {lesson.needs.map(({ item, detail }, index) => (
+            <span key={item}>
+              {index > 0 && (
+                <span aria-hidden className="text-fd-muted-foreground">
+                  {" · "}
+                </span>
+              )}
+              <span className="font-semibold">{item}</span>{" "}
+              <span className="text-fd-muted-foreground">({detail})</span>
+            </span>
+          ))}
         </p>
-      )}
+        {lesson.note && (
+          <p className="text-pretty text-fd-muted-foreground">{lesson.note}</p>
+        )}
+      </div>
     </section>
   );
 }
 
-/** From `xl`: the open row's recording beside the checklist, or the result when no row is open. */
+/**
+ * Below `xl`, the result once, above the checklist: its title and the last
+ * step's recording at rest. From `xl` a running page shows it in the panel.
+ */
+function Outcome({
+  lesson,
+  active,
+}: {
+  lesson: LessonViewData;
+  /** The page runs without the panel, so the recording can mount. */
+  active: boolean;
+}) {
+  const total = lesson.steps.length;
+  const last = lesson.steps[total - 1];
+  if (!last) return null;
+
+  return (
+    <section
+      aria-labelledby="lesson-outcome"
+      className="grid items-center gap-x-5 gap-y-3 min-[561px]:grid-cols-[minmax(0,2fr)_minmax(0,3fr)] [html[data-lesson-js]_&]:xl:hidden"
+    >
+      <div className="grid content-center gap-1.5">
+        <p className={cn(labelClass, "text-fd-primary")}>
+          {m.docs_learn_ends_with()}
+        </p>
+        <p
+          id="lesson-outcome"
+          className={cn(titleClass, "font-serif font-medium text-balance")}
+        >
+          {lesson.end.title}
+        </p>
+      </div>
+      <StepPicture
+        media={lesson.media}
+        n={total}
+        alt={last.alt}
+        active={active}
+        autoplay={false}
+      />
+    </section>
+  );
+}
+
+/**
+ * From `xl`: the outcome until the reader reaches the checklist, then the
+ * open row's recording beside it. The outcome rests on its poster; the open
+ * row's recording plays while it crosses the middle of the window.
+ */
 function MediaPanel({
   lesson,
   open,
   ticks,
 }: {
   lesson: LessonViewData;
+  /** The row to show, or null for the outcome. */
   open: number | null;
   ticks: ReadonlySet<number>;
 }) {
@@ -417,39 +441,49 @@ function MediaPanel({
         <>
           <p
             className={cn(
-              labelClass,
-              "flex items-center gap-1.5",
-              ticks.has(open) ? "text-check-label" : "text-fd-primary",
+              titleClass,
+              "flex gap-2.5 font-serif font-medium text-balance",
             )}
           >
-            {ticks.has(open) && (
-              <Check aria-hidden strokeWidth={3} className="size-3.5" />
+            {ticks.has(open) ? (
+              <span className="shrink-0 self-center text-check-label">
+                <Check aria-hidden strokeWidth={3} className="size-5" />
+                <span className="sr-only">{m.docs_learn_progress_done()}</span>
+              </span>
+            ) : (
+              <span
+                aria-hidden
+                className="shrink-0 font-sans font-normal text-fd-primary tabular-nums"
+              >
+                {open}
+              </span>
             )}
-            {m.docs_learn_step_label({ number: open, total })}
-            {ticks.has(open) && ` · ${m.docs_learn_progress_done()}`}
-          </p>
-          <p className="font-serif text-2xl leading-tight font-medium text-balance">
-            {step.title}
+            <span className="min-w-0">{step.title}</span>
           </p>
           <StepPicture media={lesson.media} n={open} alt={step.alt} active />
-          <p className="text-base leading-normal text-fd-muted-foreground">
-            {m.docs_learn_panel_hint()}
-          </p>
         </>
       ) : (
         last && (
           <>
-            <p className={cn(labelClass, "text-fd-primary")}>
-              {m.docs_learn_ends_with()}
-            </p>
-            <p className="font-serif text-2xl leading-tight font-medium text-balance">
-              {lesson.end.title}
-            </p>
+            <div className="grid gap-1.5">
+              <p className={cn(labelClass, "text-fd-primary")}>
+                {m.docs_learn_ends_with()}
+              </p>
+              <p
+                className={cn(
+                  titleClass,
+                  "font-serif font-medium text-balance",
+                )}
+              >
+                {lesson.end.title}
+              </p>
+            </div>
             <StepPicture
               media={lesson.media}
               n={total}
               alt={last.alt}
-              active={false}
+              active
+              autoplay={false}
             />
           </>
         )
@@ -477,38 +511,14 @@ function nextChores(
   return [...(first ? [first] : []), ...open, ...done].slice(0, 2);
 }
 
+/** Every step ticked: what ZotLit now does, and two more chores. */
 function End({
   lesson,
-  done,
-  left,
   progress,
 }: {
   lesson: LessonViewData;
-  /** Every step is ticked, or the page renders without JavaScript. */
-  done: boolean;
-  left: number;
   progress: Record<string, LessonProgress>;
 }) {
-  const total = lesson.steps.length;
-
-  if (!done) {
-    return (
-      <section
-        id="done"
-        tabIndex={-1}
-        aria-labelledby="lesson-end-title"
-        className="scroll-mt-[calc(var(--fd-banner-height,0px)+5rem)] rounded-[14px] px-5 py-4 shadow-[inset_0_0_0_1px_var(--color-fd-border)] outline-none"
-      >
-        <h2 id="lesson-end-title" className="text-base font-semibold">
-          {m.docs_learn_steps_left({ left, total })}
-        </h2>
-        <p className="mt-1 text-base leading-normal text-fd-muted-foreground">
-          {m.docs_learn_tick_hint()}
-        </p>
-      </section>
-    );
-  }
-
   return (
     <section
       id="done"
@@ -516,25 +526,22 @@ function End({
       aria-labelledby="lesson-end-title"
       className="grid scroll-mt-[calc(var(--fd-banner-height,0px)+5rem)] gap-5 rounded-[14px] border border-transparent bg-fd-card p-5 shadow-ring outline-none motion-safe:animate-lesson-in min-[561px]:p-7"
     >
-      <div className="flex items-center gap-4">
-        <span className="grid size-12 shrink-0 place-items-center rounded-full bg-check-label text-fd-background">
-          <Check aria-hidden strokeWidth={3} className="size-6" />
+      <div className="flex items-center gap-3">
+        <span className="grid size-10 shrink-0 place-items-center rounded-full bg-check-label text-fd-background">
+          <Check aria-hidden strokeWidth={3} className="size-5" />
         </span>
-        <div className="min-w-0">
-          <p className={cn(labelClass, "text-check-label")}>
-            {m.docs_learn_complete({ number: lesson.lesson })}
-          </p>
-          <h2
-            id="lesson-end-title"
-            className="mt-1 font-serif text-[30px] leading-tight font-medium"
-          >
-            {m.docs_learn_all_done({ total })}
-          </h2>
-        </div>
+        <h2
+          id="lesson-end-title"
+          className={cn(titleClass, "min-w-0 font-semibold text-balance")}
+        >
+          {m.docs_learn_complete({ number: lesson.lesson })}
+        </h2>
       </div>
-      <p className="text-lg leading-normal">{lesson.end.caption}</p>
+      <p className={cn(bodyClass, "text-pretty")}>{lesson.end.caption}</p>
       <div className="grid gap-3">
-        <h3 className={labelClass}>{m.docs_learn_more_chores()}</h3>
+        <h3 className={cn(metaClass, "font-semibold text-fd-muted-foreground")}>
+          {m.docs_learn_more_chores()}
+        </h3>
         <ul className="grid gap-3 min-[561px]:grid-cols-2">
           {nextChores(lesson, progress).map((other) => (
             <li key={other.slug}>
@@ -545,7 +552,8 @@ function End({
         <Link
           to="/learn"
           className={cn(
-            "justify-self-start rounded-sm py-1.5 text-base font-semibold text-fd-primary underline decoration-fd-primary/40 underline-offset-4 hover:decoration-fd-primary",
+            metaClass,
+            "justify-self-start rounded-sm py-1.5 font-semibold text-fd-primary underline decoration-fd-primary/40 underline-offset-4 hover:decoration-fd-primary",
             focusClass,
           )}
         >
@@ -556,7 +564,7 @@ function End({
   );
 }
 
-/** A small link card to another lesson: its result, minutes and chore. */
+/** A small link card to another lesson: its result, the chore and its minutes. */
 function ChoreCard({ chore, done }: { chore: ChoreLink; done?: boolean }) {
   return (
     <div className="group relative grid h-full content-start gap-2.5 rounded-[12px] border border-transparent bg-fd-background p-3 shadow-ring transition-shadow duration-150 hover:shadow-ring-hover">
@@ -567,11 +575,7 @@ function ChoreCard({ chore, done }: { chore: ChoreLink; done?: boolean }) {
         active={false}
         thumb
       />
-      <p className={cn(labelClass, "flex flex-wrap items-center gap-2")}>
-        {m.docs_learn_minutes({ minutes: chore.minutes })}
-        {done && <DoneBadge />}
-      </p>
-      <h4 className="font-serif text-lg leading-snug font-medium text-balance">
+      <h4 className={cn(titleClass, "font-serif font-medium text-balance")}>
         <Link
           to="/learn/$lesson"
           params={{ lesson: chore.slug }}
@@ -583,20 +587,24 @@ function ChoreCard({ chore, done }: { chore: ChoreLink; done?: boolean }) {
           {m.docs_learn_chore_quote({ chore: chore.chore })}
         </Link>
       </h4>
+      <p
+        className={cn(
+          metaClass,
+          "flex flex-wrap items-center gap-x-2 text-fd-muted-foreground",
+        )}
+      >
+        {m.docs_learn_minutes({ minutes: chore.minutes })}
+        {done && <DoneBadge />}
+      </p>
     </div>
   );
 }
 
-/** A check and "Done", on the check tint. */
+/** A check and "Done" in the check green. */
 export function DoneBadge() {
   return (
-    <span
-      className={cn(
-        labelClass,
-        "inline-flex items-center gap-1 rounded-full bg-check-bg px-2 py-0.5 text-check",
-      )}
-    >
-      <Check aria-hidden strokeWidth={3} className="size-3" />
+    <span className="inline-flex items-center gap-1 font-semibold text-check-label">
+      <Check aria-hidden strokeWidth={3} className="size-3.5" />
       {m.docs_learn_progress_done()}
     </span>
   );

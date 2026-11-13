@@ -4,9 +4,13 @@ import { ArrowRight, Check } from "lucide-react";
 import { useEffect, useState } from "react";
 
 import {
+  bodyClass,
   buttonClass,
+  displayClass,
   focusClass,
-  labelClass,
+  metaClass,
+  sectionClass,
+  titleClass,
 } from "@/components/learn/lesson-mdx";
 import { firstOpenStep, readProgress } from "@/components/learn/lesson-state";
 import type { LessonProgress } from "@/components/learn/lesson-state";
@@ -14,7 +18,6 @@ import { DoneBadge } from "@/components/learn/lesson-view";
 import { StepPicture } from "@/components/learn/step-picture";
 import { cn } from "@/lib/cn";
 import { localeInput } from "@/lib/i18n";
-import { getPageLocaleState } from "@/lib/locale-state";
 import { pageHead } from "@/lib/seo";
 import { appName, learnRoute } from "@/lib/shared";
 import { getLessonPages } from "@/lib/source";
@@ -29,9 +32,6 @@ const getCourse = createServerFn({ method: "GET" })
       slug: page.slugs.join("/"),
       lesson: page.data.lesson,
       chore: page.data.chore,
-      today: page.data.today,
-      /** The language the lesson's text is in, which joins `today`. */
-      language: getPageLocaleState(page.url, locale).contentLocale,
       minutes: page.data.minutes,
       media: page.data.media,
       steps: page.data.steps.length,
@@ -93,14 +93,19 @@ function Course() {
   return (
     <div className="mx-auto grid w-full max-w-[720px] grid-cols-[minmax(0,1fr)] gap-10 px-5 pt-8 pb-24 xl:max-w-[1180px]">
       <header className="grid max-w-[680px] gap-4">
-        <h1 className="font-serif text-[34px] leading-[1.1] font-medium tracking-[-0.01em] text-balance min-[561px]:text-[42px]">
+        <h1 className={cn(displayClass, "font-serif font-medium")}>
           {m.docs_learn_heading()}
         </h1>
-        <p className="text-lg leading-relaxed text-fd-muted-foreground">
+        <p className={cn(bodyClass, "text-pretty text-fd-muted-foreground")}>
           {m.docs_learn_lede()}
         </p>
         {allDone ? (
-          <p className="flex items-center gap-2 text-base text-check-label">
+          <p
+            className={cn(
+              metaClass,
+              "flex items-center gap-2 text-check-label",
+            )}
+          >
             <Check aria-hidden strokeWidth={2.25} className="size-4" />
             {m.docs_learn_course_done()}
           </p>
@@ -124,15 +129,12 @@ function Course() {
       {first && <StartHere lesson={first} progress={progress[first.slug]} />}
 
       <section aria-labelledby="learn-chores" className="grid gap-5">
-        <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
-          <h2
-            id="learn-chores"
-            className="font-serif text-[28px] leading-tight font-medium"
-          >
-            {m.docs_learn_pick_chore()}
-          </h2>
-          <p className={labelClass}>{m.docs_learn_any_order()}</p>
-        </div>
+        <h2
+          id="learn-chores"
+          className={cn(sectionClass, "font-serif font-medium")}
+        >
+          {m.docs_learn_pick_chore()}
+        </h2>
         {/* From `xl`, three cards over two, as in the prototype's chore grid. */}
         <ul className="grid gap-4 xl:grid-cols-6">
           {chores.map((lesson, index) => (
@@ -163,8 +165,8 @@ function Meta({
   return (
     <p
       className={cn(
-        labelClass,
-        "flex flex-wrap items-center gap-x-2 gap-y-1",
+        metaClass,
+        "flex flex-wrap items-center gap-x-2 gap-y-1 text-fd-muted-foreground",
         className,
       )}
     >
@@ -199,22 +201,19 @@ function StartHere({
         <span className="grid size-8 shrink-0 place-items-center rounded-full bg-check-label text-fd-background">
           <Check aria-hidden strokeWidth={3} className="size-4" />
         </span>
-        <div className="min-w-0 flex-1">
-          <p className={cn(labelClass, "text-check")}>
-            {m.docs_learn_start_here()} · {m.docs_learn_progress_done()}
-          </p>
-          <h2
-            id="learn-start"
-            className="text-base leading-tight font-semibold text-check"
-          >
-            {lesson.chore}
-          </h2>
-        </div>
+        <h2
+          id="learn-start"
+          className={cn(bodyClass, "min-w-0 flex-1 font-semibold text-check")}
+        >
+          {lesson.chore}
+          <span className="sr-only"> · {m.docs_learn_progress_done()}</span>
+        </h2>
         <Link
           to="/learn/$lesson"
           params={{ lesson: lesson.slug }}
           className={cn(
-            "rounded-sm py-1.5 text-base font-semibold text-check underline decoration-1 underline-offset-4",
+            metaClass,
+            "rounded-sm py-1.5 font-semibold text-check underline decoration-1 underline-offset-4",
             focusClass,
           )}
         >
@@ -231,16 +230,13 @@ function StartHere({
       className="relative grid items-center gap-5 overflow-hidden rounded-[14px] border border-transparent bg-fd-card p-4 shadow-ring min-[561px]:grid-cols-[minmax(0,1fr)_minmax(0,0.8fr)] min-[561px]:p-5"
     >
       <span aria-hidden className="absolute inset-y-0 start-0 w-1 bg-fd-ring" />
-      <div className="grid min-w-0 gap-2.5 ps-1.5">
-        <p className={cn(labelClass, "text-fd-primary")}>
-          {m.docs_learn_start_here()}
-        </p>
-        <h2 className="font-serif text-2xl leading-tight font-medium text-balance">
-          <span id="learn-start">{lesson.chore}</span>
+      <div className="grid min-w-0 gap-2 ps-1.5">
+        <h2
+          id="learn-start"
+          className={cn(titleClass, "font-serif font-medium text-balance")}
+        >
+          {lesson.chore}
         </h2>
-        <p className="text-base leading-relaxed text-fd-muted-foreground">
-          {m.docs_learn_start_here_line()}
-        </p>
         <Meta lesson={lesson} progress={progress} />
         <div className="mt-1">
           <Link
@@ -266,7 +262,7 @@ function StartHere({
   );
 }
 
-/** One chore: the reader's words, what they do today, the result and the minutes. */
+/** One chore: its result, the reader's words and the minutes. */
 function ChoreCard({
   lesson,
   progress,
@@ -274,15 +270,10 @@ function ChoreCard({
   lesson: CourseLesson;
   progress: LessonProgress | undefined;
 }) {
-  const today = new Intl.ListFormat(lesson.language, {
-    type: "conjunction",
-  }).format(lesson.today);
-
   return (
     <div className="relative grid h-full gap-4 rounded-[14px] border border-transparent bg-fd-card p-4 shadow-ring transition-shadow duration-150 hover:shadow-ring-hover min-[561px]:grid-cols-[minmax(0,1fr)_minmax(0,0.8fr)] min-[561px]:items-start min-[561px]:p-5 xl:grid-cols-1 xl:content-start">
-      <div className="grid min-w-0 gap-2.5">
-        <Meta lesson={lesson} progress={progress} />
-        <h3 className="font-serif text-[22px] leading-snug font-medium text-balance">
+      <div className="grid min-w-0 gap-2">
+        <h3 className={cn(titleClass, "font-serif font-medium text-balance")}>
           <Link
             to="/learn/$lesson"
             params={{ lesson: lesson.slug }}
@@ -294,9 +285,7 @@ function ChoreCard({
             {m.docs_learn_chore_quote({ chore: lesson.chore })}
           </Link>
         </h3>
-        <p className="text-base leading-relaxed text-fd-muted-foreground">
-          {m.docs_learn_today_you({ chores: today })}
-        </p>
+        <Meta lesson={lesson} progress={progress} />
       </div>
       <div className="max-[560px]:order-first xl:order-first">
         <StepPicture

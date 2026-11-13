@@ -50,7 +50,6 @@ const getLesson = createServerFn({ method: "GET" })
         minutes: data.minutes,
         note: data.note,
         media: data.media,
-        today: data.today,
         instead: data.instead,
         needs: data.needs,
         steps: data.steps,
