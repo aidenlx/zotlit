@@ -227,10 +227,10 @@ function StepItem({ step, n, flip }: { step: Step; n: number; flip: boolean }) {
         <p className="font-mono text-sm font-medium tracking-[0.1em] text-fd-primary uppercase">
           {m.docs_home_step_label({ number: String(n) })}
         </p>
-        <h3 className="mt-2 font-serif text-3xl font-medium text-balance sm:text-4xl">
+        <h3 className="mt-3 font-serif text-3xl leading-[1.2] font-medium text-balance sm:text-4xl">
           {step.title()}
         </h3>
-        <p className="mt-3 text-lg text-pretty text-fd-muted-foreground">
+        <p className="mt-4 text-lg text-pretty text-fd-muted-foreground">
           {step.line()}
         </p>
         <ul className="mt-6 grid gap-4">
@@ -270,11 +270,11 @@ export function Workflow() {
           <SectionLabel>{m.docs_home_flow_label()}</SectionLabel>
           <h2
             id="landing-flow-title"
-            className="mt-3 font-serif text-3xl font-medium text-balance sm:text-5xl sm:leading-[1.06]"
+            className="mt-4 font-serif text-3xl leading-[1.2] font-medium text-balance sm:text-5xl sm:leading-[1.15]"
           >
             {m.docs_home_flow_title()}
           </h2>
-          <p className="mt-4 text-lg text-pretty text-fd-muted-foreground">
+          <p className="mt-6 text-lg text-pretty text-fd-muted-foreground">
             {m.docs_home_flow_lede()}
           </p>
         </div>
