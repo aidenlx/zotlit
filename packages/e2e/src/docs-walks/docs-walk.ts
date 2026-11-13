@@ -25,6 +25,7 @@ import type { DesktopShot } from "@e2e/docs-walks/macos-desktop.ts";
 import {
   outputSizes,
   takeRecipe,
+  takeRecordFile,
   takeRun,
   videoLength,
   writeTake,
@@ -215,7 +216,7 @@ export interface DocsWalk extends AsyncDisposable {
    * result. A camera planned from the pointer's actions, or the track
    * `<slug>.camera/<name>.json` beside the walk, frames each part of the
    * clip; its last frame is `<name>.poster.webp`, and its take goes into
-   * `<slug>.takes.json`. Without `DOCS_WALK_RECORD=1`, or with a
+   * the walk's take record (`takeRecordFile`). Without `DOCS_WALK_RECORD=1`, or with a
    * `DOCS_WALK_ONLY` that leaves it out, it only runs `actions`.
    * With `notices`, for a step whose check is a notice, the layer `name` is
    * captured with its notices as soon as `actions` end, while the notice
@@ -323,7 +324,7 @@ export async function openDocsWalk(
   const layouts = join(import.meta.dirname, `${options.slug}.layouts`);
   const tracks = join(import.meta.dirname, `${options.slug}.camera`);
   const settings = clipSettings(options.clip);
-  const takes = join(import.meta.dirname, `${options.slug}.takes.json`);
+  const takes = await takeRecordFile(root, options.slug);
   let run: TakeRun | undefined;
   /** The facts every take of this walk repeats, read once. */
   const runFacts = async () =>
