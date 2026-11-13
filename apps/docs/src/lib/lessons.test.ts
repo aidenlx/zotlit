@@ -110,11 +110,19 @@ describe("the media scan", () => {
     };
     /** A package root whose one lesson folder holds step 1's still; removed when the test's scope ends. */
     const packageWithStill = () => {
-      const root = mkdtempDisposableSync(join(tmpdir(), "learn-media-"));
+      using stack = new DisposableStack();
+      const root = stack.use(
+        mkdtempDisposableSync(join(tmpdir(), "learn-media-")),
+      );
       const folder = join(root.path, "public/img/learn/lesson");
       mkdirSync(folder, { recursive: true });
       writeFileSync(join(folder, "step-1.webp"), webp(3456, 2296));
-      return { path: root.path, folder, [Symbol.dispose]: () => root.remove() };
+      const lifetime = stack.move();
+      return {
+        path: root.path,
+        folder,
+        [Symbol.dispose]: () => lifetime.dispose(),
+      };
     };
 
     it("reads a step with no poster as its still alone", () => {

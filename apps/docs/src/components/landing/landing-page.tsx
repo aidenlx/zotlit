@@ -1,6 +1,6 @@
 // The landing page, top to bottom: the hero on its research desk, the
 // research sequence in five steps, the collection-to-table demo, the trust
-// row, and the closing call to install.
+// row, and the closing call to start the tutorial.
 // The page prerenders in its final, readable state; motion starts after
 // load, and only with motion allowed.
 // @see apps/docs/DESIGN.md → Landing
