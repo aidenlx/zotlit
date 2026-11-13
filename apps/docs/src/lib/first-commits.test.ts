@@ -68,8 +68,10 @@ describe("scanFirstCommitDays", () => {
     });
   });
 
-  it("finds no days outside a git checkout", () => {
+  it("stops outside a git checkout", () => {
     using dir = mkdtempDisposableSync(join(tmpdir(), "first-commits-"));
-    expect(scanFirstCommitDays(dir.path)).toEqual({});
+    expect(() => scanFirstCommitDays(dir.path)).toThrow(
+      "Pages' first commit days need the git history",
+    );
   });
 });

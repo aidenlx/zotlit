@@ -9,7 +9,9 @@ import type { Plugin } from "vite";
 /**
  * Reads `git log` oldest first over `content/`, following each rename, so a
  * page that moved keeps the day it first appeared.
- * @returns ISO days keyed by path under `content/` (`docs/how-to/x.mdx`); empty outside a git checkout.
+ * @returns ISO days keyed by path under `content/` (`docs/how-to/x.mdx`).
+ * @throws outside a git checkout: the build needs the history (the deploy
+ * checks out with `fetch-depth: 0`) to date its pages.
  */
 export function scanFirstCommitDays(
   packageRoot: string,
@@ -39,8 +41,11 @@ export function scanFirstCommitDays(
         env: { ...process.env, TZ: "UTC" },
       },
     );
-  } catch {
-    return {};
+  } catch (cause) {
+    throw new Error(
+      `Pages' first commit days need the git history of ${packageRoot}/content`,
+      { cause },
+    );
   }
 
   const days = new Map<string, string>();
