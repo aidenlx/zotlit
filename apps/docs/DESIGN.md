@@ -161,7 +161,7 @@ On editorial and docs-chrome surfaces, apparatus labels are mono uppercase:
 - The landing desk's tape labels and the `/learn` outcome label ("You end
   with")
 - Changelog/blog dates and meta lines; version-ledger row labels
-- Docs sidebar folder + `links`-prop rows, the TOC "On this page" title, docs
+- Docs sidebar folder + `links`-prop rows and separators, the TOC "On this page" title, docs
   prose h4, and the command `Copy →` affordance
 
 Numerals that count or order — "02 / 05", "Step 1", "01" in a caption trail
