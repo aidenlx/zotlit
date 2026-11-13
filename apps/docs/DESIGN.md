@@ -161,7 +161,7 @@ On editorial and docs-chrome surfaces, apparatus labels are mono uppercase:
 - The landing desk's tape labels and the `/learn` outcome label ("You end
   with")
 - Changelog/blog dates and meta lines; version-ledger row labels
-- Docs sidebar folder + `links`-prop rows, the TOC "On this page" title, docs
+- Docs sidebar folder + `links`-prop rows and separators, the TOC "On this page" title, docs
   prose h4, and the command `Copy →` affordance
 
 Numerals that count or order — "02 / 05", "Step 1", "01" in a caption trail
@@ -689,6 +689,9 @@ type carries:
   0.08em tracking) — set apart from folders by color and from page links by
   case. The home nav shares this mono-uppercase voice at 0.8125rem.
 - **Page links** lead in near-ink (0.84rem, foreground mixed 82% toward muted).
+- **Separators** (`---Label---` in `meta.json`) are static subheadings in the
+  muted `links` voice, aligned with the page links and set closer to the
+  links below them than to the links above.
 - Active states keep the stock shapes: a pill on the warm tint
   (`fd-accent`) with `fd-primary` text (4.8:1 light, 5.6:1 dark), and the
   guide-line bar on nested items.

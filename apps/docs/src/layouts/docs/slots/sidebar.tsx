@@ -329,6 +329,10 @@ function SidebarDrawer({
   );
 }
 
+/** The muted mono-uppercase `links` label voice (DESIGN.md → Docs chrome). */
+const linksVoice =
+  "font-mono text-[0.72rem] font-medium tracking-[0.08em] text-fd-muted-foreground uppercase";
+
 function SidebarSeparator({
   className,
   style,
@@ -341,6 +345,9 @@ function SidebarSeparator({
     <Base.SidebarSeparator
       className={cn(
         "mt-6 mb-1 inline-flex items-center gap-2 px-2 empty:mb-0 [&_svg]:size-4 [&_svg]:shrink-0",
+        // Separators are subheadings in the `links` label voice: grey sets
+        // them apart from orange folder rows, caps from page links.
+        linksVoice,
         depth === 0 && "first:mt-0",
         className,
       )}
@@ -415,7 +422,7 @@ function SidebarLinkEntry({
       className={cn(
         itemVariants({ variant: "link" }),
         // Unified `links` voice (shared with the home-nav links)
-        "font-mono text-[0.72rem] font-medium tracking-[0.08em] text-fd-muted-foreground uppercase",
+        linksVoice,
         className,
       )}
       style={{ paddingInlineStart: getItemOffset(0), ...style }}
