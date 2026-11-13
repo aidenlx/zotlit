@@ -23,11 +23,7 @@ import { hideBin } from "yargs/helpers";
 
 import { closingPad, openingPad, planCamera, viewAt } from "./camera.ts";
 import type { CameraEvent, CameraTrack } from "./camera.ts";
-import {
-  cutKeys,
-  defaultClipSettings,
-  recutSettings,
-} from "./clip-settings.ts";
+import { cutKeys, recordedKeys, recutSettings } from "./clip-settings.ts";
 import type { ClipSettings } from "./clip-settings.ts";
 
 const execFileAsync = promisify(execFile);
@@ -196,10 +192,14 @@ export async function encodeClip(
       join(shot.dir, "track.json"),
       `${JSON.stringify(used, null, 2)}\n`,
     );
+    // The shot's length in whole ticks, as baked.
+    const length = Math.max(1, Math.round(read.duration * s.fps)) / s.fps;
     // The clip's first ticks are the open pad, after the shots, long enough
-    // that the opening shot rests `hold`.
+    // that the opening shot rests `hold` before its first move or the cut to
+    // the next shot.
     if (shot === shots[0]) {
-      openTicks = Math.ceil(openingPad(used, s) * s.fps - 1e-6);
+      const cut = shots.length > 1 ? length : undefined;
+      openTicks = Math.ceil(openingPad(used, s, cut) * s.fps - 1e-6);
       tick = openTicks;
     }
     last = await bakeShot({
@@ -213,8 +213,7 @@ export async function encodeClip(
     });
     tick = last.tick;
     image = last.image;
-    // The shot's length in whole ticks, as baked.
-    lastDuration = Math.max(1, Math.round(read.duration * s.fps)) / s.fps;
+    lastDuration = length;
   }
   // The open pad holds the clip's first image, and the end pad its last,
   // long enough that the closing shot rests `hold`.
@@ -462,9 +461,6 @@ export async function readTrack(
 }
 
 if (import.meta.main) {
-  const recorded = Object.keys(defaultClipSettings).filter(
-    (key) => !(cutKeys as readonly string[]).includes(key),
-  );
   const {
     dir,
     out,
@@ -495,7 +491,7 @@ if (import.meta.main) {
     .epilogue(
       [
         `Today's settings, from clip-settings.ts under the overrides below: ${cutKeys.join(", ")}.`,
-        `The recording's own settings, from <dir>/camera.json: ${recorded.join(", ")}.`,
+        `The recording's own settings, from <dir>/camera.json: ${recordedKeys.join(", ")}.`,
         "",
         "DOCS_WALK_CLIP: a JSON object of settings that overrides both, such as '{\"zoom\":1.2}'.",
         "DOCS_WALK_CLIP_FILE: a JSON file of the same, applied under DOCS_WALK_CLIP.",

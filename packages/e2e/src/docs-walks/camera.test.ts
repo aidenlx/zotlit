@@ -261,6 +261,27 @@ describe("openingPad", () => {
     };
     expect(openingPad(still, settings)).toBe(0.8);
   });
+
+  it("rests the opening shot the hold before a cut to the next shot", () => {
+    // A first shot 1.2 s long with no camera move: the pad grows to 1.3 s.
+    const still: CameraTrack = {
+      keyframes: [
+        { t: 0, view: full },
+        { t: 1.2, view: full },
+      ],
+    };
+    expect(openingPad(still, settings, 1.2)).toBeCloseTo(1.3);
+    // A move at 0.5 s comes before a cut at 3 s, so the move sets the rest.
+    const early: CameraTrack = {
+      keyframes: [
+        { t: 0, view: full },
+        { t: 0.5, view: full },
+        { t: 1.5, view: zoomed },
+        { t: 3, view: zoomed },
+      ],
+    };
+    expect(openingPad(early, settings, 3)).toBeCloseTo(2);
+  });
 });
 
 describe("viewAt", () => {

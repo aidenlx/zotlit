@@ -110,6 +110,11 @@ export const cutKeys = [
   "endPad",
 ] as const satisfies readonly (keyof ClipSettings)[];
 
+/** The settings of the recording, which a recut keeps: every setting but the cut's. */
+export const recordedKeys = Object.keys(defaultClipSettings).filter(
+  (key) => !(cutKeys as readonly string[]).includes(key),
+);
+
 /** The cut settings among `settings`. */
 export function cutSettings(
   settings: Partial<ClipSettings>,
@@ -129,12 +134,9 @@ export function cutSettings(
  * out.
  */
 export function recutSettings(recorded: Partial<ClipSettings>): ClipSettings {
-  const cut = cutSettings(recorded);
   return clipSettings(
     Object.fromEntries(
-      Object.entries(recorded).filter(
-        ([key]) => !(key in cut) && key in defaultClipSettings,
-      ),
+      Object.entries(recorded).filter(([key]) => recordedKeys.includes(key)),
     ),
   );
 }
