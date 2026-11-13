@@ -63,3 +63,16 @@ describe("docs page titles in the Markdown surface", () => {
     );
   });
 });
+
+// An old anchor's empty span serves the HTML page alone.
+describe("old anchors in the Markdown surface", () => {
+  it("leaves them out, and the step they stood before reads on", async () => {
+    const edition = await getMarkdownEdition({
+      section: "docs",
+      slugs: ["how-to", "insert-citations"],
+    });
+    expect(edition).not.toContain("<span");
+    expect(edition).toContain("\n2. Keep typing words from the title");
+    expect(edition).toContain("\n- **Nothing happens when I type `@` alone:**");
+  });
+});

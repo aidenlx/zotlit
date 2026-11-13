@@ -70,6 +70,13 @@ interface EditionPage {
   data: { load: () => Promise<{ _exports: Record<string, unknown> }> };
 }
 
+/**
+ * An empty `<span id>` keeps an old `#anchor` working on the HTML page (see
+ * `AGENTS.md`); the edition drops it, with the line break after it, so the
+ * text it stands before reads on.
+ */
+const anchorSpan = /<span id="[^"]+"(?: data-accordion-value="[^"]+")? \/>\s*/g;
+
 /** The page's body as Markdown, rendered through its `_markdown` component. */
 async function renderBody(
   page: EditionPage,
@@ -83,7 +90,10 @@ async function renderBody(
   }
 
   return localizeMarkdownLinks(
-    await renderToMarkdown(<Body components={components} />),
+    (await renderToMarkdown(<Body components={components} />)).replaceAll(
+      anchorSpan,
+      "",
+    ),
     locale,
   );
 }
