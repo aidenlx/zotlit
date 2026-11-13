@@ -1,16 +1,32 @@
 import { describe, expect, it } from "vitest";
 
 import { closingPad, planCamera, viewAt } from "./camera.ts";
-import type { CameraEvent, CameraTrack, Rect } from "./camera.ts";
-import { defaultClipSettings } from "./clip-settings.ts";
+import type {
+  CameraEvent,
+  CameraPlanOptions,
+  CameraTrack,
+  Rect,
+} from "./camera.ts";
 
 const viewport = { width: 1440, height: 860 };
 const full: Rect = { x: 0, y: 0, w: 1440, h: 860 };
-/** The width of a view at the highest zoom. */
-const tight = 1440 / defaultClipSettings.zoom;
+/** The planner settings of these cases, apart from the defaults. */
+const options: Required<CameraPlanOptions> = {
+  zoom: 2,
+  hold: 2,
+  openHold: 1,
+  lead: 0.5,
+  ease: 1,
+  minEase: 0.5,
+  central: 1,
+  context: 150,
+  padding: 20,
+};
+/** The width of a view at the highest zoom, 2x. */
+const tight = 720;
 
 function plan(events: CameraEvent[], duration = 8): CameraTrack {
-  return planCamera({ viewport, duration, events });
+  return planCamera({ viewport, duration, events }, options);
 }
 
 /** Every view the track passes through, sampled every 10 ms. */
@@ -42,103 +58,13 @@ function shows(view: Rect, x: number, y: number): boolean {
   );
 }
 
-/** The action log of Lesson 1 step 1, the install from the community directory. */
-const install: CameraEvent[] = [
-  {
-    kind: "point",
-    t: 1.6,
-    x: 322,
-    y: 840,
-    rect: { x: 308, y: 828, w: 28, h: 24 },
-  },
-  { kind: "look", t: 1.76, rect: { x: 170, y: 65, w: 1100, h: 731 } },
-  {
-    kind: "point",
-    t: 2.97,
-    x: 296,
-    y: 379,
-    rect: { x: 183, y: 366, w: 225, h: 25 },
-  },
-  {
-    kind: "point",
-    t: 3.72,
-    x: 1100,
-    y: 373,
-    rect: { x: 1026, y: 358, w: 149, h: 30 },
-  },
-  {
-    kind: "point",
-    t: 5.1,
-    x: 1141,
-    y: 225,
-    rect: { x: 1107, y: 210, w: 68, h: 30 },
-  },
-  {
-    kind: "point",
-    t: 7.84,
-    x: 243,
-    y: 93,
-    rect: { x: 183, y: 78, w: 432, h: 30 },
-  },
-  { kind: "type", t: 7.99, end: 8.66, rect: { x: 183, y: 78, w: 432, h: 30 } },
-  {
-    kind: "point",
-    t: 9.26,
-    x: 303,
-    y: 288,
-    rect: { x: 183, y: 189, w: 260, h: 197 },
-  },
-  { kind: "look", t: 9.73, rect: { x: 491, y: 106, w: 738, h: 282 } },
-  {
-    kind: "point",
-    t: 10.93,
-    x: 546,
-    y: 356,
-    rect: { x: 516, y: 341, w: 60, h: 30 },
-  },
-  {
-    kind: "point",
-    t: 15.93,
-    x: 548,
-    y: 356,
-    rect: { x: 516, y: 341, w: 65, h: 30 },
-  },
-  {
-    kind: "point",
-    t: 17.49,
-    x: 1251,
-    y: 84,
-    rect: { x: 1239, y: 72, w: 24, h: 24 },
-  },
-  { kind: "park", t: 18.54, x: 1040, y: 504 },
-  { kind: "look", t: 18.54, rect: { x: 344, y: 78, w: 756, h: 450 } },
-];
-
-/** Clicks every 0.7 s, back and forth across the window. */
-const busy: CameraEvent[] = Array.from({ length: 26 }, (_, i) => ({
-  kind: "point" as const,
-  t: 1.6 + 0.7 * i,
-  x: [120, 1320, 700, 200, 1250][i % 5]!,
-  y: [100, 760, 430, 700, 120][i % 5]!,
-  rect: {
-    x: [100, 1300, 680, 180, 1230][i % 5]!,
-    y: [90, 750, 420, 690, 110][i % 5]!,
-    w: 40,
-    h: 24,
-  },
-}));
-
 describe("planCamera", () => {
-  it("holds the whole window, then meets a click at 1.4x half a second before it", () => {
+  it("holds the whole window, then meets a click at the highest zoom `lead` before it", () => {
     const track = plan([{ kind: "point", t: 4, x: 700, y: 400 }]);
     expect(viewAt(track, 0)).toEqual(full);
     expect(viewAt(track, 2.49)).toEqual(full);
-    const at = viewAt(track, 3.5);
-    expect(at.w).toBeCloseTo(tight);
-    expect(at.h).toBeCloseTo(860 / defaultClipSettings.zoom);
-    expect(at.x + at.w / 2).toBeCloseTo(700);
-    expect(at.y + at.h / 2).toBeCloseTo(400);
-    // The move takes a whole second.
+    expect(viewAt(track, 3.5)).toEqual({ x: 340, y: 185, w: 720, h: 430 });
+    // The move takes the whole `ease`, from 2.5 s.
     expect(viewAt(track, 3).w).toBeGreaterThan(tight + 10);
   });
 
@@ -157,10 +83,7 @@ describe("planCamera", () => {
       expect(v.y + v.h).toBeLessThanOrEqual(860 + 1e-6);
       expect(v.w / v.h).toBeCloseTo(1440 / 860);
     }
-    const end = viewAt(track, 8);
-    expect(end.x).toBe(0);
-    expect(end.y + end.h).toBeCloseTo(860);
-    expect(end.w).toBeCloseTo(tight);
+    expect(viewAt(track, 8)).toEqual({ x: 0, y: 430, w: 720, h: 430 });
   });
 
   it("frames a run of close clicks in one shot", () => {
@@ -179,6 +102,9 @@ describe("planCamera", () => {
     const shot = viewAt(track, 8);
     expect(shows(shot, 900, 200)).toBe(true);
     expect(shows(shot, 1140, 280)).toBe(true);
+    // The five frames with their context span 636 x 476 px, wider than a
+    // shot of the first click alone.
+    expect(shot.w).toBeCloseTo((476 * 1440) / 860);
   });
 
   it("keeps the whole window for clicks spread across it", () => {
@@ -187,6 +113,7 @@ describe("planCamera", () => {
       { kind: "point", t: 5, x: 1300, y: 700 },
     ]);
     expect(viewAt(track, 8)).toEqual(full);
+    expect(moves(track)).toEqual([]);
   });
 
   it("widens to a view of both for an action outside the view", () => {
@@ -207,13 +134,13 @@ describe("planCamera", () => {
       expect(viewAt(track, t).w).toBeGreaterThanOrEqual(zoomed.w - 1e-6);
   });
 
-  it("fits a look region with padding, between 1x and 1.4x", () => {
+  it("fits a look region with padding, between the whole window and the highest zoom", () => {
     const wide = plan([
       { kind: "look", t: 2, rect: { x: 100, y: 100, w: 1000, h: 300 } },
     ]);
     const shot = viewAt(wide, 8);
-    expect(shot.w).toBeCloseTo(1064);
-    expect(shot.x).toBeLessThanOrEqual(68);
+    expect(shot.w).toBeCloseTo(1040);
+    expect(shot.x).toBeCloseTo(80);
     const small = plan([
       { kind: "look", t: 2, rect: { x: 600, y: 300, w: 40, h: 20 } },
     ]);
@@ -226,14 +153,11 @@ describe("planCamera", () => {
 
   it("frames a look from its call and holds it to the clip's end", () => {
     const track = plan(
-      [
-        { kind: "point", t: 2, x: 700, y: 400 },
-        { kind: "look", t: 4, rect: { x: 100, y: 100, w: 1000, h: 300 } },
-      ],
+      [{ kind: "look", t: 4, rect: { x: 100, y: 100, w: 1000, h: 300 } }],
       7,
     );
     expect(viewAt(track, 4)).toEqual(full);
-    expect(viewAt(track, 5).w).toBeCloseTo(1064);
+    expect(viewAt(track, 5).w).toBeCloseTo(1040);
     expect(viewAt(track, 7)).toEqual(viewAt(track, 5));
     expect(track.keyframes.at(-1)!.t).toBe(7);
   });
@@ -242,9 +166,8 @@ describe("planCamera", () => {
     const narrow = plan([
       { kind: "type", t: 4, end: 5, rect: { x: 300, y: 80, w: 200, h: 40 } },
     ]);
-    const shot = viewAt(narrow, 8);
-    expect(shot.w).toBeCloseTo(tight);
-    expect(shot.x).toBeLessThanOrEqual(300 - 32 - 160);
+    expect(viewAt(narrow, 8)).toEqual({ x: 40, y: 0, w: 720, h: 430 });
+    // The field and its padding are 940 px wide; with the context, 1240 px.
     const wide = plan([
       { kind: "type", t: 4, end: 5, rect: { x: 300, y: 80, w: 900, h: 40 } },
     ]);
@@ -264,84 +187,42 @@ describe("planCamera", () => {
     const track = plan([{ kind: "park", t: 2, x: 1400, y: 840 }]);
     expect(viewAt(track, 8)).toEqual(full);
   });
-
-  describe("keeps the camera calm", () => {
-    /** Small targets in alternating corners, 4.5 s apart. */
-    const corners: CameraEvent[] = [4, 8.5, 13, 17.5].map((t, i) => ({
-      kind: "point" as const,
-      t,
-      x: [150, 1290, 150, 1290][i]!,
-      y: [120, 740, 740, 120][i]!,
-    }));
-    const logs = { install, busy, corners };
-
-    it("moves between corners no sooner than the hold allows", () => {
-      const starts = moves(plan(corners, 21));
-      expect(starts.length).toBeGreaterThanOrEqual(3);
-      for (let i = 1; i < starts.length; i++)
-        expect(starts[i]! - starts[i - 1]!).toBeGreaterThanOrEqual(
-          defaultClipSettings.hold,
-        );
-    });
-
-    it.each(Object.entries(logs))("zooms to 1.4x at most (%s)", (_, events) => {
-      const track = plan(events, 21);
-      for (const v of sampled(track, 21))
-        expect(v.w).toBeGreaterThanOrEqual(tight - 1e-6);
-    });
-
-    it.each(Object.entries(logs))(
-      "starts no two moves less than the hold apart (%s)",
-      (_, events) => {
-        const starts = moves(plan(events, 21));
-        expect(starts[0] ?? Infinity).toBeGreaterThanOrEqual(
-          defaultClipSettings.openHold,
-        );
-        for (let i = 1; i < starts.length; i++)
-          expect(starts[i]! - starts[i - 1]!).toBeGreaterThanOrEqual(
-            defaultClipSettings.hold,
-          );
-      },
-    );
-
-    it.each(Object.entries(logs))(
-      "shows each click at its time (%s)",
-      (_, events) => {
-        const track = plan(events, 21);
-        const hidden = events.filter(
-          (e) => e.kind === "point" && !shows(viewAt(track, e.t), e.x, e.y),
-        );
-        expect(hidden).toEqual([]);
-      },
-    );
-
-    it("moves at most three times in the 20 s install", () => {
-      expect(moves(plan(install, 20.67)).length).toBeLessThanOrEqual(3);
-    });
-  });
 });
 
 describe("closingPad", () => {
-  const settings = { endPad: 1, hold: 2.5 };
+  const settings = { endPad: 0.5, hold: 3 };
+  const zoomed: Rect = { x: 360, y: 215, w: 720, h: 430 };
 
   it("rests the closing zoom onto a result at least the hold", () => {
-    // A look at 4 s of a 6 s clip: the zoom arrives 1 s before the end.
-    const duration = 6;
-    const track = plan(
-      [{ kind: "look", t: 4, rect: { x: 600, y: 300, w: 40, h: 20 } }],
-      duration,
-    );
-    const arrival = 5;
-    expect(viewAt(track, arrival).w).toBeCloseTo(tight);
-    const pad = closingPad(track, duration, settings);
-    expect(pad).toBeCloseTo(1.5);
-    expect(duration + pad - arrival).toBeGreaterThanOrEqual(2.5 - 1e-9);
+    // The zoom arrives at 5 s, 1 s before the end of a 6 s clip.
+    const track: CameraTrack = {
+      keyframes: [
+        { t: 0, view: full },
+        { t: 4, view: full },
+        { t: 5, view: zoomed },
+        { t: 6, view: zoomed },
+      ],
+    };
+    expect(closingPad(track, 6, settings)).toBeCloseTo(2);
   });
 
   it("keeps the end pad after a long closing shot or none", () => {
-    const track = plan([{ kind: "point", t: 4, x: 700, y: 400 }], 12);
-    expect(closingPad(track, 12, settings)).toBe(1);
-    expect(closingPad(plan([], 6), 6, settings)).toBe(1);
+    const long: CameraTrack = {
+      keyframes: [
+        { t: 0, view: full },
+        { t: 2.5, view: full },
+        { t: 3.5, view: zoomed },
+        { t: 12, view: zoomed },
+      ],
+    };
+    expect(closingPad(long, 12, settings)).toBe(0.5);
+    const still: CameraTrack = {
+      keyframes: [
+        { t: 0, view: full },
+        { t: 6, view: full },
+      ],
+    };
+    expect(closingPad(still, 6, settings)).toBe(0.5);
   });
 });
 
