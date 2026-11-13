@@ -58,16 +58,6 @@ describe("the lessons", () => {
     const chores = lessons.map(({ data }) => data.chore);
     expect(new Set(chores).size).toBe(chores.length);
   });
-
-  it.each(lessons)(
-    "$file writes each chore of today to follow “Today you”",
-    ({ data }) => {
-      for (const chore of data.today) {
-        expect(chore, chore).toMatch(/^[a-z]/);
-        expect(chore, chore).not.toMatch(/[.!?]$/);
-      }
-    },
-  );
 });
 
 describe("the media scan", () => {

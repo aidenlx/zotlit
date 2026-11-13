@@ -89,9 +89,7 @@ export const learnSchema = v.object({
   media: v.pipe(v.string(), v.regex(/^[a-z0-9-]+$/)),
   /** The chore in the reader's own words: the course page's card title. */
   chore: v.string(),
-  /** What the reader does by hand today, each a lowercase verb phrase that follows "Today you". */
-  today: v.pipe(v.array(v.string()), v.minLength(1)),
-  /** The one action that replaces `today` once the lesson is done. */
+  /** The one action that replaces the chore once the lesson is done: the lede sentence under the H1. */
   instead: v.string(),
   /** One sentence on what the reader will have at the end, for the Markdown edition. */
   lede: v.string(),
