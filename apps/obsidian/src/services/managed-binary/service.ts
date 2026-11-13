@@ -10,10 +10,11 @@ import {
   PubSub,
   RcRef,
   Schema,
+  Scope,
   Semaphore,
   SubscriptionRef,
 } from "effect";
-import type { Context, Scope, Stream } from "effect";
+import type { Context, Stream } from "effect";
 
 import { withLogCategory } from "@/lib/effect-log";
 import { startupBarrier } from "@/lib/effect-startup";
@@ -158,6 +159,10 @@ const makeManagedBinary = Effect.fn("ManagedBinary.make")(function* <
   const platform = yield* ManagedBinaryPlatform;
   const { consent } = platform;
   const scope = yield* Effect.scope;
+  // Installs and uninstalls run here. It closes after the finalizer that sets
+  // `closed`, so a call that arrives while the layer closes returns at once
+  // rather than forking into a closed Scope.
+  const work = yield* Scope.fork(scope);
   const store = yield* platform.openStore(binary.id);
   const name = cachedBinaryName(binary.pin);
   const location = { directory: binary.id, name };
@@ -418,7 +423,7 @@ const makeManagedBinary = Effect.fn("ManagedBinary.make")(function* <
           ManagedBinaryError | HashMismatchError
         >();
         pendingInstall = done;
-        return Effect.forkIn(queuedInstall(done), scope, {
+        return Effect.forkIn(queuedInstall(done), work, {
           startImmediately: true,
         }).pipe(Effect.as(done));
       }),
@@ -427,6 +432,9 @@ const makeManagedBinary = Effect.fn("ManagedBinary.make")(function* <
   }).pipe(Effect.withSpan("ManagedBinary.install"));
   const uninstall = Effect.gen(function* () {
     if (closed) return;
+    // An install called after this uninstall runs after it, not with the
+    // install before it.
+    pendingInstall = undefined;
     const fiber = yield* Effect.forkIn(
       lane.withPermit(
         Effect.uninterruptible(
@@ -439,7 +447,7 @@ const makeManagedBinary = Effect.fn("ManagedBinary.make")(function* <
           }),
         ),
       ),
-      scope,
+      work,
       // It takes its place in the lane as it is called, so the calls that
       // follow it run after it. Its wait for the lane can be interrupted;
       // its work in the lane cannot.

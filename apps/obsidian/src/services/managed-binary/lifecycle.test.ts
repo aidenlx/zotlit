@@ -417,6 +417,83 @@ it.effect("closes while an install waits behind a stalled cache read", () =>
   }),
 );
 
+it.effect("keeps each install after the uninstall queued before it", () =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const device = memoryDevice();
+      const runPromise = Effect.runPromiseWith(yield* Effect.context<never>());
+      const clearing = yield* Queue.unbounded<void>();
+      const binary = Context.get(
+        yield* Layer.build(
+          testLayer({
+            ...device,
+            openStore: (directory) => {
+              const store = device.openStore(directory);
+              return {
+                ...store,
+                clear: async () => {
+                  await runPromise(Queue.offer(clearing, undefined));
+                  await runPromise(Effect.sleep("1 second"));
+                  await store.clear();
+                },
+              };
+            },
+          }),
+        ),
+        TestBinary,
+      );
+      yield* binary.install;
+
+      const calls = [
+        binary.uninstall,
+        binary.install,
+        binary.uninstall,
+        binary.install,
+      ];
+      const fibers = [];
+      for (const call of calls)
+        fibers.push(yield* Effect.forkChild(call, { startImmediately: true }));
+      // Each uninstall's clear begins, then ends a second later.
+      for (const _ of [1, 2]) {
+        yield* Queue.take(clearing);
+        yield* TestClock.adjust("1 second");
+      }
+      for (const fiber of fibers) yield* Fiber.join(fiber);
+
+      expect((yield* binary.getStatus).kind).toBe("installed");
+      expect(device.names("test-binary")).toEqual([`${PIN.sha256}.wasm`]);
+    }),
+  ),
+);
+
+it.effect("answers an install that arrives while the layer closes", () =>
+  Effect.gen(function* () {
+    const device = slowClearDevice();
+    const scope = yield* Scope.make();
+    const binary = Context.get(
+      yield* Layer.build(testLayer(device)).pipe(
+        Effect.provideService(Scope.Scope, scope),
+      ),
+      TestBinary,
+    );
+    yield* binary.install;
+    yield* Effect.forkChild(binary.uninstall, { startImmediately: true });
+    yield* Effect.promise(() => device.clearing.promise);
+    // The close waits for the uninstall's clear.
+    const close = yield* Effect.forkChild(Scope.close(scope, Exit.void), {
+      startImmediately: true,
+    });
+
+    const install = yield* Effect.forkChild(binary.install, {
+      startImmediately: true,
+    });
+    device.cleared.resolve();
+    yield* Fiber.join(close);
+
+    expect(Exit.isSuccess(yield* Fiber.await(install))).toBe(true);
+  }),
+);
+
 it.effect("keeps a borrowed engine usable until its borrower ends", () =>
   Effect.scoped(
     Effect.gen(function* () {
