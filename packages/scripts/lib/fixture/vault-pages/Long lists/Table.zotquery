@@ -1,0 +1,73 @@
+formulas:
+  tagList: 'tags.sort().join(", ")'
+properties:
+  formula.tagList:
+    displayName: Tags
+views:
+  - type: table
+    name: All columns
+    from: items
+    filters: library == "personal"
+    sort:
+      - property: dateModified
+        direction: DESC
+    order:
+      - title
+      - firstAuthor
+      - creators
+      - date
+      - itemType
+      - publicationTitle
+      - formula.tagList
+      - DOI
+      - abstractNote
+      - vault.literatureNote
+  - type: table
+    name: Grouped by item type
+    from: items
+    filters: library == "personal"
+    sort:
+      - property: title
+        direction: ASC
+    groupBy:
+      property: itemType
+      direction: ASC
+    order:
+      - title
+      - firstAuthor
+      - creators
+      - date
+      - itemType
+      - publicationTitle
+      - formula.tagList
+      - DOI
+      - abstractNote
+      - vault.literatureNote
+  - type: table
+    name: Sized columns
+    from: items
+    filters: library == "personal"
+    sort:
+      - property: dateModified
+        direction: DESC
+    order:
+      - title
+      - firstAuthor
+      - creators
+      - date
+      - itemType
+      - publicationTitle
+    columnSize:
+      title: 460
+      creators: 90
+      publicationTitle: 320
+  - type: table
+    name: Two columns
+    from: items
+    filters: library == "personal"
+    sort:
+      - property: title
+        direction: ASC
+    order:
+      - title
+      - date
