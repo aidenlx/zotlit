@@ -74,6 +74,24 @@ const FAILED: QueryViewOutcome = {
     suggestions: [],
   },
 };
+/** A Table of Items, a Layout that draws records. */
+const TABLE = `views:
+  - type: table
+    name: Papers
+    from: items
+`;
+const ITEMS: QueryViewOutcome = {
+  kind: "result",
+  result: {
+    libraries: [{ type: "personal" }],
+    query: { filter: null, fields: [], sort: [], limit: null },
+    returnedCount: 1,
+    matchedCount: 1,
+    truncated: false,
+    warnings: [],
+    rows: [{ indexedKey: "ITEMAAAA", values: { title: "Ten simple rules" } }],
+  },
+};
 
 let cleanup = new AsyncDisposableStack();
 afterEach(async () => {
@@ -185,9 +203,13 @@ async function setup(kind: HostKind, file = FILE) {
   /**
    * Show the Query File in the note at `sourcePath`, under `parent`, as
    * Obsidian does. It settles as Export to PDF waits for the host: the
-   * embed's `loadFile`, the block's processor.
+   * embed's `loadFile`, the block's processor. Its element and its unload
+   * are there at once.
    */
-  function show(sourcePath: string, parent: HTMLElement): Promise<Held> {
+  function show(
+    sourcePath: string,
+    parent: HTMLElement,
+  ): Promise<Held> & Omit<Held, "view"> {
     const el = parent.createDiv();
     if (kind === "embed") {
       const context: EmbedContext = {
@@ -205,9 +227,10 @@ async function setup(kind: HostKind, file = FILE) {
       component.load();
       const unload = () => component.unload();
       cleanup.defer(() => act(unload));
-      return component
-        .loadFile()
-        .then(() => ({ el, view: viewOf(el), unload }));
+      return Object.assign(
+        component.loadFile().then(() => ({ el, view: viewOf(el), unload })),
+        { el, unload },
+      );
     }
     let child: MarkdownRenderChild | undefined;
     // The block has no section to save to, as in a print.
@@ -225,11 +248,10 @@ async function setup(kind: HostKind, file = FILE) {
     const shown = processor!(file, el, ctx);
     const unload = () => child?.unload();
     cleanup.defer(() => act(unload));
-    return Promise.resolve(shown).then(() => ({
-      el,
-      view: viewOf(el),
-      unload,
-    }));
+    return Object.assign(
+      Promise.resolve(shown).then(() => ({ el, view: viewOf(el), unload })),
+      { el, unload },
+    );
   }
 
   /** Show it in a note on the page, and wait until its rows show. */
@@ -269,7 +291,7 @@ async function setup(kind: HostKind, file = FILE) {
     cleanup.defer(() => act(unload));
     return { el, view: viewOf(el), unload };
   }
-  return { host, run, show, hold, block, scopes, cardFocus, screen };
+  return { host, run, show, hold, block, scopes, cardFocus, screen, viewOf };
 }
 
 describe.each<HostKind>(["embed", "block"])("a %s", (kind) => {
@@ -417,6 +439,29 @@ describe.each<HostKind>(["embed", "block"])("a %s", (kind) => {
       run.mockResolvedValueOnce(FAILED);
       const print = document.body.createDiv({ cls: "print" });
       expect(await printed(() => show("notes/Lab.md", print))).toBe(true);
+    });
+
+    it("as it unloads once its rows land, before its Layout draws them", async () => {
+      const { show, run, viewOf } = await setup(kind, TABLE);
+      const answer = Promise.withResolvers<QueryViewOutcome>();
+      run.mockReturnValueOnce(answer.promise);
+      const print = document.body.createDiv({ cls: "print" });
+      let el: HTMLElement | undefined;
+      const done = await printed(async () => {
+        const shown = show("notes/Lab.md", print);
+        el = shown.el;
+        // The note leaves the page in the moment the rows land, within one
+        // render, which the rows would draw in.
+        const stop = viewOf(el).state.subscribe((state) => {
+          if (state.phase === "ready") shown.unload();
+        });
+        await delay(10);
+        answer.resolve(ITEMS);
+        await shown;
+        stop();
+      });
+      expect(done).toBe(true);
+      expect(el!.querySelector("[data-query-table-row]")).toBeNull();
     });
   });
 

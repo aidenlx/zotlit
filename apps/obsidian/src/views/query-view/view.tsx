@@ -683,6 +683,8 @@ export class QueryView extends Component implements HistorySurface {
    */
   async drawn(): Promise<void> {
     await this.settled;
+    // A view that unloaded meanwhile draws nothing more.
+    if (!this.#rendered) return;
     if (this.#cardsShown) return this.#cards.drawn();
     // Only a run that gave rows has records for a Layout to draw: a view
     // the file lacks, a problem or a failed run draws a message.
