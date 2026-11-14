@@ -162,6 +162,12 @@ export interface ViewProperties {
    * again. An empty `next` writes an empty `order`, so the view shows none.
    */
   orderOf(next: readonly string[]): string[];
+  /**
+   * The `order` to write with `path` shown or hidden, as a tick in the
+   * Properties popover or a column's "Hide column" leaves it: a Property
+   * shown anew goes after the others, one shown already keeps its place.
+   */
+  withShown(path: string, shown: boolean): string[];
 }
 
 /** What a view knows of its Properties beside its file. */
@@ -255,6 +261,15 @@ export function viewProperties(
   );
   const visible = shown.map(entry);
   const entries = [...paths].map(entry);
+  const orderOf = (next: readonly string[]) =>
+    next.length === 0
+      ? []
+      : [
+          ...next,
+          ...[...unused.order, ...keptForTable].filter(
+            (property) => !next.includes(property),
+          ),
+        ];
   return {
     visible,
     queried: visible.filter(({ kind }) => kind !== "vault"),
@@ -266,15 +281,15 @@ export function viewProperties(
     // defines it nor the view shows it.
     kept: (path) =>
       paths.has(path) || classify(path).kind !== "formula" ? entry(path) : null,
-    orderOf: (next) =>
-      next.length === 0
-        ? []
-        : [
-            ...next,
-            ...[...unused.order, ...keptForTable].filter(
-              (property) => !next.includes(property),
-            ),
-          ],
+    orderOf,
+    withShown: (path, show) =>
+      orderOf(
+        !show
+          ? shown.filter((property) => property !== path)
+          : shown.includes(path)
+            ? shown
+            : [...shown, path],
+      ),
   };
 }
 

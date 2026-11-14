@@ -19,6 +19,7 @@ import type {
 } from "@/services/item-query/query-view";
 import type { LayoutRow } from "@/views/annot-view/layout";
 
+import { sortOptions } from "./properties";
 import type { PropertyOption } from "./properties";
 import { propertyIcon } from "./property-icon";
 import { isVaultProperty, vaultName, vaultProperty } from "./query-file";
@@ -169,6 +170,25 @@ export function vaultSortOptions(
       icon: propertyIcon("items", { path, kind: "vault" }, typeOf),
     };
   });
+}
+
+/**
+ * Every property a view of `dataset` sorts by: the Zotero fields ZotLit
+ * Query sorts by, then the vault properties of `names`. The Sort control
+ * offers these, and a Table column's menu sorts by no other.
+ */
+export function viewSortOptions(
+  dataset: QueryFileDataset | undefined,
+  names: readonly string[],
+  labels: {
+    labelOf: (path: string) => string;
+    typeOf: (name: string) => VaultPropertyType;
+  },
+): PropertyOption[] {
+  return [
+    ...sortOptions(dataset, labels.labelOf),
+    ...vaultSortOptions(dataset, names, labels),
+  ];
 }
 
 /**

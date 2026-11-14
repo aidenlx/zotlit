@@ -12,17 +12,15 @@ import * as m from "@/lib/i18n/generated/messages";
 import { pointerDrag } from "@/lib/pointer-drag";
 import { cn, tooltipAttrs } from "@/lib/utils";
 
+import { columnMenuEntries } from "./column-menu";
+import type { ColumnMenuAction } from "./column-menu";
 import { ColumnPropertyPopover } from "./column-property-popover";
 import type { ColumnPropertyHandle } from "./column-property-popover";
 import { ExpanderSpace } from "./expander-space";
 import { useQueryViewState } from "./model";
-import { groupOptions, sortOptions } from "./properties";
+import { groupOptions } from "./properties";
 import { propertyIcon } from "./property-icon";
-import type {
-  ColumnSizes,
-  QueryFileDataset,
-  QueryFileDirection,
-} from "./query-file";
+import type { ColumnSizes, QueryFileDataset } from "./query-file";
 import { moved } from "./reorder";
 import {
   dropGap,
@@ -32,7 +30,7 @@ import {
   withColumnWidth,
 } from "./table-columns";
 import { useVaultPropertyNames, useVaultVersion } from "./vault-cell";
-import { vaultSortOptions } from "./vault-sort";
+import { viewSortOptions } from "./vault-sort";
 import "./table-header.css";
 import type { QueryView } from "./view";
 import { viewProperties } from "./view-properties";
@@ -133,6 +131,62 @@ function followDrag(
   const end = () => controller.abort();
   source.addEventListener("dragend", end, { signal });
   win.addEventListener("dragend", end, options);
+}
+
+/** What each entry of a column's menu says and shows. */
+const ENTRY: Record<ColumnMenuAction, { title: () => string; icon: string }> = {
+  hide: { title: m.query_view_table_hide_column, icon: "lucide-eye-off" },
+  group: { title: m.query_view_table_group_by, icon: "lucide-layout-list" },
+  "move-left": {
+    title: m.query_view_table_move_column_left,
+    icon: "lucide-arrow-left",
+  },
+  "move-right": {
+    title: m.query_view_table_move_column_right,
+    icon: "lucide-arrow-right",
+  },
+  "reset-width": {
+    title: m.query_view_table_reset_column_width,
+    icon: "lucide-rotate-ccw",
+  },
+  "sort-asc": {
+    title: m.query_view_table_sort_az,
+    icon: "lucide-arrow-down-wide-narrow",
+  },
+  "sort-desc": {
+    title: m.query_view_table_sort_za,
+    icon: "lucide-arrow-up-narrow-wide",
+  },
+  "clear-sort": {
+    title: m.query_view_table_clear_sort,
+    icon: "lucide-eraser",
+  },
+  "edit-property": {
+    title: m.query_view_table_edit_property,
+    icon: "lucide-pencil",
+  },
+  "edit-formula": {
+    title: m.query_view_table_edit_formula,
+    icon: "lucide-pencil",
+  },
+};
+
+/**
+ * Keep the click that ends a resize from the header under the pointer: on
+ * mobile, where a tap opens the column's menu, a touch let go off the edge
+ * clicks the header. A pointer let go with no click leaves later clicks.
+ */
+function swallowClick(win: Window): void {
+  // oxlint-disable-next-line obsidianmd/no-global-this -- type position: React's event type shadows the DOM name
+  const swallow = (click: globalThis.MouseEvent) => {
+    click.preventDefault();
+    click.stopPropagation();
+  };
+  win.addEventListener("click", swallow, { capture: true, once: true });
+  win.setTimeout(
+    () => win.removeEventListener("click", swallow, { capture: true }),
+    0,
+  );
 }
 
 /** The narrowest a column can be, from the variable Bases reads. */
@@ -358,6 +412,7 @@ export function TableHeader({
       drop: (delta) => {
         const width = widthAt(delta);
         saved = true;
+        swallowClick(th.win);
         showWidth(th, width);
         // The widths as the view holds them now, which a save can change
         // while the drag is on.
@@ -394,148 +449,110 @@ export function TableHeader({
     view.document.editView({ order: current.orderOf(moved(order, from, to)) });
   };
 
-  /** Hide the column of `path`, from the order the view holds now. */
-  const hideColumn = (path: string) => {
-    const { file, view: shown } = view.state.getState();
-    if (!shown) return;
-    const current = viewProperties(file, shown);
-    view.document.editView({
-      order: current.orderOf(
-        current.visible
-          .map((entry) => entry.path)
-          .filter((entry) => entry !== path),
-      ),
-    });
-  };
-
-  /** Sort the view by `path` first, or clear its sort, from the sort it holds now. */
-  const sortColumn = (path: string, direction: QueryFileDirection | null) => {
-    const shown = view.state.getState().view;
-    if (!shown) return;
-    view.document.editView({
-      sort: headerSort(shown.sort ?? [], path, direction),
-    });
-  };
-
   /**
-   * The Bases column menu, on a right click (a tap on mobile): hide the
-   * column or group by it, the moves and the reset a drag and a double click
-   * make, spelled out, the sorts, and the property's page. An entry the host
-   * cannot save leaves; one with nothing to do there shows, disabled.
+   * The Bases column menu, on a right click (a tap on mobile), with the
+   * entries `columnMenuEntries` lays out. Each entry reads the view as it
+   * stands when it runs, which a save can change while the menu is open.
    */
   const columnMenu = (event: MouseEvent<HTMLElement>, path: string) => {
     event.preventDefault();
     const th = event.currentTarget;
-    const at = columns.findIndex((entry) => entry.path === path);
-    const entry = columns[at];
-    const toStart = at <= 0;
-    const toEnd = at < 0 || at >= columns.length - 1;
-    // Left and right as the researcher sees them, in either direction.
+    // One column's page at a time, beside the cell it opened from.
+    editor.current?.close();
     const rtl = isRTL(th);
     const { view: shown } = view.state.getState();
     const dataset = shown?.from;
-    const menu = new Menu();
-
-    if (view.can.properties)
-      menu.addItem((item) =>
-        item
-          .setTitle(m.query_view_table_hide_column())
-          .setIcon("lucide-eye-off")
-          .onClick(() => hideColumn(path)),
-      );
+    const at = columns.findIndex((entry) => entry.path === path);
     // A grouping by a list path, as `tags[]`, groups by the column of the list.
-    const grouping = groupOptions(dataset).find(
-      (option) => option.path.replace(/\[\]$/, "") === path,
-    );
-    if (view.can.group && grouping)
-      menu.addItem((item) =>
-        item
-          .setTitle(m.query_view_table_group_by())
-          .setIcon("lucide-layout-list")
-          .onClick(() =>
-            view.document.editView({
-              groupBy: { property: grouping.path, direction: "ASC" },
-              groupOrder: undefined,
-            }),
-          ),
-      );
-
-    // The moves open the menu where the host offers neither entry above.
-    if (view.can.properties || (view.can.group && grouping))
-      menu.addSeparator();
-    menu
-      .addItem((item) =>
-        item
-          .setTitle(m.query_view_table_move_column_left())
-          .setIcon("lucide-arrow-left")
-          .setDisabled(rtl ? toEnd : toStart)
-          .onClick(() => stepColumn(path, rtl ? 1 : -1)),
-      )
-      .addItem((item) =>
-        item
-          .setTitle(m.query_view_table_move_column_right())
-          .setIcon("lucide-arrow-right")
-          .setDisabled(rtl ? toStart : toEnd)
-          .onClick(() => stepColumn(path, rtl ? -1 : 1)),
-      );
-    if (view.can.columnWidth)
-      menu.addItem((item) =>
-        item
-          .setTitle(m.query_view_table_reset_column_width())
-          .setIcon("lucide-rotate-ccw")
-          .setDisabled(sizes?.[path] === undefined)
-          .onClick(() => resetColumn(path)),
-      );
-
-    // ZotLit Query sorts by what the Sort control offers, and no more.
-    const sortable =
-      !ranked &&
-      [
-        ...sortOptions(dataset),
-        ...vaultSortOptions(dataset, vaultNames, {
+    const grouping =
+      groupOptions(dataset).find(
+        (option) => option.path.replace(/\[\]$/, "") === path,
+      )?.path ?? null;
+    const entries = columnMenuEntries({
+      path,
+      kind: columns[at]?.kind ?? "field",
+      at,
+      count: columns.length,
+      rtl,
+      sized: sizes?.[path] !== undefined,
+      can: view.can,
+      // ZotLit Query sorts by what the Sort control offers, and offers no
+      // sort while the rows follow the host's rank.
+      sortable:
+        !ranked &&
+        viewSortOptions(dataset, vaultNames, {
           labelOf: (named) => named,
           typeOf: (name) => literatureNotes.propertyType(name),
-        }),
-      ].some((option) => option.path === path);
-    const sorted = shown?.sort?.find((sort) => sort.property === path);
-    menu
-      .addSeparator()
-      .addItem((item) =>
-        item
-          .setTitle(m.query_view_table_sort_az())
-          .setIcon("lucide-arrow-down-wide-narrow")
-          .setChecked(sorted?.direction === "ASC")
-          .setDisabled(!sortable)
-          .onClick(() => sortColumn(path, "ASC")),
-      )
-      .addItem((item) =>
-        item
-          .setTitle(m.query_view_table_sort_za())
-          .setIcon("lucide-arrow-up-narrow-wide")
-          .setChecked(sorted?.direction === "DESC")
-          .setDisabled(!sortable)
-          .onClick(() => sortColumn(path, "DESC")),
-      );
-    if (sorted)
-      menu.addItem((item) =>
-        item
-          .setTitle(m.query_view_table_clear_sort())
-          .setIcon("lucide-eraser")
-          .setWarning(true)
-          .onClick(() => sortColumn(path, null)),
-      );
+        }).some((option) => option.path === path),
+      sort: shown?.sort ?? [],
+      groupBy: shown?.groupBy,
+      grouping,
+    });
 
-    if (view.can.propertyPages && entry)
-      menu.addSeparator().addItem((item) =>
-        item
-          .setTitle(
-            entry.kind === "formula"
-              ? m.query_view_table_edit_formula()
-              : m.query_view_table_edit_property(),
-          )
-          .setIcon("lucide-pencil")
-          .onClick(() => editor.current?.open(th, path)),
-      );
+    const run = (action: ColumnMenuAction) => {
+      const { file, view: now } = view.state.getState();
+      if (!now) return;
+      switch (action) {
+        case "hide":
+          view.document.editView({
+            order: viewProperties(file, now).withShown(path, false),
+          });
+          return;
+        case "group":
+          if (grouping !== null && now.groupBy?.property !== grouping)
+            view.document.editView({
+              groupBy: { property: grouping, direction: "ASC" },
+              groupOrder: undefined,
+            });
+          return;
+        case "move-left":
+          stepColumn(path, rtl ? 1 : -1);
+          return;
+        case "move-right":
+          stepColumn(path, rtl ? -1 : 1);
+          return;
+        case "reset-width":
+          resetColumn(path);
+          return;
+        case "sort-asc":
+        case "sort-desc":
+        case "clear-sort":
+          view.document.editView({
+            sort: headerSort(
+              now.sort ?? [],
+              path,
+              action === "clear-sort"
+                ? null
+                : action === "sort-asc"
+                  ? "ASC"
+                  : "DESC",
+            ),
+          });
+          return;
+        case "edit-property":
+        case "edit-formula":
+          editor.current?.open(th, path);
+          return;
+        default:
+          action satisfies never;
+      }
+    };
+
+    const menu = new Menu();
+    for (const [index, group] of entries.entries()) {
+      if (index > 0) menu.addSeparator();
+      for (const { action, disabled, checked } of group)
+        menu.addItem((item) => {
+          item
+            .setTitle(ENTRY[action].title())
+            .setIcon(ENTRY[action].icon)
+            .onClick(() => run(action));
+          if (disabled) item.setDisabled(true);
+          // As Bases does, an entry that can be checked always says whether.
+          if (checked !== undefined) item.setChecked(checked);
+          if (action === "clear-sort") item.setWarning(true);
+        });
+    }
     menu.setParentElement(th).showAtMouseEvent(event.nativeEvent);
   };
 

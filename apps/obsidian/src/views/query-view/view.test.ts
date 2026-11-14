@@ -2389,6 +2389,16 @@ it("hides a column and groups the view by it from the header menu", async () => 
   );
   await settle();
 
+  // Grouped by it already, the entry is checked and leaves the grouping be.
+  const grouped = headerMenu(el, "itemType")["Group by this property"]!;
+  expect(grouped.checked).toBe(true);
+  const writes = saved.length;
+  await act(async () => {
+    grouped.click();
+    await view.flush();
+  });
+  expect(saved).toHaveLength(writes);
+
   await act(async () => {
     headerMenu(el, "date")["Hide column"]!.click();
     await view.flush();
@@ -2430,6 +2440,37 @@ it("opens a column's Edit property page at its header, with no way back, which r
   expect(
     el.querySelector('th[data-query-column="title"]')!.textContent,
   ).toContain("Paper");
+});
+
+it("closes a column's page as a column menu opens, and as its column leaves the table", async () => {
+  const { view, el, settle } = await mount([
+    result([itemRow("ITEMAAAA", "Ten simple rules")]),
+    result([itemRow("ITEMAAAA", "Ten simple rules")]),
+  ]);
+  await act(() => view.setText(TABLE_FILE));
+  await settle();
+  const page = () =>
+    document.querySelector(
+      "[data-query-column-popover] [data-query-property-page]",
+    );
+  const edit = async (path: string) => {
+    await act(() => headerMenu(el, path)["Edit property…"]!.click());
+    expect(page()?.getAttribute("data-query-property-page")).toBe(path);
+  };
+
+  // A keyboard's context menu presses nothing outside the page, so the menu
+  // closes it: a second column's page never stacks over the first.
+  await edit("title");
+  headerMenu(el, "date");
+  await act(async () => {});
+  expect(page()).toBeNull();
+  await edit("date");
+
+  // A save from elsewhere hides the column the page hangs on.
+  await act(() => view.setText(TABLE_FILE.replace("      - date\n", "")));
+  await settle();
+  expect(el.querySelector('th[data-query-column="date"]')).toBeNull();
+  expect(page()).toBeNull();
 });
 
 it("names a Formula column's page Edit formula, and closes it as its menu hides the column it hangs on", async () => {

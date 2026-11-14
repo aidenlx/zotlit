@@ -112,11 +112,9 @@ export function PropertiesMenu({ view }: { view: QueryView }) {
                 entry={entry}
                 shown={shown}
                 onShownChange={(show) =>
-                  setOrder(
-                    show
-                      ? [...order, page]
-                      : order.filter((path) => path !== page),
-                  )
+                  view.document.editView({
+                    order: properties.withShown(page, show),
+                  })
                 }
               />
             );

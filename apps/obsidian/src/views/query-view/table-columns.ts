@@ -6,10 +6,11 @@ import type {
 } from "./query-file";
 
 /**
- * The sort a Table column's header menu leaves, as Bases sorts from it: the
- * column's own sort leaves the list, and a `direction` puts it back first,
- * ahead of the view's other sorts; `null` only clears it. A list left empty
- * is `undefined`, so the view writes no `sort` key.
+ * The sort a Table column's menu leaves, as Bases sorts from it: the
+ * column's own sort leaves the list, and the others keep their order.
+ * @param direction Where the column's sort goes back in first; `null` only
+ * clears it.
+ * @returns `undefined` for a list left empty, so the view writes no `sort`.
  */
 export function headerSort(
   sort: readonly QueryFileSort[],
