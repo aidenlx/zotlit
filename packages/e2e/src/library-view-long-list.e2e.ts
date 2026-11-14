@@ -161,7 +161,7 @@ describe.skipIf(!reachable)("Library View long lists", () => {
         const list = view.contentEl.querySelector<HTMLElement>(box)!;
         list.scrollTop = 0;
         const before = list.scrollHeight;
-        await new Promise((resolve) => requestAnimationFrame(resolve));
+        await new Promise((resolve) => list.win.requestAnimationFrame(resolve));
         return list.scrollHeight === before;
       },
       { box: BOX },
@@ -181,7 +181,9 @@ describe.skipIf(!reachable)("Library View long lists", () => {
         // The pointer moves the bar once a frame, as a drag does.
         for (let at = 0; at <= end; at += 200) {
           list.scrollTop = at;
-          await new Promise((resolve) => requestAnimationFrame(resolve));
+          await new Promise((resolve) =>
+            list.win.requestAnimationFrame(resolve),
+          );
           heights.add(list.scrollHeight);
           columns.add(
             [...list.querySelectorAll("th[data-query-column]")]
