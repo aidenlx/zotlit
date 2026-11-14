@@ -2778,15 +2778,24 @@ views:
         after: number;
       }
     >();
+    // The Bases column menu, with the moves a drag makes spelled out.
     expect(menuReset.auto).toEqual([
+      "Hide column",
       "Move left",
       "Move right",
       "Reset column width (disabled)",
+      "Sort A → Z",
+      "Sort Z → A",
+      "Edit property…",
     ]);
     expect(menuReset.sized).toEqual([
+      "Hide column",
       "Move left (disabled)",
       "Move right",
       "Reset column width",
+      "Sort A → Z",
+      "Sort Z → A",
+      "Edit property…",
     ]);
     expect(menuReset.after).toBe(narrowed.auto);
     expect(menuReset.text).not.toContain("columnSize");

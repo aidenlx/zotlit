@@ -2210,7 +2210,25 @@ it("shows a column at the width the view keeps, and a double click on its edge s
   expect(header("title").dataset.sized).toBeUndefined();
 });
 
-it("opens the header menu on a click or a right click, with what has nothing to do disabled, not hidden", async () => {
+/** The entries of the header menu that `type` opens on the column of `path`, by title; none where it opens no menu. */
+function headerMenu(
+  el: HTMLElement,
+  path: string,
+  type: "click" | "contextmenu" = "contextmenu",
+) {
+  Menu.instances.length = 0;
+  void act(() => {
+    el.querySelector<HTMLElement>(
+      `th[data-query-column="${path}"]`,
+    )!.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true }));
+  });
+  const menu = Menu.instances.at(-1);
+  return Object.fromEntries(
+    (menu?.items ?? []).map((item) => [item.title, item] as const),
+  );
+}
+
+it("opens the header menu on a right click only, with what has nothing to do disabled, not hidden", async () => {
   // A move runs the query again, for the new order of the fields.
   const { view, el, settle, save, saved } = await mount([
     result([itemRow("ITEMAAAA", "Ten simple rules")]),
@@ -2222,27 +2240,23 @@ it("opens the header menu on a click or a right click, with what has nothing to 
 `),
   );
   await settle();
-  const header = (path: string) =>
-    el.querySelector<HTMLElement>(`th[data-query-column="${path}"]`)!;
-  const open = (path: string, type: "click" | "contextmenu") => {
-    Menu.instances.length = 0;
-    void act(() => {
-      header(path).dispatchEvent(
-        new MouseEvent(type, { bubbles: true, cancelable: true }),
-      );
-    });
-    const menu = Menu.instances.at(-1)!;
-    return Object.fromEntries(
-      menu.items.map((item) => [item.title, item] as const),
-    );
-  };
+  const open = (path: string, type?: "click" | "contextmenu") =>
+    headerMenu(el, path, type);
 
-  // The first column at its auto width: it can only move right.
-  const first = open("title", "contextmenu");
+  // A click sorts by the column, and opens no menu.
+  expect(open("vault.literatureNote", "click")).toEqual({});
+
+  // The first column at its auto width: it can only move right. Its menu
+  // is the Bases column menu, with the moves a drag makes spelled out.
+  const first = open("title");
   expect(Object.keys(first)).toEqual([
+    "Hide column",
     "Move left",
     "Move right",
     "Reset column width",
+    "Sort A → Z",
+    "Sort Z → A",
+    "Edit property…",
   ]);
   expect(first["Move left"]!.disabled).toBe(true);
   expect(first["Move right"]!.disabled).toBe(false);
@@ -2250,9 +2264,14 @@ it("opens the header menu on a click or a right click, with what has nothing to 
   first["Reset column width"]!.click();
   expect(save).not.toHaveBeenCalled();
 
+  // ZotLit Query sorts by no Literature Note.
+  const note = open("vault.literatureNote");
+  expect(note["Sort A → Z"]!.disabled).toBe(true);
+  expect(note["Sort Z → A"]!.disabled).toBe(true);
+
   // The last column, the Literature Note Property, resized: it can move
   // left and reset.
-  const last = open("vault.literatureNote", "click");
+  const last = open("vault.literatureNote");
   expect(last["Move left"]!.disabled).toBe(false);
   expect(last["Move right"]!.disabled).toBe(true);
   expect(last["Reset column width"]!.disabled).toBe(false);
@@ -2271,10 +2290,302 @@ it("opens the header menu on a click or a right click, with what has nothing to 
   ).toEqual(["title", "vault.literatureNote", "date"]);
 
   await act(async () => {
-    open("vault.literatureNote", "contextmenu")["Reset column width"]!.click();
+    open("vault.literatureNote")["Reset column width"]!.click();
     await view.flush();
   });
   expect(saved.at(-1)).not.toContain("columnSize");
+});
+
+it("steps a column's sort with a click on its header, as Bases does, and marks the sorted columns", async () => {
+  const { view, el, settle, saved } = await mount([
+    result([itemRow("ITEMAAAA", "Ten simple rules")]),
+    result([itemRow("ITEMAAAA", "Ten simple rules")]),
+    result([itemRow("ITEMAAAA", "Ten simple rules")]),
+    result([itemRow("ITEMAAAA", "Ten simple rules")]),
+  ]);
+  await act(() =>
+    view.setText(`${TABLE_FILE}    sort:
+      - property: date
+        direction: DESC
+`),
+  );
+  await settle();
+  const header = (path: string) =>
+    el.querySelector<HTMLElement>(`th[data-query-column="${path}"]`)!;
+  const mark = (path: string) =>
+    header(path)
+      .querySelector("[data-query-column-sort]")
+      ?.getAttribute("data-query-column-sort") ?? null;
+  const click = async (path: string) => {
+    Menu.instances.length = 0;
+    await act(async () => {
+      header(path).dispatchEvent(
+        new MouseEvent("click", { bubbles: true, cancelable: true, button: 0 }),
+      );
+      await view.flush();
+    });
+    // A click opens no menu.
+    expect(Menu.instances).toHaveLength(0);
+    await settle();
+  };
+  expect(mark("date")).toBe("DESC");
+  expect(mark("title")).toBeNull();
+
+  // None, then A → Z, first among the sorts.
+  await click("title");
+  expect(saved.at(-1)).toContain(
+    "    sort:\n      - property: title\n        direction: ASC\n      - property: date\n        direction: DESC\n",
+  );
+  expect(mark("title")).toBe("ASC");
+  // Every sort column wears its mark; the first sort alone names its order.
+  expect(mark("date")).toBe("DESC");
+  expect(header("title").getAttribute("aria-sort")).toBe("ascending");
+  expect(header("date").hasAttribute("aria-sort")).toBe(false);
+  // A → Z, then Z → A.
+  await click("title");
+  expect(saved.at(-1)).toContain(
+    "      - property: title\n        direction: DESC\n      - property: date\n",
+  );
+  expect(mark("title")).toBe("DESC");
+  // Z → A, then no sort by the column; the others stay.
+  await click("title");
+  expect(saved.at(-1)).not.toContain("property: title");
+  expect(saved.at(-1)).toContain("      - property: date\n");
+  expect(mark("title")).toBeNull();
+
+  // ZotLit Query sorts by no Literature Note: its click does nothing.
+  const writes = saved.length;
+  await click("vault.literatureNote");
+  expect(saved).toHaveLength(writes);
+
+  // A click on a column's edge, where it resizes, sorts nothing.
+  await act(async () => {
+    header("title")
+      .querySelector("[data-query-column-resizer]")!
+      .dispatchEvent(
+        new MouseEvent("click", { bubbles: true, cancelable: true, button: 0 }),
+      );
+    await view.flush();
+  });
+  expect(saved).toHaveLength(writes);
+});
+
+it("opens the header menu on a tap on mobile, where a column moves by its menu", async () => {
+  // `mount` puts the platform back after the case.
+  setMockPlatform({ isMobile: true });
+  const { view, el, settle, save } = await mount([
+    result([itemRow("ITEMAAAA", "Ten simple rules")]),
+  ]);
+  await act(() => view.setText(TABLE_FILE));
+  await settle();
+  expect(Object.keys(headerMenu(el, "title", "click"))).toContain(
+    "Hide column",
+  );
+  // The tap sorts nothing, as in Bases.
+  await act(() => view.flush());
+  expect(save).not.toHaveBeenCalled();
+});
+
+it("sorts the view by a column first, keeping its other sorts, and clears that sort, as Bases does", async () => {
+  const { view, el, settle, saved } = await mount([
+    result([itemRow("ITEMAAAA", "Ten simple rules")]),
+    result([itemRow("ITEMAAAA", "Ten simple rules")]),
+    result([itemRow("ITEMAAAA", "Ten simple rules")]),
+  ]);
+  await act(() =>
+    view.setText(`${TABLE_FILE}    sort:
+      - property: date
+        direction: DESC
+      - property: title
+        direction: ASC
+`),
+  );
+  await settle();
+
+  // Each sort entry is checked by the direction the column sorts in now.
+  const before = headerMenu(el, "title");
+  expect(before["Sort A → Z"]!.checked).toBe(true);
+  expect(before["Sort Z → A"]!.checked).toBe(false);
+  expect(Object.keys(before)).toContain("Clear sort");
+
+  await act(async () => {
+    before["Sort Z → A"]!.click();
+    await view.flush();
+  });
+  expect(saved.at(-1)).toContain(
+    "    sort:\n      - property: title\n        direction: DESC\n      - property: date\n        direction: DESC\n",
+  );
+  await settle();
+
+  await act(async () => {
+    headerMenu(el, "date")["Clear sort"]!.click();
+    await view.flush();
+  });
+  expect(saved.at(-1)).toMatch(
+    /\n {4}sort:\n {6}- property: title\n {8}direction: DESC\n$/,
+  );
+  expect(saved.at(-1)).not.toContain("property: date");
+  await settle();
+
+  // A column the view does not sort by offers no Clear sort.
+  expect(Object.keys(headerMenu(el, "date"))).not.toContain("Clear sort");
+});
+
+it("hides a column and groups the view by it from the header menu", async () => {
+  const { view, el, settle, saved } = await mount([
+    result([itemRow("ITEMAAAA", "Ten simple rules")]),
+    result([itemRow("ITEMAAAA", "Ten simple rules")]),
+    result([itemRow("ITEMAAAA", "Ten simple rules")]),
+  ]);
+  await act(() =>
+    view.setText(`views:
+  - type: table
+    name: Reading list
+    from: items
+    order:
+      - title
+      - itemType
+      - date
+`),
+  );
+  await settle();
+
+  // Only a property the dataset groups by offers the grouping.
+  expect(Object.keys(headerMenu(el, "title"))).not.toContain(
+    "Group by this property",
+  );
+  await act(async () => {
+    headerMenu(el, "itemType")["Group by this property"]!.click();
+    await view.flush();
+  });
+  expect(saved.at(-1)).toContain(
+    "    groupBy:\n      property: itemType\n      direction: ASC\n",
+  );
+  await settle();
+
+  // Grouped by it already, the entry is checked and leaves the grouping be.
+  const grouped = headerMenu(el, "itemType")["Group by this property"]!;
+  expect(grouped.checked).toBe(true);
+  const writes = saved.length;
+  await act(async () => {
+    grouped.click();
+    await view.flush();
+  });
+  expect(saved).toHaveLength(writes);
+
+  await act(async () => {
+    headerMenu(el, "date")["Hide column"]!.click();
+    await view.flush();
+  });
+  expect(saved.at(-1)).toContain(
+    "    order:\n      - title\n      - itemType\n",
+  );
+  await settle();
+  expect(el.querySelector('th[data-query-column="date"]')).toBeNull();
+});
+
+it("opens a column's Edit property page at its header, with no way back, which renames it", async () => {
+  const { view, el, settle, saved } = await mount([
+    result([itemRow("ITEMAAAA", "Ten simple rules")]),
+  ]);
+  await act(() => view.setText(TABLE_FILE));
+  await settle();
+  await act(() => headerMenu(el, "title")["Edit property…"]!.click());
+  const popup = () =>
+    el.ownerDocument.querySelector<HTMLElement>("[data-query-column-popover]");
+  const page = () =>
+    popup()?.querySelector<HTMLElement>('[data-query-property-page="title"]');
+  expect(page()).toBeTruthy();
+  // A page with no list behind it offers no way back.
+  expect(popup()!.querySelector("[data-chooser-page-back]")).toBeNull();
+
+  const field = page()!.querySelector<HTMLInputElement>(
+    "[data-query-display-name]",
+  )!;
+  await act(async () => {
+    field.value = "Paper";
+    field.dispatchEvent(new Event("input", { bubbles: true }));
+    // React's `onBlur` listens for `focusout`.
+    field.dispatchEvent(new FocusEvent("focusout", { bubbles: true }));
+    await view.flush();
+  });
+  expect(saved.at(-1)).toContain("displayName: Paper");
+  await settle();
+  expect(
+    el.querySelector('th[data-query-column="title"]')!.textContent,
+  ).toContain("Paper");
+});
+
+it("closes a column's page as a column menu opens, and as its column leaves the table", async () => {
+  const { view, el, settle } = await mount([
+    result([itemRow("ITEMAAAA", "Ten simple rules")]),
+    result([itemRow("ITEMAAAA", "Ten simple rules")]),
+  ]);
+  await act(() => view.setText(TABLE_FILE));
+  await settle();
+  const page = () =>
+    document.querySelector(
+      "[data-query-column-popover] [data-query-property-page]",
+    );
+  const edit = async (path: string) => {
+    await act(() => headerMenu(el, path)["Edit property…"]!.click());
+    expect(page()?.getAttribute("data-query-property-page")).toBe(path);
+  };
+
+  // A keyboard's context menu presses nothing outside the page, so the menu
+  // closes it: a second column's page never stacks over the first.
+  await edit("title");
+  headerMenu(el, "date");
+  await act(async () => {});
+  expect(page()).toBeNull();
+  await edit("date");
+
+  // A save from elsewhere hides the column the page hangs on.
+  await act(() => view.setText(TABLE_FILE.replace("      - date\n", "")));
+  await settle();
+  expect(el.querySelector('th[data-query-column="date"]')).toBeNull();
+  expect(page()).toBeNull();
+});
+
+it("names a Formula column's page Edit formula, and closes it as its menu hides the column it hangs on", async () => {
+  const { view, el, settle, saved } = await mount([
+    result([itemRow("ITEMAAAA", "Ten simple rules")]),
+    result([itemRow("ITEMAAAA", "Ten simple rules")]),
+  ]);
+  await act(() =>
+    view.setText(`formulas:
+  year: date.year
+views:
+  - type: table
+    name: Reading list
+    from: items
+    order:
+      - title
+      - formula.year
+`),
+  );
+  await settle();
+  const menu = headerMenu(el, "formula.year");
+  expect(Object.keys(menu)).toContain("Edit formula…");
+  expect(Object.keys(menu)).not.toContain("Edit property…");
+  await act(() => menu["Edit formula…"]!.click());
+  const page = () =>
+    document.querySelector('[data-query-property-page="formula.year"]');
+  expect(page()).not.toBeNull();
+
+  await act(() =>
+    document.querySelector<HTMLElement>("[data-chooser-page-menu]")!.click(),
+  );
+  await act(() =>
+    document
+      .querySelector<HTMLElement>('[data-chooser-page-menu-item="hide"]')!
+      .click(),
+  );
+  await act(() => view.flush());
+  expect(saved.at(-1)).toContain("    order:\n      - title\n");
+  expect(saved.at(-1)).not.toContain("      - formula.year");
+  await settle();
+  expect(page()).toBeNull();
 });
 
 it("offers no column move and no column resize where the host cannot save", async () => {
@@ -2603,6 +2914,58 @@ it("names and searches the properties of Items in Cards and List as the Table do
   expect(shownRows(el)).toEqual(["ITEMAAAA"]);
   await search("journalarticle");
   expect(shownRows(el)).toEqual([]);
+});
+
+it("shows an empty sort row while the view sorts by nothing, as Bases does, and sorts by the property it takes", async () => {
+  const { view, el, settle, saved } = await mount([result([]), result([])]);
+  await act(() => view.setText(TABLE_FILE));
+  await settle();
+  const editor = await openPopover(el, "sort");
+  const empty = () => editor.querySelector<HTMLElement>("[data-sort-empty]");
+  const trigger = empty()!.querySelector<HTMLElement>("[data-sort-property]")!;
+  // The row names no property: its select shows the placeholder.
+  expect(trigger.textContent).toBe("Property");
+  expect(trigger.querySelector("[data-placeholder]")).not.toBeNull();
+  expect(editor.querySelectorAll("[data-sort-row]")).toHaveLength(0);
+
+  await choose(trigger, "title");
+  await settle();
+  expect(saved.at(-1)).toContain(
+    "    sort:\n      - property: title\n        direction: ASC\n",
+  );
+  expect(empty()).toBeNull();
+  expect(
+    editor.querySelector('[data-sort-row="title"] [data-sort-property]')!
+      .textContent,
+  ).toBe("Title");
+});
+
+it("shows the property placeholder in the Group select while the view groups by nothing, and clears a grouping with its delete button, not a None option", async () => {
+  const { view, el, settle, saved } = await mount([
+    result([]),
+    result([]),
+    result([]),
+  ]);
+  await act(() => view.setText(TABLE_FILE));
+  await settle();
+  const editor = await openPopover(el, "group");
+  const trigger = () =>
+    editor.querySelector<HTMLElement>("[data-group-property]")!;
+  expect(trigger().textContent).toBe("Property");
+  expect(trigger().querySelector("[data-placeholder]")).not.toBeNull();
+  expect(
+    (await selectOptions(trigger())).map((option) => option.label),
+  ).not.toContain("None");
+
+  await choose(trigger(), "itemType");
+  await settle();
+  expect(saved.at(-1)).toContain("    groupBy:\n      property: itemType\n");
+  await act(() =>
+    editor.querySelector<HTMLElement>("[data-group-remove]")!.click(),
+  );
+  await settle();
+  expect(saved.at(-1)).not.toContain("groupBy");
+  expect(trigger().textContent).toBe("Property");
 });
 
 it("offers Item fields to sort and group a view of Items by", async () => {

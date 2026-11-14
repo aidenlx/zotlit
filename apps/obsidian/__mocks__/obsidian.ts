@@ -1083,6 +1083,8 @@ export function createMockPlugin(): {
 let platformIsWin: boolean | undefined;
 let platformIsMacOS: boolean | undefined;
 let platformIsDesktopApp: boolean | undefined;
+/** Mobile defaults to off: most tests run as the desktop app. */
+let platformIsMobile = false;
 
 export const Platform = {
   get isDesktopApp(): boolean {
@@ -1108,6 +1110,9 @@ export const Platform = {
     }
     return platformIsMacOS;
   },
+  get isMobile(): boolean {
+    return platformIsMobile;
+  },
 };
 
 /**
@@ -1119,17 +1124,20 @@ export function setMockPlatform(overrides: {
   isWin?: boolean;
   isMacOS?: boolean;
   isDesktopApp?: boolean;
+  isMobile?: boolean;
 }): void {
   if (overrides.isWin !== undefined) platformIsWin = overrides.isWin;
   if (overrides.isMacOS !== undefined) platformIsMacOS = overrides.isMacOS;
   if (overrides.isDesktopApp !== undefined)
     platformIsDesktopApp = overrides.isDesktopApp;
+  if (overrides.isMobile !== undefined) platformIsMobile = overrides.isMobile;
 }
 
 export function resetMockPlatform(): void {
   platformIsWin = undefined;
   platformIsMacOS = undefined;
   platformIsDesktopApp = undefined;
+  platformIsMobile = false;
 }
 
 export function getLanguage(): string {

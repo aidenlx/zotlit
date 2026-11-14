@@ -75,7 +75,7 @@ import {
   queryStateHandle,
 } from "./model";
 import { PapersLayout } from "./papers-layout";
-import { groupOptions, sortOptions } from "./properties";
+import { groupOptions } from "./properties";
 import { PropertiesMenu } from "./properties-menu";
 import { LITERATURE_NOTE, sameSort, vaultName } from "./query-file";
 import type {
@@ -111,7 +111,7 @@ import type { LiteratureNotes, VaultHost } from "./table-notes";
 import { ToolbarButton } from "./toolbar-button";
 import { ToolbarPopover } from "./toolbar-popover";
 import { useVaultPropertyNames, vaultText } from "./vault-cell";
-import { vaultSortOptions } from "./vault-sort";
+import { viewSortOptions } from "./vault-sort";
 import { ViewMenu } from "./view-menu";
 import { ViewPlanner } from "./view-plan/view-plan";
 import type { ViewPlan } from "./view-plan/view-plan";
@@ -1658,13 +1658,10 @@ export function SortButton({ view }: { view: QueryView }) {
     >
       <SortEditor
         value={sort}
-        options={[
-          ...sortOptions(current.from, labelOf),
-          ...vaultSortOptions(current.from, names, {
-            labelOf,
-            typeOf: (name) => literatureNotes.propertyType(name),
-          }),
-        ]}
+        options={viewSortOptions(current.from, names, {
+          labelOf,
+          typeOf: (name) => literatureNotes.propertyType(name),
+        })}
         unused={properties.unused.sort}
         labelOf={labelOf}
         onChange={(next) =>

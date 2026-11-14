@@ -1,6 +1,8 @@
-// The Table layout's header row, whose cells move and resize their columns as in a Bases table.
+// The Table layout's header row, whose cells move and resize their columns as
+// in a Bases table, and open the Bases column menu on a right click (a tap on
+// mobile): hide, group by, sort, and edit the property.
 
-import { Menu } from "obsidian";
+import { Menu, Platform } from "obsidian";
 import { useEffect, useRef } from "react";
 import type { CSSProperties, DragEvent, MouseEvent, PointerEvent } from "react";
 
@@ -10,17 +12,30 @@ import * as m from "@/lib/i18n/generated/messages";
 import { pointerDrag } from "@/lib/pointer-drag";
 import { cn, tooltipAttrs } from "@/lib/utils";
 
+import { columnMenuEntries } from "./column-menu";
+import type { ColumnMenuAction } from "./column-menu";
+import { ColumnPropertyPopover } from "./column-property-popover";
+import type { ColumnPropertyHandle } from "./column-property-popover";
 import { ExpanderSpace } from "./expander-space";
+import { useQueryViewState } from "./model";
+import { groupOptions } from "./properties";
 import { propertyIcon } from "./property-icon";
-import type { ColumnSizes, QueryFileDataset } from "./query-file";
+import type {
+  ColumnSizes,
+  QueryFileDataset,
+  QueryFileDirection,
+} from "./query-file";
 import { moved } from "./reorder";
 import {
   dropGap,
   gapMove,
+  headerSort,
+  toggledSortDirection,
   resizedWidth,
   withColumnWidth,
 } from "./table-columns";
-import { useVaultVersion } from "./vault-cell";
+import { useVaultPropertyNames, useVaultVersion } from "./vault-cell";
+import { viewSortOptions } from "./vault-sort";
 import "./table-header.css";
 import type { QueryView } from "./view";
 import { viewProperties } from "./view-properties";
@@ -123,9 +138,57 @@ function followDrag(
   win.addEventListener("dragend", end, options);
 }
 
+/** Where each sort entry of a column's menu puts the column's sort; `null` clears it. */
+const SORT_DIRECTION = {
+  "sort-asc": "ASC",
+  "sort-desc": "DESC",
+  "clear-sort": null,
+} as const satisfies Partial<
+  Record<ColumnMenuAction, QueryFileDirection | null>
+>;
+
+/** What each entry of a column's menu says and shows. */
+const ENTRY: Record<ColumnMenuAction, { title: () => string; icon: string }> = {
+  hide: { title: m.query_view_table_hide_column, icon: "lucide-eye-off" },
+  group: { title: m.query_view_table_group_by, icon: "lucide-layout-list" },
+  "move-left": {
+    title: m.query_view_table_move_column_left,
+    icon: "lucide-arrow-left",
+  },
+  "move-right": {
+    title: m.query_view_table_move_column_right,
+    icon: "lucide-arrow-right",
+  },
+  "reset-width": {
+    title: m.query_view_table_reset_column_width,
+    icon: "lucide-rotate-ccw",
+  },
+  "sort-asc": {
+    title: m.query_view_table_sort_az,
+    icon: "lucide-arrow-down-wide-narrow",
+  },
+  "sort-desc": {
+    title: m.query_view_table_sort_za,
+    icon: "lucide-arrow-up-narrow-wide",
+  },
+  "clear-sort": {
+    title: m.query_view_table_clear_sort,
+    icon: "lucide-eraser",
+  },
+  "edit-property": {
+    title: m.query_view_table_edit_property,
+    icon: "lucide-pencil",
+  },
+  "edit-formula": {
+    title: m.query_view_table_edit_formula,
+    icon: "lucide-pencil",
+  },
+};
+
 /**
- * Keep the click that ends a resize from the header under the pointer, which
- * would open its menu. A pointer let go with no click leaves later clicks.
+ * Keep the click that ends a resize from the header under the pointer: on
+ * mobile, where a tap opens the column's menu, a touch let go off the edge
+ * clicks the header. A pointer let go with no click leaves later clicks.
  */
 function swallowClick(win: Window): void {
   // oxlint-disable-next-line obsidianmd/no-global-this -- type position: React's event type shadows the DOM name
@@ -225,6 +288,21 @@ export function TableHeader({
   // A vault column's icon follows the values its notes hold.
   const { literatureNotes } = view.tableDeps;
   useVaultVersion(literatureNotes);
+  // A column sorts by what the Sort control offers, and not at all while
+  // the rows follow the host's rank, as Sort stands off then.
+  const vaultNames = useVaultPropertyNames(literatureNotes);
+  const ranked = useQueryViewState(view, (s) => s.results?.ranked ?? false);
+  /** The view's sort, which marks each column it sorts by. */
+  const sort = useQueryViewState(view, (s) => s.view?.sort);
+  /** Whether ZotLit Query sorts the view now by the column of `path`. */
+  const sortable = (path: string): boolean =>
+    !ranked &&
+    viewSortOptions(view.state.getState().view?.from, vaultNames, {
+      labelOf: (named) => named,
+      typeOf: (name) => literatureNotes.propertyType(name),
+    }).some((option) => option.path === path);
+  /** The column's "Edit property" page, which its menu opens. */
+  const editor = useRef<ColumnPropertyHandle>(null);
   /** The drag on now; the Table that closes ends it. */
   const drag = useRef<AbortController | null>(null);
   useEffect(() => () => drag.current?.abort(), []);
@@ -395,41 +473,111 @@ export function TableHeader({
   };
 
   /**
-   * The header menu, on a click or a right click: what a drag does, spelled
-   * out, with each entry that has nothing to do there shown and disabled.
+   * The Bases column menu, on a right click (a tap on mobile), with the
+   * entries `columnMenuEntries` lays out. Each entry reads the view as it
+   * stands when it runs, which a save can change while the menu is open.
    */
   const columnMenu = (event: MouseEvent<HTMLElement>, path: string) => {
     event.preventDefault();
     const th = event.currentTarget;
-    const at = columns.findIndex((entry) => entry.path === path);
-    const toStart = at <= 0;
-    const toEnd = at < 0 || at >= columns.length - 1;
-    // Left and right as the researcher sees them, in either direction.
+    // One column's page at a time, beside the cell it opened from.
+    editor.current?.close();
     const rtl = isRTL(th);
-    const menu = new Menu()
-      .addItem((item) =>
-        item
-          .setTitle(m.query_view_table_move_column_left())
-          .setIcon("lucide-arrow-left")
-          .setDisabled(rtl ? toEnd : toStart)
-          .onClick(() => stepColumn(path, rtl ? 1 : -1)),
-      )
-      .addItem((item) =>
-        item
-          .setTitle(m.query_view_table_move_column_right())
-          .setIcon("lucide-arrow-right")
-          .setDisabled(rtl ? toStart : toEnd)
-          .onClick(() => stepColumn(path, rtl ? -1 : 1)),
-      );
-    if (view.can.columnWidth)
-      menu.addSeparator().addItem((item) =>
-        item
-          .setTitle(m.query_view_table_reset_column_width())
-          .setIcon("lucide-rotate-ccw")
-          .setDisabled(sizes?.[path] === undefined)
-          .onClick(() => resetColumn(path)),
-      );
+    const { view: shown } = view.state.getState();
+    const dataset = shown?.from;
+    const at = columns.findIndex((entry) => entry.path === path);
+    // A grouping by a list path, as `tags[]`, groups by the column of the list.
+    const grouping =
+      groupOptions(dataset).find(
+        (option) => option.path.replace(/\[\]$/, "") === path,
+      )?.path ?? null;
+    const entries = columnMenuEntries({
+      path,
+      kind: columns[at]?.kind ?? "field",
+      at,
+      count: columns.length,
+      rtl,
+      sized: sizes?.[path] !== undefined,
+      can: view.can,
+      sortable: sortable(path),
+      sort: shown?.sort ?? [],
+      groupBy: shown?.groupBy,
+      grouping,
+    });
+
+    const run = (action: ColumnMenuAction) => {
+      const { file, view: now } = view.state.getState();
+      if (!now) return;
+      switch (action) {
+        case "hide":
+          view.document.editView({
+            order: viewProperties(file, now).withShown(path, false),
+          });
+          return;
+        case "group":
+          if (grouping !== null && now.groupBy?.property !== grouping)
+            view.document.editView({
+              groupBy: { property: grouping, direction: "ASC" },
+              groupOrder: undefined,
+            });
+          return;
+        case "move-left":
+          stepColumn(path, rtl ? 1 : -1);
+          return;
+        case "move-right":
+          stepColumn(path, rtl ? -1 : 1);
+          return;
+        case "reset-width":
+          resetColumn(path);
+          return;
+        case "sort-asc":
+        case "sort-desc":
+        case "clear-sort":
+          view.document.editView({
+            sort: headerSort(now.sort ?? [], path, SORT_DIRECTION[action]),
+          });
+          return;
+        case "edit-property":
+        case "edit-formula":
+          editor.current?.open(th, path);
+          return;
+        default:
+          action satisfies never;
+      }
+    };
+
+    const menu = new Menu();
+    for (const [index, group] of entries.entries()) {
+      if (index > 0) menu.addSeparator();
+      for (const { action, disabled, checked } of group)
+        menu.addItem((item) => {
+          item
+            .setTitle(ENTRY[action].title())
+            .setIcon(ENTRY[action].icon)
+            .onClick(() => run(action));
+          if (disabled) item.setDisabled(true);
+          // As Bases does, an entry that can be checked always says whether.
+          if (checked !== undefined) item.setChecked(checked);
+          if (action === "clear-sort") item.setWarning(true);
+        });
+    }
     menu.setParentElement(th).showAtMouseEvent(event.nativeEvent);
+  };
+
+  /**
+   * A click on a column's header steps its sort, as in Bases: A → Z, then
+   * Z → A, then no sort, the column's sort first among the view's. A press
+   * that ends a resize, or on the edge, takes the click away first.
+   */
+  const toggleSort = (event: MouseEvent<HTMLElement>, path: string) => {
+    if (event.defaultPrevented || event.button !== 0) return;
+    event.preventDefault();
+    const now = view.state.getState().view;
+    if (!now || !sortable(path)) return;
+    const current = now.sort ?? [];
+    view.document.editView({
+      sort: headerSort(current, path, toggledSortDirection(current, path)),
+    });
   };
 
   const { gutter, cell, first, later, filler } = classes;
@@ -440,11 +588,30 @@ export function TableHeader({
           mounted, the columns stay where they are. */}
       <th className={gutter}>
         <ExpanderSpace />
+        {/* The popover stands on the body, beside the cell it opened from. */}
+        {editable && view.can.propertyPages && (
+          <ColumnPropertyPopover
+            view={view}
+            properties={properties}
+            handle={editor}
+          />
+        )}
       </th>
       {columns.map((property, at) => {
         const width = sizes?.[property.path];
         const icon = propertyIcon(dataset, property, (name) =>
           literatureNotes.propertyType(name),
+        );
+        // Rows in the host's rank follow no sort, so no column wears one.
+        const sorted = ranked
+          ? undefined
+          : sort?.find((entry) => entry.property === property.path);
+        // The sort mask fades a long label before the sort mark.
+        const label = cn(LABEL, sorted && SORTED_LABEL);
+        const name = (
+          <span className={cn("zt:truncate", sorted && SORTED_NAME)}>
+            {property.label}
+          </span>
         );
         return (
           <th
@@ -460,19 +627,36 @@ export function TableHeader({
             data-sized={sizedMark(sizes, property.path)}
             data-query-column={property.path}
             data-query-formula-issue={property.issue ?? undefined}
+            // A screen reader hears the sort the rows follow first.
+            aria-sort={
+              !ranked && sort?.[0]?.property === property.path
+                ? sort[0].direction === "ASC"
+                  ? "ascending"
+                  : "descending"
+                : undefined
+            }
             draggable={editable || undefined}
             onDragStart={
               editable ? (event) => moveColumn(event, property.path) : undefined
             }
-            onClick={
-              editable ? (event) => columnMenu(event, property.path) : undefined
-            }
-            onContextMenu={
-              editable ? (event) => columnMenu(event, property.path) : undefined
-            }
+            // On the desktop a click steps the column's sort and a right
+            // click opens its menu; on mobile, where no right click comes,
+            // a tap opens the menu, as in Bases.
+            {...(editable &&
+              (Platform.isMobile
+                ? {
+                    onClick: (event: MouseEvent<HTMLElement>) =>
+                      columnMenu(event, property.path),
+                  }
+                : {
+                    onClick: (event: MouseEvent<HTMLElement>) =>
+                      toggleSort(event, property.path),
+                    onContextMenu: (event: MouseEvent<HTMLElement>) =>
+                      columnMenu(event, property.path),
+                  }))}
           >
             {property.issue === null ? (
-              <span className={LABEL}>
+              <span className={label}>
                 <Icon
                   name={icon}
                   data-query-icon={icon}
@@ -489,15 +673,31 @@ export function TableHeader({
                     className="zt:hidden zt:shrink-0 zt:group-hover/column:flex"
                   />
                 )}
-                <span className="zt:truncate">{property.label}</span>
+                {name}
               </span>
             ) : (
               <span
-                className={cn(LABEL, "zt:text-(--text-error)")}
+                className={cn(label, "zt:text-(--text-error)")}
                 {...tooltipAttrs(property.issue)}
               >
                 <Icon name="alert-triangle" size="xs" className="zt:shrink-0" />
-                <span className="zt:truncate">{property.label}</span>
+                {name}
+              </span>
+            )}
+            {sorted && (
+              <span
+                aria-hidden="true"
+                className={SORT_MARK}
+                data-query-column-sort={sorted.direction}
+              >
+                <Icon
+                  name={
+                    sorted.direction === "ASC"
+                      ? "lucide-chevron-up"
+                      : "lucide-chevron-down"
+                  }
+                  size="xs"
+                />
               </span>
             )}
             {resizable && (
@@ -534,6 +734,23 @@ export function TableHeader({
     </tr>
   );
 }
+
+/**
+ * The label of a column the view sorts by, as Bases draws it: Obsidian's
+ * sort mask fades its end, in either direction, before the sort mark.
+ */
+const SORTED_LABEL = "zt:[mask-image:var(--bases-table-header-sort-mask)]";
+
+/** The name in a sorted column's label, which leaves the sort mark its room. */
+const SORTED_NAME = "zt:pe-(--size-4-4)";
+
+/**
+ * The sort mark of a column the view sorts by, as Bases draws it: a chevron
+ * at the cell's end, up for A → Z, down for Z → A, on every sort column. A
+ * press goes through it to the cell.
+ */
+const SORT_MARK =
+  "zt:pointer-events-none zt:absolute zt:-top-px zt:end-0 zt:flex zt:h-full zt:items-center zt:pt-(--size-2-1) zt:pe-(--size-2-3) zt:text-muted-foreground";
 
 /**
  * A header cell whose column moves: it grabs, its label brightens on hover,

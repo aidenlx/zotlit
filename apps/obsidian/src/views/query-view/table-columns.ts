@@ -1,5 +1,40 @@
 // The arithmetic of the Table layout's column moves and column widths, as Bases does them.
-import type { ColumnSizes } from "./query-file";
+import type {
+  ColumnSizes,
+  QueryFileDirection,
+  QueryFileSort,
+} from "./query-file";
+
+/**
+ * The direction a click on a column's header sorts it next, as Bases steps
+ * it: a column it does not sort by goes A → Z, then Z → A, then no sort.
+ * @returns `null` where the click clears the column's sort.
+ */
+export function toggledSortDirection(
+  sort: readonly QueryFileSort[],
+  property: string,
+): QueryFileDirection | null {
+  const current = sort.find((entry) => entry.property === property);
+  if (!current) return "ASC";
+  return current.direction === "ASC" ? "DESC" : null;
+}
+
+/**
+ * The sort a Table column's menu or click leaves, as Bases sorts from it:
+ * the column's own sort leaves the list, and the others keep their order.
+ * @param direction Where the column's sort goes back in first; `null` only
+ * clears it.
+ * @returns `undefined` for a list left empty, so the view writes no `sort`.
+ */
+export function headerSort(
+  sort: readonly QueryFileSort[],
+  property: string,
+  direction: QueryFileDirection | null,
+): QueryFileSort[] | undefined {
+  const rest = sort.filter((entry) => entry.property !== property);
+  const next = direction === null ? rest : [{ property, direction }, ...rest];
+  return next.length > 0 ? next : undefined;
+}
 
 /**
  * The gap a dragged column drops into: `0` before the first column,
