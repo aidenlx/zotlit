@@ -24,6 +24,7 @@ import type {
   ReactNode,
 } from "react";
 
+import { observeResize } from "@/lib/observe-resize";
 import { cn } from "@/lib/utils";
 
 import { NO_ROWS } from "./item-rows";
@@ -98,7 +99,7 @@ interface TableFlow {
   readonly kind: "table";
   /** The attributes of the table element. */
   readonly props?: Attributes<HTMLAttributes<HTMLElement>>;
-  /** The table's header, over the rows. */
+  /** The rows of the table's header, which the window draws in its `thead`. */
   readonly head: ReactNode;
   /** The columns of properties, which a spacer draws an outline for. */
   readonly columns: number;
@@ -150,6 +151,21 @@ export function ItemsWindow({
 }) {
   // oxlint-disable-next-line react-hooks/exhaustive-deps -- runs after each draw on purpose
   useLayoutEffect(() => drew?.());
+  // A table's header stays over its rows as they scroll: a row scrolled into
+  // view lands under it, and the box's scroll bar starts under it, so a
+  // press at the header's edge never lands on the bar (`table-header.css`).
+  const [head, setHead] = useState<HTMLElement | null>(null);
+  const [header, setHeader] = useState(0);
+  useLayoutEffect(() => {
+    if (!head) {
+      setHeader(0);
+      return;
+    }
+    const read = () => setHeader(head.offsetHeight);
+    read();
+    const observing = observeResize(head, [head], read);
+    return () => observing[Symbol.dispose]();
+  }, [head]);
   const {
     entries: mounted,
     after,
@@ -159,7 +175,7 @@ export function ItemsWindow({
     learned,
     size,
     box: setBox,
-  } = useItemsWindow(view, entries, { estimates, shape });
+  } = useItemsWindow(view, entries, { estimates, shape, sticky: header });
   const mountBox = useCallback(
     (el: HTMLDivElement | null) => {
       setBox(el);
@@ -214,7 +230,7 @@ export function ItemsWindow({
   } else
     list = (
       <table {...flow.props} onFocus={onFocus}>
-        {flow.head}
+        {flow.head && <thead ref={setHead}>{flow.head}</thead>}
         {/* The rows start here, under the header. */}
         <tbody ref={listRef} />
         {rows}
@@ -226,7 +242,12 @@ export function ItemsWindow({
       ref={mountBox}
       {...box}
       className={cn(BOX, box?.className)}
-      style={placeholderRow(learned.get("row") ?? estimates.row)}
+      style={{
+        ...placeholderRow(learned.get("row") ?? estimates.row),
+        ...(flow.kind === "table" && {
+          "--zt-table-header-height": `${header}px`,
+        }),
+      }}
     >
       {list}
     </div>
@@ -237,7 +258,11 @@ export function ItemsWindow({
 function useItemsWindow(
   view: QueryView,
   entries: readonly WindowEntry[],
-  { estimates, shape }: { estimates: Estimates; shape: string | undefined },
+  {
+    estimates,
+    shape,
+    sticky,
+  }: { estimates: Estimates; shape: string | undefined; sticky: number },
 ): MountedRows {
   const gestures = view.rows;
   const [own, setOwn] = useState<HTMLElement | null>(null);
@@ -289,6 +314,7 @@ function useItemsWindow(
     keyOf: useCallback((index: number) => entries[index]!.key, [entries]),
     pinned,
     ...(shape !== undefined && { shape }),
+    sticky,
     all: view.printing,
   });
 

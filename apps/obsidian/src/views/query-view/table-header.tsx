@@ -1,13 +1,12 @@
 // The Table layout's header row, whose cells move and resize their columns as in a Bases table.
 
 import { Menu } from "obsidian";
-import { useEffect, useLayoutEffect, useRef } from "react";
+import { useEffect, useRef } from "react";
 import type { CSSProperties, DragEvent, MouseEvent, PointerEvent } from "react";
 
 import { Icon } from "@/components/obsidian/icon";
 import { useObsidianApp } from "@/lib/app-context";
 import * as m from "@/lib/i18n/generated/messages";
-import { observeResize } from "@/lib/observe-resize";
 import { pointerDrag } from "@/lib/pointer-drag";
 import { cn, tooltipAttrs } from "@/lib/utils";
 
@@ -161,9 +160,6 @@ const SIZED =
   "zt:w-(--zt-column-width) zt:min-w-(--zt-column-width) zt:max-w-(--zt-column-width)";
 
 const COLUMN_WIDTH = "--zt-column-width";
-
-/** The header's height, on the box the table scrolls in. */
-const HEADER_HEIGHT = "--zt-table-header-height";
 
 const widthStyle = (width: number) =>
   ({ [COLUMN_WIDTH]: `${width}px` }) as CSSProperties;
@@ -435,127 +431,101 @@ export function TableHeader({
     menu.setParentElement(th).showAtMouseEvent(event.nativeEvent);
   };
 
-  // The box's scroll bar starts under the header, so a press at the
-  // header's edge never lands on the bar (`table-header.css`).
-  const head = useRef<HTMLTableSectionElement>(null);
-  useLayoutEffect(() => {
-    const thead = head.current;
-    const box = scroller;
-    if (!thead || !box) return;
-    const show = () =>
-      box.style.setProperty(HEADER_HEIGHT, `${thead.offsetHeight}px`);
-    show();
-    const observing = observeResize(thead, [thead], show);
-    return () => observing[Symbol.dispose]();
-  }, [scroller]);
-
   const { gutter, cell, first, later, filler } = classes;
   return (
-    <thead ref={head}>
-      <tr className="zt:text-start">
-        <th className={gutter} />
-        {columns.map((property, at) => {
-          const width = sizes?.[property.path];
-          const icon = propertyIcon(dataset, property, (name) =>
-            literatureNotes.propertyType(name),
-          );
-          return (
-            <th
-              key={property.path}
-              className={cn(
-                "zt:group/column",
-                cell,
-                at === 0 ? first : later,
-                SIZED,
-                editable && MOVABLE,
-              )}
-              style={width === undefined ? undefined : widthStyle(width)}
-              data-sized={sizedMark(sizes, property.path)}
-              data-query-column={property.path}
-              data-query-formula-issue={property.issue ?? undefined}
-              draggable={editable || undefined}
-              onDragStart={
-                editable
-                  ? (event) => moveColumn(event, property.path)
-                  : undefined
-              }
-              onClick={
-                editable
-                  ? (event) => columnMenu(event, property.path)
-                  : undefined
-              }
-              onContextMenu={
-                editable
-                  ? (event) => columnMenu(event, property.path)
-                  : undefined
-              }
-            >
-              {property.issue === null ? (
-                <span className={LABEL}>
-                  <Icon
-                    name={icon}
-                    data-query-icon={icon}
-                    size="xs"
-                    className={cn(
-                      "zt:flex zt:shrink-0",
-                      editable && "zt:group-hover/column:hidden",
-                    )}
-                  />
-                  {editable && (
-                    <Icon
-                      name="lucide-grip-vertical"
-                      size="xs"
-                      className="zt:hidden zt:shrink-0 zt:group-hover/column:flex"
-                    />
+    <tr className="zt:text-start">
+      <th className={gutter} />
+      {columns.map((property, at) => {
+        const width = sizes?.[property.path];
+        const icon = propertyIcon(dataset, property, (name) =>
+          literatureNotes.propertyType(name),
+        );
+        return (
+          <th
+            key={property.path}
+            className={cn(
+              "zt:group/column",
+              cell,
+              at === 0 ? first : later,
+              SIZED,
+              editable && MOVABLE,
+            )}
+            style={width === undefined ? undefined : widthStyle(width)}
+            data-sized={sizedMark(sizes, property.path)}
+            data-query-column={property.path}
+            data-query-formula-issue={property.issue ?? undefined}
+            draggable={editable || undefined}
+            onDragStart={
+              editable ? (event) => moveColumn(event, property.path) : undefined
+            }
+            onClick={
+              editable ? (event) => columnMenu(event, property.path) : undefined
+            }
+            onContextMenu={
+              editable ? (event) => columnMenu(event, property.path) : undefined
+            }
+          >
+            {property.issue === null ? (
+              <span className={LABEL}>
+                <Icon
+                  name={icon}
+                  data-query-icon={icon}
+                  size="xs"
+                  className={cn(
+                    "zt:flex zt:shrink-0",
+                    editable && "zt:group-hover/column:hidden",
                   )}
-                  <span className="zt:truncate">{property.label}</span>
-                </span>
-              ) : (
-                <span
-                  className={cn(LABEL, "zt:text-(--text-error)")}
-                  {...tooltipAttrs(property.issue)}
-                >
-                  <Icon
-                    name="alert-triangle"
-                    size="xs"
-                    className="zt:shrink-0"
-                  />
-                  <span className="zt:truncate">{property.label}</span>
-                </span>
-              )}
-              {resizable && (
-                <span
-                  className={RESIZER}
-                  data-query-column-resizer={property.path}
-                  {...tooltipAttrs(m.query_view_table_resize_column_hint())}
-                  onPointerDown={(event) => resizeColumn(event, property.path)}
-                  // The header cell would take a drag from its edge as a move.
-                  onDragStart={(event) => {
-                    event.preventDefault();
-                    event.stopPropagation();
-                  }}
-                  onClick={(event) => {
-                    event.preventDefault();
-                    event.stopPropagation();
-                  }}
-                  onDoubleClick={(event) => {
-                    event.preventDefault();
-                    event.stopPropagation();
-                    resetColumn(property.path);
-                  }}
                 />
-              )}
-            </th>
-          );
-        })}
-        {/* The filler names no column, so it is no header cell. */}
-        <td
-          aria-hidden="true"
-          className={cn(cell, filler)}
-          data-query-table-filler=""
-        />
-      </tr>
-    </thead>
+                {editable && (
+                  <Icon
+                    name="lucide-grip-vertical"
+                    size="xs"
+                    className="zt:hidden zt:shrink-0 zt:group-hover/column:flex"
+                  />
+                )}
+                <span className="zt:truncate">{property.label}</span>
+              </span>
+            ) : (
+              <span
+                className={cn(LABEL, "zt:text-(--text-error)")}
+                {...tooltipAttrs(property.issue)}
+              >
+                <Icon name="alert-triangle" size="xs" className="zt:shrink-0" />
+                <span className="zt:truncate">{property.label}</span>
+              </span>
+            )}
+            {resizable && (
+              <span
+                className={RESIZER}
+                data-query-column-resizer={property.path}
+                {...tooltipAttrs(m.query_view_table_resize_column_hint())}
+                onPointerDown={(event) => resizeColumn(event, property.path)}
+                // The header cell would take a drag from its edge as a move.
+                onDragStart={(event) => {
+                  event.preventDefault();
+                  event.stopPropagation();
+                }}
+                onClick={(event) => {
+                  event.preventDefault();
+                  event.stopPropagation();
+                }}
+                onDoubleClick={(event) => {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  resetColumn(property.path);
+                }}
+              />
+            )}
+          </th>
+        );
+      })}
+      {/* The filler names no column, so it is no header cell. */}
+      <td
+        aria-hidden="true"
+        className={cn(cell, filler)}
+        data-query-table-filler=""
+      />
+    </tr>
   );
 }
 

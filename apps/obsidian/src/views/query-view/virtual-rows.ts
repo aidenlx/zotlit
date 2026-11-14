@@ -178,6 +178,8 @@ function marginOf(scroller: HTMLElement, list: HTMLElement): number {
  *   its own height, as an expanded row.
  * @param keyOf A key of the entry at an index that holds across runs.
  * @param pinned The entries that stay mounted wherever they are.
+ * @param sticky The height of a header that stays over the entries, as a
+ *   Table's: an entry scrolled into view lands under it.
  * @param shape What the entries' heights follow beside their content, such
  *   as the layout's options: a change measures them again.
  * @param all Draw every entry, as for a print.
@@ -189,6 +191,7 @@ export function useVirtualRows({
   kindOf,
   keyOf,
   pinned,
+  sticky,
   shape = "",
   all,
 }: {
@@ -198,14 +201,13 @@ export function useVirtualRows({
   kindOf: (index: number) => string | null;
   keyOf: (index: number) => string;
   pinned: readonly number[];
+  sticky: number;
   shape?: string;
   all: boolean;
 }): VirtualRows {
   const [list, setList] = useState<HTMLElement | null>(null);
   const [focused, setFocused] = useState<string | null>(null);
   const [margin, setMargin] = useState(0);
-  /** The height of a Table's header, which stays over the rows. */
-  const [sticky, setSticky] = useState(0);
   const [learned, setLearned] = useState<ReadonlyMap<string, number>>(
     () => new Map(),
   );
@@ -351,14 +353,11 @@ export function useVirtualRows({
   instance.current = virtualizer;
 
   // The list moves in the scroller as the content above it changes, such as
-  // a Table's header. Read its place as the list mounts, and again as the
-  // scroller scrolls or changes size.
+  // a Table's header. Read its place as the list mounts, as the header
+  // changes height, and again as the scroller scrolls or changes size.
   useLayoutEffect(() => {
     if (!enabled || !scroller || !list) return;
-    const read = () => {
-      setMargin(marginOf(scroller, list));
-      setSticky(list.closest("table")?.tHead?.offsetHeight ?? 0);
-    };
+    const read = () => setMargin(marginOf(scroller, list));
     read();
     const observing = observeResize(scroller, [scroller], read);
     scroller.addEventListener("scroll", read, { passive: true });
@@ -366,7 +365,7 @@ export function useVirtualRows({
       observing[Symbol.dispose]();
       scroller.removeEventListener("scroll", read);
     };
-  }, [enabled, scroller, list]);
+  }, [enabled, scroller, list, sticky]);
 
   // An entry takes the height its kind measures on screen until it is
   // measured itself: the list's height then holds as the rows come into
