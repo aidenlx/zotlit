@@ -1,11 +1,14 @@
 // The spacers that stand for the entries a long list leaves out: one row of
-// a list, or one body of a table, as high as those entries.
+// a list, or one body of a table, as high as those entries. A spacer takes
+// its height and nothing else.
 //
-// A spacer draws a faint outline of each row it stands for, in the shape of
-// the layout's rows. A scroll bar dragged fast moves the list a few frames
-// before the rows for the new place are drawn; the list then shows the shape
-// of its rows, not an empty page. The outlines repeat at the height of one
-// row, which the layout sets as `--zt-virtual-row` on its box.
+// The faint outline of each row is the background of the layout's box,
+// which the entries cover. A scroll bar dragged fast moves the list further
+// each frame than the page can paint, and the browser shows only what the
+// box paints itself in time: its background stays in view as its content
+// scrolls, so the box shows the shape of its rows, not an empty page. The
+// outlines repeat at the height of one row, which the window sets as
+// `--zt-virtual-row` on the box.
 import type { CSSProperties } from "react";
 
 /** The height of the left-out entries, read back by a utility. */
@@ -18,39 +21,24 @@ export const placeholderRow = (height: number) =>
 
 /**
  * The outline of a List row: a bar half a line tall, across part of the
- * row, at its middle.
+ * row, at its middle, past the markers' indent.
  */
 export const LIST_GHOST =
-  "zt:bg-[image:linear-gradient(to_bottom,transparent_calc(50%-0.3em),var(--background-modifier-hover)_0_calc(50%+0.3em),transparent_0)] zt:bg-size-[min(60%,24rem)_var(--zt-virtual-row,2.5em)] zt:bg-position-[var(--size-4-3)_0] zt:bg-repeat-y";
-
-/** The outline of a Table row's line, under each row. */
-const LINE_GHOST =
-  "zt:bg-[image:linear-gradient(to_bottom,transparent_calc(100%-var(--border-width)),var(--table-border-color)_0)] zt:bg-size-[100%_var(--zt-virtual-row,2.5em)] zt:bg-repeat-y";
+  "zt:bg-[image:linear-gradient(to_bottom,transparent_calc(50%-0.3em),var(--background-modifier-hover)_0_calc(50%+0.3em),transparent_0)] zt:bg-size-[min(60%,24rem)_var(--zt-virtual-row,2.5em)] zt:bg-position-[calc(var(--list-indent)+var(--size-4-3))_0] zt:bg-repeat-y";
 
 /**
- * The outline of a Table cell: a bar at the cell's padding, the row's line
- * under it, and the line between it and the column before, as a cell past
- * the first draws.
+ * The outline of a Table row: the line under it, and a bar at the first
+ * property cell's padding, past the expand buttons' column.
  */
-const CELL_GHOST =
-  "zt:bg-[image:linear-gradient(to_bottom,transparent_calc(50%-0.3em),var(--background-modifier-hover)_0_calc(50%+0.3em),transparent_0),linear-gradient(to_bottom,transparent_calc(100%-var(--border-width)),var(--table-border-color)_0)] zt:bg-size-[min(70%,12rem)_var(--zt-virtual-row,2.5em),100%_var(--zt-virtual-row,2.5em)] zt:bg-position-[var(--size-4-2)_0,0_0] zt:bg-repeat-y";
-const LATER_CELL_GHOST = `${CELL_GHOST} zt:border-s-(length:--border-width) zt:border-(--table-border-color)`;
+export const TABLE_GHOST =
+  "zt:bg-[image:linear-gradient(to_bottom,transparent_calc(50%-0.3em),var(--background-modifier-hover)_0_calc(50%+0.3em),transparent_0),linear-gradient(to_bottom,transparent_calc(100%-var(--border-width)),var(--table-border-color)_0)] zt:bg-size-[min(40%,12rem)_var(--zt-virtual-row,2.5em),100%_var(--zt-virtual-row,2.5em)] zt:bg-position-[calc(30px+var(--size-4-2))_var(--zt-table-header-height,0px),0_var(--zt-table-header-height,0px)] zt:bg-repeat-y";
 
-/**
- * The room of the entries a long list leaves out, with the outline `ghost`
- * of each of its rows.
- */
-export function ListSpacer({
-  height,
-  ghost,
-}: {
-  height: number;
-  ghost: string;
-}) {
+/** The room of the entries a long list leaves out. */
+export function ListSpacer({ height }: { height: number }) {
   return (
     <li
       aria-hidden="true"
-      className={`zt:h-(--zt-virtual-gap) zt:list-none ${ghost}`}
+      className="zt:h-(--zt-virtual-gap) zt:list-none"
       style={gap(height)}
       data-query-spacer=""
     />
@@ -58,8 +46,8 @@ export function ListSpacer({
 }
 
 /**
- * The room of the rows a long table leaves out: a cell for the expand
- * buttons' column, one for each of the `columns`, and the filler.
+ * The room of the rows a long table leaves out: one cell across the
+ * expand buttons' column, the `columns` and the filler.
  */
 export function TableSpacer({
   height,
@@ -72,16 +60,10 @@ export function TableSpacer({
     <tbody aria-hidden="true" data-query-spacer="">
       <tr>
         <td
-          className={`zt:h-(--zt-virtual-gap) zt:p-0 ${LINE_GHOST}`}
+          colSpan={columns + 2}
+          className="zt:h-(--zt-virtual-gap) zt:p-0"
           style={gap(height)}
         />
-        {Array.from({ length: columns }, (_, column) => (
-          <td
-            key={column}
-            className={`zt:p-0 ${column === 0 ? CELL_GHOST : LATER_CELL_GHOST}`}
-          />
-        ))}
-        <td className={`zt:p-0 ${LINE_GHOST}`} />
       </tr>
     </tbody>
   );

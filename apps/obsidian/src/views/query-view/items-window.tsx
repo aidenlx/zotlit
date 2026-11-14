@@ -26,7 +26,12 @@ import { ITEM_ROW_ATTRIBUTE, NO_ROWS } from "./item-rows";
 import type { QueryView } from "./view";
 import { useVirtualRows } from "./virtual-rows";
 import type { VirtualRows } from "./virtual-rows";
-import { ListSpacer, TableSpacer, placeholderRow } from "./virtual-spacers";
+import {
+  ListSpacer,
+  TABLE_GHOST,
+  TableSpacer,
+  placeholderRow,
+} from "./virtual-spacers";
 
 /** One entry of an Items Layout, in the order it shows. */
 export interface WindowEntry {
@@ -79,7 +84,7 @@ interface ListFlow {
   readonly as: "ul" | "ol";
   /** The attributes of the list element. */
   readonly props?: Attributes<HTMLAttributes<HTMLElement>>;
-  /** The outline of one row, which a spacer repeats for each row it stands for. */
+  /** The outline of one row, which the box repeats under its entries. */
   readonly ghost: string;
 }
 
@@ -105,6 +110,20 @@ const BOX = "zt:min-h-0 zt:flex-1 zt:overflow-auto zt:[overflow-anchor:none]";
 
 /** The height of a long list, `--zt-virtual-size`, held whatever its rows draw. */
 const HOLD = "zt:box-content zt:h-(--zt-virtual-size) zt:overflow-y-clip";
+
+/**
+ * A long list's box draws its rows' outlines as its background, inside its
+ * padding, where the list draws its rows (`virtual-spacers.tsx`).
+ */
+const OUTLINES = "zt:bg-origin-content zt:bg-clip-content";
+
+/**
+ * An entry of a long list covers the outlines under it with the colour the
+ * page shows there: a side dock's, or a callout's tint over the page, as a
+ * Table's header does.
+ */
+const SURFACE =
+  "zt:bg-background zt:in-[.mod-sidedock]:bg-(--background-secondary) zt:in-[.callout]:bg-[image:linear-gradient(color-mix(in_oklch,var(--callout-color)_10%,transparent),color-mix(in_oklch,var(--callout-color)_10%,transparent))]";
 
 /**
  * The list of `view`'s Items Layout over `entries`, mounted near the screen
@@ -177,13 +196,18 @@ export function ItemsWindow({
   );
   const spacer = (height: number) =>
     flow.kind === "list" ? (
-      <ListSpacer height={height} ghost={flow.ghost} />
+      <ListSpacer height={height} />
     ) : (
       <TableSpacer height={height} columns={flow.columns} />
     );
   const rows = mounted.map(({ index, before }) => {
     const { props, children } = draw(index);
-    const element = { ...props, ref: measure, "data-index": index };
+    const element = {
+      ...props,
+      className: cn(props?.className, size !== null && SURFACE),
+      ref: measure,
+      "data-index": index,
+    };
     return (
       <Fragment key={entries[index]!.key}>
         {before > 0 && spacer(before)}
@@ -232,7 +256,14 @@ export function ItemsWindow({
     <div
       ref={mountBox}
       {...box}
-      className={cn(BOX, box?.className)}
+      className={cn(
+        BOX,
+        box?.className,
+        size !== null && [
+          OUTLINES,
+          flow.kind === "list" ? flow.ghost : TABLE_GHOST,
+        ],
+      )}
       style={{
         ...placeholderRow(learned.get("row") ?? estimates.row),
         ...(flow.kind === "table" && {

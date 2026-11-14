@@ -349,7 +349,7 @@ describe.skipIf(!reachable)("Library View long lists", () => {
     );
   }, 180_000);
 
-  it("mounts the Papers rows ahead of a scroll down, and draws a bar for each row not yet mounted", async () => {
+  it("mounts the Papers rows ahead of a scroll down, and the box draws a bar for each row under them", async () => {
     await using cleanup = new AsyncDisposableStack();
     closeLibrary(cleanup);
     await openLibrary("papers");
@@ -374,7 +374,9 @@ describe.skipIf(!reachable)("Library View long lists", () => {
           below:
             rows[rows.length - 1]!.getBoundingClientRect().bottom -
             list.getBoundingClientRect().bottom,
-          bars: spacer ? getComputedStyle(spacer).backgroundImage : "none",
+          bars: getComputedStyle(list).backgroundImage,
+          spacer: spacer ? getComputedStyle(spacer).backgroundImage : null,
+          row: getComputedStyle(rows[0]!).backgroundColor,
         };
       },
       { box: BOX },
@@ -382,7 +384,11 @@ describe.skipIf(!reachable)("Library View long lists", () => {
     // The overscan alone mounts eight rows, about 370 px, past the screen;
     // the scroll mounts four of its steps more.
     expect(ahead.below).toBeGreaterThan(600);
+    // The bars are the box's own, which stay on the screen as its content
+    // scrolls; a spacer only takes its height, and a row covers the bars.
     expect(ahead.bars).toContain("linear-gradient");
+    expect(ahead.spacer).toBe("none");
+    expect(ahead.row).toMatch(/^rgb\(/);
   }, 120_000);
 
   it("brings a far paper into view from Show in Library, and ↓ steps on from it after the Papers list scrolled away", async () => {
