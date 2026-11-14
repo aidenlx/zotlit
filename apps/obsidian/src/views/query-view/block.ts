@@ -90,6 +90,8 @@ class QueryBlock extends MarkdownRenderChild {
         save: (text) => this.#save(text),
         canSave: () => this.#canSave(),
       },
+      // A block is its text: the note builds it again for each new text.
+      view: this.#source,
     });
     this.addChild(host);
     host.setText(this.#source);
@@ -131,6 +133,7 @@ class QueryBlock extends MarkdownRenderChild {
     const previous = this.#source;
     if (text === previous) return;
     this.#source = text;
+    this.#host?.showsAs(text);
     try {
       const edit = { previous, next: text };
       if (this.#leaving && this.#lineStart !== null)

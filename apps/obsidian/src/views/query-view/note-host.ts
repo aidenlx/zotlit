@@ -8,6 +8,7 @@
 // @see apps/obsidian/docs/adr/0068-query-files-are-a-zotlit-file-type-embedded-through-the-private-embed-registry.md
 import { Component, Scope } from "obsidian";
 
+import { observeResize } from "@/lib/observe-resize";
 import { itemKeyFromFrontmatter } from "@/services/note-index/parse";
 
 import "./note-host.css";
@@ -17,6 +18,16 @@ import type { QueryViewDeps, QueryViewHost } from "./view";
 
 /** What a note host gives the view beside the note: its storage. */
 export type NoteStorage = Pick<QueryViewHost, "save" | "canSave" | "openFile">;
+
+/**
+ * The height each view a note shows last stood at with its rows, in this
+ * session, by the note and the view: a host that shows the view again, as
+ * Live Preview builds a block again once the cursor leaves it, stands at
+ * that height while its rows come.
+ */
+const drawnHeights = new Map<string, number>();
+/** The hosts whose rows have not come yet. */
+const reserving = new Set<NoteQueryHost>();
 
 export class NoteQueryHost extends Component {
   readonly #query: QueryView;
@@ -29,6 +40,8 @@ export class NoteQueryHost extends Component {
   readonly #binding: ReturnType<typeof makeNoteBindingAtom>;
   /** What lets the view run: it comes near the screen, or a print shows it. */
   readonly #start = Promise.withResolvers<void>();
+  /** The note and the view, as {@link drawnHeights} knows them. */
+  #key: string;
 
   constructor(
     deps: QueryViewDeps,
@@ -36,12 +49,15 @@ export class NoteQueryHost extends Component {
       el,
       sourcePath,
       storage,
+      view,
     }: {
       /** The element the view draws into. */
       el: HTMLElement;
       /** The note that holds the view. */
       sourcePath: () => string;
       storage: NoteStorage;
+      /** Which view the host shows: the same for a host that shows it again. */
+      view: string;
     },
   ) {
     super();
@@ -62,9 +78,12 @@ export class NoteQueryHost extends Component {
       // The view runs once it comes near the screen (see `onload`).
       start: this.#start.promise,
     });
-    // The view stands at the most room its rows take until they come, so
-    // the note keeps its height as its views load (see `note-host.css`).
+    // The view stands at the height it last drew at until its rows come, or
+    // at the most room they take, so the note keeps its height as its views
+    // load (see `note-host.css`).
     el.dataset.queryWaiting = "";
+    this.#key = JSON.stringify([sourcePath(), view]);
+    this.#reserve(drawnHeights.get(this.#key));
     // e2e-only: packages/e2e reaches the view of every host from its element.
     // A dev-build port, absent from a production build.
     if (__DEV__) Object.assign(el, { zotlitQueryView: this.#query });
@@ -78,15 +97,21 @@ export class NoteQueryHost extends Component {
     // screen come first. One the note hides, as a folded callout or the
     // editor behind Reading view does, runs once it shows.
     this.register(this.#deps.nearScreen(this.#el, () => this.#start.resolve()));
+    reserving.add(this);
+    this.register(() => reserving.delete(this));
     this.register(
       this.#query.state.subscribe((state) => {
         const settled =
           state.phase === "ready" ||
           state.phase === "failed" ||
           state.problems.length > 0;
-        if (settled) delete this.#el.dataset.queryWaiting;
+        if (!settled) return;
+        delete this.#el.dataset.queryWaiting;
+        reserving.delete(this);
       }),
     );
+    const resize = observeResize(this.#el, [this.#el], () => this.#drew());
+    this.register(() => resize[Symbol.dispose]());
     // A card in the view takes the card keys while it has focus.
     const keys = this.#deps.cardFocus.hold(this.#el, this.#scope, this.#query);
     this.register(() => keys[Symbol.dispose]());
@@ -126,6 +151,38 @@ export class NoteQueryHost extends Component {
     // Elsewhere a view that waits to come near the screen shows nothing yet.
     else if (this.#query.state.getState().phase === "waiting") return;
     await this.#query.shownIn(this.#el);
+  }
+
+  /**
+   * The host shows `view` from now on, as a Query Block does once a toolbar
+   * change rewrites its text: the host the note builds for the new text
+   * stands at this one's height while its rows come.
+   */
+  showsAs(view: string): void {
+    const height = drawnHeights.get(this.#key);
+    this.#key = JSON.stringify([this.#sourcePath(), view]);
+    if (height !== undefined) drawnHeights.set(this.#key, height);
+  }
+
+  /** Stand at `height` until the rows come; the cap for `undefined`. */
+  #reserve(height: number | undefined): void {
+    if (height !== undefined)
+      this.#el.style.setProperty("--zt-query-note-reserve", `${height}px`);
+  }
+
+  /**
+   * The view's height changed: keep it for a host that shows the view again,
+   * and give it to one that waits for its rows. A print lays every row out,
+   * past the cap, and a view the note hides stands at no height.
+   */
+  #drew(): void {
+    const el = this.#el;
+    if (reserving.has(this) || el.closest(".print")) return;
+    const { height } = el.getBoundingClientRect();
+    if (height === 0) return;
+    drawnHeights.set(this.#key, height);
+    for (const host of reserving)
+      if (host.#key === this.#key) host.#reserve(height);
   }
 
   #readItem(): string | null {

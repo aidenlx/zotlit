@@ -1072,6 +1072,163 @@ describe.skipIf(!reachable)("Library View long lists", () => {
   );
 
   it.each(NOTE_MODES)(
+    "keeps a short Query Block in %s at its height on every frame as the note builds it again",
+    async (mode) => {
+      const notePath = "Short block.md";
+      await using cleanup = new AsyncDisposableStack();
+      await createFiles(cleanup, {
+        [notePath]: [
+          "# Short",
+          "",
+          "```zotquery",
+          "views:",
+          "  - type: papers",
+          "    name: All",
+          "    from: items",
+          '    filters: library == "personal"',
+          "    limit: 3",
+          "```",
+          "",
+          "The end.",
+          "",
+        ].join("\n"),
+      });
+      await obRun(
+        vaultId,
+        async ({ app }, { notePath, mode }) => {
+          const leaf = app.workspace.getLeaf("tab");
+          await leaf.openFile(app.vault.getFileByPath(notePath)!, {
+            state: { mode },
+          });
+          app.workspace.setActiveLeaf(leaf, { focus: true });
+        },
+        { notePath, mode },
+      );
+      await obRunUntil(
+        vaultId,
+        ({ app }, { notePath, root }) => {
+          const leaf = app.workspace
+            .getLeavesOfType("markdown")
+            .find((l) => (l.view as MarkdownView).file?.path === notePath)!;
+          const host = leaf.view.containerEl.querySelector<QueryViewElement>(
+            `${root} .zt-query-note`,
+          );
+          return (
+            host?.zotlitQueryView?.state.getState().phase === "ready" &&
+            host.querySelectorAll("[data-query-papers-row]").length === 3
+          );
+        },
+        { notePath, root: MODE_ROOT[mode] },
+        { what: "the block's three rows" },
+      );
+      /**
+       * The block's height on each frame as the note builds it again: in Live
+       * Preview once the cursor leaves it, in Reading view across a switch to
+       * Live Preview and back; and after a toolbar change rewrites its text.
+       * `null` for a frame with no block on screen.
+       */
+      const { runs, rebuilt } = await obRun(
+        vaultId,
+        async ({ app }, { notePath, mode }) => {
+          const leaf = app.workspace
+            .getLeavesOfType("markdown")
+            .find((l) => (l.view as MarkdownView).file?.path === notePath)!;
+          const view = leaf.view as MarkdownView;
+          const frame = () =>
+            new Promise((resolve) => requestAnimationFrame(resolve));
+          const shown = () =>
+            [
+              ...view.containerEl.querySelectorAll<QueryViewElement>(
+                ".zt-query-note",
+              ),
+            ].find((host) => host.isShown());
+          const sample = async (frames = 60) => {
+            const heights: (number | null)[] = [];
+            for (let i = 0; i < frames; i++) {
+              const host = shown();
+              heights.push(host ? host.getBoundingClientRect().height : null);
+              await frame();
+            }
+            return heights;
+          };
+          const setMode = (next: "preview" | "source") =>
+            leaf.setViewState({
+              ...leaf.getViewState(),
+              state: { ...leaf.getViewState().state, mode: next },
+            });
+          const runs: Record<string, (number | null)[]> = {};
+          /** Whether each run's block is another element than the one before it. */
+          const rebuilt: Record<string, boolean> = {};
+          let last = shown();
+          const note = (run: string) => {
+            rebuilt[run] = shown() !== last;
+            last = shown();
+          };
+          const rebuild = async (pass: string) => {
+            if (mode === "source") {
+              // The cursor on the block's `views:` line shows its text.
+              view.editor.setCursor({ line: 3, ch: 0 });
+              for (let i = 0; i < 10; i++) await frame();
+              view.editor.setCursor({ line: 11, ch: 0 });
+              runs[`cursor${pass}`] = await sample();
+              note(`cursor${pass}`);
+            } else {
+              await setMode("source");
+              runs[`source${pass}`] = await sample();
+              note(`source${pass}`);
+              await setMode("preview");
+              runs[`preview${pass}`] = await sample();
+              note(`preview${pass}`);
+            }
+          };
+          await rebuild("");
+          // A limit the toolbar saves rewrites the block's text: the view
+          // runs again, one row shorter, and the note builds the block for
+          // its new text the next time.
+          shown()!.zotlitQueryView!.document.editView({ limit: 2 });
+          runs.edit = await sample();
+          note("edit");
+          await rebuild(" after the edit");
+          return { runs, rebuilt };
+        },
+        { notePath, mode },
+        { timeoutMs: 60_000 },
+      );
+      const passes = mode === "source" ? ["cursor"] : ["source", "preview"];
+      // Each rebuild is a new block; the edit runs the one on screen again.
+      expect(rebuilt).toEqual(
+        Object.fromEntries([
+          ...passes.map((pass) => [pass, true]),
+          ["edit", false],
+          ...passes.map((pass) => [`${pass} after the edit`, true]),
+        ]),
+      );
+      const near = (a: number | null, b: number) =>
+        a !== null && Math.abs(a - b) <= 1;
+      const { edit, ...again } = runs;
+      for (const [run, heights] of Object.entries(again)) {
+        const settled = heights.at(-1)!;
+        expect(settled, run).toBeGreaterThan(0);
+        // Every frame stands at the height the block settles at.
+        expect(
+          heights.map((height) => near(height, settled)),
+          `${run}: ${JSON.stringify(heights)}`,
+        ).not.toContain(false);
+      }
+      // Across the edit every frame stands at the height before it or at the
+      // one after it, one row shorter.
+      const before = runs[passes.at(-1)!]!.at(-1)!;
+      const after = edit!.at(-1)!;
+      expect(after).toBeLessThan(before - 1);
+      expect(
+        edit!.map((height) => near(height, before) || near(height, after)),
+        `edit: ${JSON.stringify(edit)}`,
+      ).not.toContain(false);
+    },
+    120_000,
+  );
+
+  it.each(NOTE_MODES)(
     "hides the rows a Table embed in a callout in %s scrolls under its header, in the callout's tint",
     async (mode) => {
       const queryPath = "Long callout table.zotquery";
