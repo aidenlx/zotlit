@@ -2357,22 +2357,33 @@ it("steps a column's sort with a click on its header, as Bases does, and marks t
   const writes = saved.length;
   await click("vault.literatureNote");
   expect(saved).toHaveLength(writes);
+
+  // A click on a column's edge, where it resizes, sorts nothing.
+  await act(async () => {
+    header("title")
+      .querySelector("[data-query-column-resizer]")!
+      .dispatchEvent(
+        new MouseEvent("click", { bubbles: true, cancelable: true, button: 0 }),
+      );
+    await view.flush();
+  });
+  expect(saved).toHaveLength(writes);
 });
 
 it("opens the header menu on a tap on mobile, where a column moves by its menu", async () => {
+  // `mount` puts the platform back after the case.
   setMockPlatform({ isMobile: true });
-  try {
-    const { view, el, settle } = await mount([
-      result([itemRow("ITEMAAAA", "Ten simple rules")]),
-    ]);
-    await act(() => view.setText(TABLE_FILE));
-    await settle();
-    expect(Object.keys(headerMenu(el, "title", "click"))).toContain(
-      "Hide column",
-    );
-  } finally {
-    setMockPlatform({ isMobile: false });
-  }
+  const { view, el, settle, save } = await mount([
+    result([itemRow("ITEMAAAA", "Ten simple rules")]),
+  ]);
+  await act(() => view.setText(TABLE_FILE));
+  await settle();
+  expect(Object.keys(headerMenu(el, "title", "click"))).toContain(
+    "Hide column",
+  );
+  // The tap sorts nothing, as in Bases.
+  await act(() => view.flush());
+  expect(save).not.toHaveBeenCalled();
 });
 
 it("sorts the view by a column first, keeping its other sorts, and clears that sort, as Bases does", async () => {

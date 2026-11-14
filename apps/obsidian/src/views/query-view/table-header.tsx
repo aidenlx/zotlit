@@ -20,7 +20,11 @@ import { ExpanderSpace } from "./expander-space";
 import { useQueryViewState } from "./model";
 import { groupOptions } from "./properties";
 import { propertyIcon } from "./property-icon";
-import type { ColumnSizes, QueryFileDataset } from "./query-file";
+import type {
+  ColumnSizes,
+  QueryFileDataset,
+  QueryFileDirection,
+} from "./query-file";
 import { moved } from "./reorder";
 import {
   dropGap,
@@ -133,6 +137,15 @@ function followDrag(
   source.addEventListener("dragend", end, { signal });
   win.addEventListener("dragend", end, options);
 }
+
+/** Where each sort entry of a column's menu puts the column's sort; `null` clears it. */
+const SORT_DIRECTION = {
+  "sort-asc": "ASC",
+  "sort-desc": "DESC",
+  "clear-sort": null,
+} as const satisfies Partial<
+  Record<ColumnMenuAction, QueryFileDirection | null>
+>;
 
 /** What each entry of a column's menu says and shows. */
 const ENTRY: Record<ColumnMenuAction, { title: () => string; icon: string }> = {
@@ -521,15 +534,7 @@ export function TableHeader({
         case "sort-desc":
         case "clear-sort":
           view.document.editView({
-            sort: headerSort(
-              now.sort ?? [],
-              path,
-              action === "clear-sort"
-                ? null
-                : action === "sort-asc"
-                  ? "ASC"
-                  : "DESC",
-            ),
+            sort: headerSort(now.sort ?? [], path, SORT_DIRECTION[action]),
           });
           return;
         case "edit-property":
@@ -597,9 +602,17 @@ export function TableHeader({
         const icon = propertyIcon(dataset, property, (name) =>
           literatureNotes.propertyType(name),
         );
-        const sorted = sort?.find((entry) => entry.property === property.path);
+        // Rows in the host's rank follow no sort, so no column wears one.
+        const sorted = ranked
+          ? undefined
+          : sort?.find((entry) => entry.property === property.path);
         // The sort mask fades a long label before the sort mark.
         const label = cn(LABEL, sorted && SORTED_LABEL);
+        const name = (
+          <span className={cn("zt:truncate", sorted && SORTED_NAME)}>
+            {property.label}
+          </span>
+        );
         return (
           <th
             key={property.path}
@@ -616,7 +629,7 @@ export function TableHeader({
             data-query-formula-issue={property.issue ?? undefined}
             // A screen reader hears the sort the rows follow first.
             aria-sort={
-              sort?.[0]?.property === property.path
+              !ranked && sort?.[0]?.property === property.path
                 ? sort[0].direction === "ASC"
                   ? "ascending"
                   : "descending"
@@ -660,9 +673,7 @@ export function TableHeader({
                     className="zt:hidden zt:shrink-0 zt:group-hover/column:flex"
                   />
                 )}
-                <span className={cn("zt:truncate", sorted && SORTED_NAME)}>
-                  {property.label}
-                </span>
+                {name}
               </span>
             ) : (
               <span
@@ -670,9 +681,7 @@ export function TableHeader({
                 {...tooltipAttrs(property.issue)}
               >
                 <Icon name="alert-triangle" size="xs" className="zt:shrink-0" />
-                <span className={cn("zt:truncate", sorted && SORTED_NAME)}>
-                  {property.label}
-                </span>
+                {name}
               </span>
             )}
             {sorted && (

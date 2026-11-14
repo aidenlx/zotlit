@@ -6,13 +6,6 @@ import type {
 } from "./query-file";
 
 /**
- * The sort a Table column's menu leaves, as Bases sorts from it: the
- * column's own sort leaves the list, and the others keep their order.
- * @param direction Where the column's sort goes back in first; `null` only
- * clears it.
- * @returns `undefined` for a list left empty, so the view writes no `sort`.
- */
-/**
  * The direction a click on a column's header sorts it next, as Bases steps
  * it: a column it does not sort by goes A → Z, then Z → A, then no sort.
  * @returns `null` where the click clears the column's sort.
@@ -26,6 +19,13 @@ export function toggledSortDirection(
   return current.direction === "ASC" ? "DESC" : null;
 }
 
+/**
+ * The sort a Table column's menu or click leaves, as Bases sorts from it:
+ * the column's own sort leaves the list, and the others keep their order.
+ * @param direction Where the column's sort goes back in first; `null` only
+ * clears it.
+ * @returns `undefined` for a list left empty, so the view writes no `sort`.
+ */
 export function headerSort(
   sort: readonly QueryFileSort[],
   property: string,
