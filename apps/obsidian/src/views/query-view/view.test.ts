@@ -2916,6 +2916,44 @@ it("names and searches the properties of Items in Cards and List as the Table do
   expect(shownRows(el)).toEqual([]);
 });
 
+it("shows an empty sort row while the view sorts by nothing, as Bases does, and sorts by the property it takes", async () => {
+  const { view, el, settle, saved } = await mount([result([]), result([])]);
+  await act(() => view.setText(TABLE_FILE));
+  await settle();
+  const editor = await openPopover(el, "sort");
+  const empty = () => editor.querySelector<HTMLElement>("[data-sort-empty]");
+  const trigger = empty()!.querySelector<HTMLElement>("[data-sort-property]")!;
+  // The row names no property: its select shows the placeholder.
+  expect(trigger.textContent).toBe("Property");
+  expect(trigger.querySelector("[data-placeholder]")).not.toBeNull();
+  expect(editor.querySelectorAll("[data-sort-row]")).toHaveLength(0);
+
+  await choose(trigger, "title");
+  await settle();
+  expect(saved.at(-1)).toContain(
+    "    sort:\n      - property: title\n        direction: ASC\n",
+  );
+  expect(empty()).toBeNull();
+  expect(
+    editor.querySelector('[data-sort-row="title"] [data-sort-property]')!
+      .textContent,
+  ).toBe("Title");
+});
+
+it("shows the property placeholder, not None, in the Group select while the view groups by nothing", async () => {
+  const { view, el, settle } = await mount([result([])]);
+  await act(() => view.setText(TABLE_FILE));
+  await settle();
+  const editor = await openPopover(el, "group");
+  const trigger = editor.querySelector<HTMLElement>("[data-group-property]")!;
+  expect(trigger.textContent).toBe("Property");
+  expect(trigger.querySelector("[data-placeholder]")).not.toBeNull();
+  // None stays an option, to clear a grouping.
+  expect(
+    (await selectOptions(trigger)).map((option) => option.label),
+  ).toContain("None");
+});
+
 it("offers Item fields to sort and group a view of Items by", async () => {
   const { view, el, settle } = await mount([result([])]);
   await act(() => view.setText(TABLE_FILE));

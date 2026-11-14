@@ -2782,6 +2782,7 @@
   "query_view_group": "分组",
   "query_view_group_by": "分组依据",
   "query_view_group_by_none": "无",
+  "query_view_property_placeholder": "属性",
   "query_view_group_manual": "手动",
   "query_view_group_remove": "移除分组",
   "query_view_group_show_all": "全部显示",
