@@ -22,6 +22,8 @@ import { revealQueryView } from "./note-query-view.ts";
 import { cli, obRun, obRunUntil } from "./obsidian-cli.ts";
 import type { QueryViewElement } from "./page-helpers.ts";
 import type { QueryPrintModal } from "./page-query-types.ts";
+import { dragScrollBar } from "./scroll-drag.ts";
+import type { DragHost } from "./scroll-drag.ts";
 import { expectEditorSide, openEditorAt } from "./vault-editor-side.ts";
 import {
   clearVault,
@@ -40,9 +42,10 @@ const runVaultScript = vaultScript(workspaceRoot, fixture.root);
 const reachable = await isObsidianReachable(workspaceRoot);
 /**
  * The synthetic Items of the Stress Build. They spread over its Libraries;
- * My Library then lists well past a long list's start.
+ * My Library then lists about a thousand papers, long enough that a scroll
+ * bar drag moves the list several screens a frame.
  */
-const STRESS_ITEMS = 1000;
+const STRESS_ITEMS = 4000;
 /** The fewest papers each case reads from My Library. */
 const LISTED = 260;
 
@@ -1520,11 +1523,15 @@ describe.skipIf(!reachable)("Library View long lists", () => {
            * scroll, and each header cell's left edge and width, from the
            * box's edges.
            */
-          const cells = () => {
+          const topOf = () =>
+            Math.round(
+              box.querySelector("thead th")!.getBoundingClientRect().top -
+                box.getBoundingClientRect().top,
+            );
+          const cells = (top = topOf()) => {
             const bounds = box.getBoundingClientRect();
-            const head = box.querySelector("thead th")!.getBoundingClientRect();
             return [
-              `top ${Math.round(head.top - bounds.top)}`,
+              `top ${top}`,
               ...[...box.querySelectorAll("thead tr > th")].map((th) => {
                 const r = th.getBoundingClientRect();
                 return `${Math.round(r.left - bounds.left)}+${Math.round(r.width)}`;
@@ -1543,8 +1550,11 @@ describe.skipIf(!reachable)("Library View long lists", () => {
             const rows = [
               ...box.querySelectorAll<HTMLElement>("tbody[data-index]"),
             ];
+            // The header's top as the rows stand: without them the table
+            // ends higher, and near the list's end its header with it.
+            const top = topOf();
             for (const row of rows) row.style.display = "none";
-            sample();
+            seen.add(cells(top));
             for (const row of rows) row.style.display = "";
           };
           box.addEventListener("scroll", sample);
@@ -1696,4 +1706,107 @@ describe.skipIf(!reachable)("Library View long lists", () => {
       true,
     );
   }, 180_000);
+
+  /** Each Layout in each place it shows: the Library View has no List. */
+  const DRAG_CASES = (["papers", "table", "list"] as const).flatMap((layout) =>
+    (layout === "list"
+      ? (["tab", ...NOTE_MODES] as const)
+      : (["library", "tab", ...NOTE_MODES] as const)
+    ).map((place) => [layout, place] as const),
+  );
+
+  it.each(DRAG_CASES)(
+    "keeps a long %s list's scroll bar thumb under the pointer in the %s through a drag with holds and a reverse, and shows rows or outlines on every frame",
+    async (layout, place) => {
+      await using cleanup = new AsyncDisposableStack();
+      let host: DragHost;
+      if (place === "library") {
+        closeLibrary(cleanup);
+        await openLibrary(layout as "papers" | "table");
+        host = { kind: "library" };
+      } else {
+        const queryPath = `Drag ${layout} ${place}.zotquery`;
+        const notePath = `Drag ${layout} ${place}.md`;
+        await createFiles(cleanup, {
+          // Grouped, so the list holds group headings among its rows.
+          [queryPath]: [
+            "views:",
+            `  - type: ${layout}`,
+            "    name: All",
+            "    from: items",
+            '    filters: library == "personal"',
+            "    groupBy:",
+            "      property: itemType",
+            "      direction: ASC",
+            "",
+          ].join("\n"),
+          [notePath]: ["# Drag", "", `![[${queryPath}]]`, ""].join("\n"),
+        });
+        await obRun(
+          vaultId,
+          async ({ app }, { queryPath, notePath, place }) => {
+            const leaf = app.workspace.getLeaf("tab");
+            if (place === "tab")
+              await leaf.openFile(app.vault.getFileByPath(queryPath)!);
+            else
+              await leaf.openFile(app.vault.getFileByPath(notePath)!, {
+                state: { mode: place },
+              });
+            app.workspace.setActiveLeaf(leaf, { focus: true });
+          },
+          { queryPath, notePath, place },
+        );
+        if (place !== "tab")
+          await revealQueryView(vaultId, notePath, { embed: queryPath });
+        await obRunUntil(
+          vaultId,
+          ({ app }, { path, type, root, rows }) => {
+            const leaf = app.workspace
+              .getLeavesOfType(type)
+              .find((l) => (l.view as MarkdownView).file?.path === path);
+            const scope =
+              root === null
+                ? leaf?.view.containerEl
+                : leaf?.view.containerEl.querySelector(root);
+            return scope?.querySelector(rows) != null;
+          },
+          {
+            path: place === "tab" ? queryPath : notePath,
+            type: place === "tab" ? "zotlit-query-file" : "markdown",
+            root: place === "tab" ? null : MODE_ROOT[place],
+            rows: ROWS[layout],
+          },
+          { what: `the ${layout} rows in the ${place}` },
+        );
+        host =
+          place === "tab"
+            ? { kind: "tab", path: queryPath }
+            : { kind: "note", path: notePath, root: MODE_ROOT[place] };
+      }
+      const drag = await dragScrollBar(vaultId, host);
+      console.log(`drag ${layout} ${place}: ${JSON.stringify(drag)}`);
+      expect(drag.screen.frames).toBeGreaterThan(10);
+      expect({
+        // The grouped list's entries draw at unlike heights, a heading's or
+        // a wrapped row's: an entry that drew at another height than it took
+        // could move the length. The Library View's flat rows draw at one.
+        unlike: place === "library" || drag.rows.unlike > 0,
+        // The list's length holds while the pointer moves the thumb, so the
+        // thumb stays under the pointer at each hold, after the reverse too.
+        lengthChanges: drag.lengthChanges.moving,
+        holds: drag.holds.map((off) => Math.abs(off) <= 3),
+        // A Table's header cells stand in one place on every frame.
+        headers: drag.header.length,
+        // Every screen frame shows rows or their outlines in the box.
+        empty: drag.screen.empty,
+      }).toEqual({
+        unlike: true,
+        lengthChanges: 0,
+        holds: [true, true, true],
+        headers: layout === "table" ? 1 : 0,
+        empty: 0,
+      });
+    },
+    120_000,
+  );
 });
