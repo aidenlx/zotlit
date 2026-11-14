@@ -60,6 +60,20 @@ const EMPTY: QueryViewOutcome = {
     rows: [],
   },
 };
+/** A run that cannot read Zotero's data. */
+const FAILED: QueryViewOutcome = {
+  kind: "failed",
+  diagnostic: {
+    code: "source-unavailable",
+    message: "The Zotero database cannot be read.",
+    hint: "Check the Zotero data directory.",
+    severity: "error",
+    report: ["The Zotero database cannot be read."],
+    found: "",
+    expected: [],
+    suggestions: [],
+  },
+};
 
 let cleanup = new AsyncDisposableStack();
 afterEach(async () => {
@@ -77,11 +91,11 @@ interface Held {
 
 type HostKind = "embed" | "block";
 
-async function setup(kind: HostKind) {
+async function setup(kind: HostKind, file = FILE) {
   setMockPlatform({ isMacOS: true });
   cleanup.defer(resetMockPlatform);
   const host = createObsidianHost({
-    [FILE_PATH]: FILE,
+    [FILE_PATH]: file,
     "notes/Lab.md": NOTE("RUGIER24"),
     "notes/Plain.md": "No properties\n",
   });
@@ -208,7 +222,7 @@ async function setup(kind: HostKind) {
         },
       },
     );
-    const shown = processor!(FILE, el, ctx);
+    const shown = processor!(file, el, ctx);
     const unload = () => child?.unload();
     cleanup.defer(() => act(unload));
     return Promise.resolve(shown).then(() => ({
@@ -373,6 +387,37 @@ describe.each<HostKind>(["embed", "block"])("a %s", (kind) => {
     expect(printed).toBe(true);
     const { el } = await held!;
     expect(el.querySelector("[data-query-empty]")).not.toBeNull();
+  });
+
+  describe("settles in a print where it draws no rows", () => {
+    /** Whether `shown` settles, as Export to PDF waits for it, in a short wait. */
+    async function printed(shown: () => Promise<unknown>): Promise<boolean> {
+      let done = false;
+      await act(async () => {
+        void shown().then(() => {
+          done = true;
+        });
+        await delay(50);
+      });
+      await delay(0);
+      return done;
+    }
+
+    it.each([
+      ["holds no view", "views: []\n"],
+      ["names a problem in its view", FILE.replace("    name: Mine\n", "")],
+    ])("as the file %s", async (_what, file) => {
+      const { show } = await setup(kind, file);
+      const print = document.body.createDiv({ cls: "print" });
+      expect(await printed(() => show("notes/Lab.md", print))).toBe(true);
+    });
+
+    it("as its first run fails", async () => {
+      const { show, run } = await setup(kind);
+      run.mockResolvedValueOnce(FAILED);
+      const print = document.body.createDiv({ cls: "print" });
+      expect(await printed(() => show("notes/Lab.md", print))).toBe(true);
+    });
   });
 
   it("keeps a click inside it from selecting it in Live Preview", async () => {
