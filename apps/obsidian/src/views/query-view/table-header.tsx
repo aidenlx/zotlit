@@ -1,7 +1,7 @@
 // The Table layout's header row, whose cells move and resize their columns as in a Bases table.
 
 import { Menu } from "obsidian";
-import { useEffect, useRef } from "react";
+import { useEffect, useLayoutEffect, useRef } from "react";
 import type {
   CSSProperties,
   DragEvent,
@@ -13,6 +13,7 @@ import type {
 import { Icon } from "@/components/obsidian/icon";
 import { useObsidianApp } from "@/lib/app-context";
 import * as m from "@/lib/i18n/generated/messages";
+import { observeResize } from "@/lib/observe-resize";
 import { pointerDrag } from "@/lib/pointer-drag";
 import { cn, tooltipAttrs } from "@/lib/utils";
 
@@ -166,6 +167,9 @@ const SIZED =
   "zt:w-(--zt-column-width) zt:min-w-(--zt-column-width) zt:max-w-(--zt-column-width)";
 
 const COLUMN_WIDTH = "--zt-column-width";
+
+/** The header's height, on the box the table scrolls in. */
+const HEADER_HEIGHT = "--zt-table-header-height";
 
 const widthStyle = (width: number) =>
   ({ [COLUMN_WIDTH]: `${width}px` }) as CSSProperties;
@@ -437,9 +441,23 @@ export function TableHeader({
     menu.setParentElement(th).showAtMouseEvent(event.nativeEvent);
   };
 
+  // The box's scroll bar starts under the header, so a press at the
+  // header's edge never lands on the bar (`table-header.css`).
+  const head = useRef<HTMLTableSectionElement>(null);
+  useLayoutEffect(() => {
+    const thead = head.current;
+    const box = scroller.current;
+    if (!thead || !box) return;
+    const show = () =>
+      box.style.setProperty(HEADER_HEIGHT, `${thead.offsetHeight}px`);
+    show();
+    const observing = observeResize(thead, [thead], show);
+    return () => observing[Symbol.dispose]();
+  }, [scroller]);
+
   const { gutter, cell, first, later, filler } = classes;
   return (
-    <thead>
+    <thead ref={head}>
       <tr className="zt:text-start">
         <th className={gutter} />
         {columns.map((property, at) => {

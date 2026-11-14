@@ -12,3 +12,43 @@ body.zt-is-resizing-column * {
   cursor: col-resize !important;
   user-select: none;
 }
+
+/*
+ * The box a Table scrolls in draws Obsidian's styled scroll bar, whose
+ * vertical track starts under the sticky header: a press at the header's
+ * edge reaches a column, never the bar. `scrollbar-color` and
+ * `scrollbar-width` at `auto` let the `::-webkit-scrollbar` parts apply.
+ */
+@media screen {
+  body:not(.is-mobile) .zt-table-scroller {
+    scrollbar-color: auto;
+    scrollbar-width: auto;
+  }
+  body:not(.is-mobile) .zt-table-scroller::-webkit-scrollbar {
+    width: var(--scrollbar-width);
+    height: var(--scrollbar-height);
+    background-color: transparent;
+  }
+  body:not(.is-mobile) .zt-table-scroller::-webkit-scrollbar-track {
+    background-color: transparent;
+  }
+  body:not(.is-mobile) .zt-table-scroller::-webkit-scrollbar-track:vertical {
+    margin-top: var(--zt-table-header-height, 0px);
+  }
+  body:not(.is-mobile) .zt-table-scroller::-webkit-scrollbar-thumb {
+    background-color: var(--scrollbar-thumb-bg);
+    border-radius: var(--scrollbar-radius);
+    background-clip: padding-box;
+    border-style: solid;
+    border-color: transparent;
+    border-width: var(--scrollbar-border-width);
+    min-height: 45px;
+  }
+  body:not(.is-mobile) .zt-table-scroller::-webkit-scrollbar-thumb:hover,
+  body:not(.is-mobile) .zt-table-scroller::-webkit-scrollbar-thumb:active {
+    background-color: var(--scrollbar-active-thumb-bg);
+  }
+  body:not(.is-mobile) .zt-table-scroller::-webkit-scrollbar-corner {
+    background: transparent;
+  }
+}

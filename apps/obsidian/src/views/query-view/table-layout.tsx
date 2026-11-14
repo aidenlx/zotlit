@@ -818,7 +818,7 @@ export function TableLayout({ view }: { view: QueryView }) {
   return (
     <div
       ref={mountScroller}
-      className="zt:relative zt:min-h-0 zt:flex-1 zt:overflow-auto zt:[overflow-anchor:none]"
+      className="zt-table-scroller zt:relative zt:min-h-0 zt:flex-1 zt:overflow-auto zt:[overflow-anchor:none]"
       style={placeholderRow(mounted.learned.get("row") ?? ESTIMATES.row)}
     >
       <table

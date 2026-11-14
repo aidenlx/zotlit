@@ -433,6 +433,50 @@ describe.skipIf(!reachable)("Library View long lists", () => {
     await revealThenStep();
   }, 180_000);
 
+  it("draws the Table's scroll bar beside its header, so a press on the bar never reaches a column", async () => {
+    await using cleanup = new AsyncDisposableStack();
+    closeLibrary(cleanup);
+    await openLibrary("table");
+    const pressed = await obRunUntil(
+      vaultId,
+      async ({ app, page }, { box }) => {
+        const view = app.workspace.getLeavesOfType("zotlit-library")[0]!
+          .view as LibraryView;
+        const list = view.contentEl.querySelector<HTMLElement>(box)!;
+        const head = list.querySelector("thead")!;
+        list.scrollTop = list.scrollHeight / 2;
+        await new Promise((resolve) => setTimeout(resolve, 300));
+        const bar = list.offsetWidth - list.clientWidth;
+        const target = new Promise<EventTarget | null>((resolve) =>
+          list.win.addEventListener("pointerdown", (e) => resolve(e.target), {
+            capture: true,
+            once: true,
+          }),
+        );
+        // The bar's column, at the header's height.
+        await page.trusted(list.win).click(list, {
+          x: list.offsetWidth - bar / 2,
+          y: head.offsetHeight / 2,
+        });
+        const at = await target;
+        return {
+          bar,
+          onHeader: at instanceof Node && head.contains(at),
+          onBox: at === list,
+        };
+      },
+      { box: BOX },
+      {
+        what: "a press in the Table's scroll bar column at the header",
+        ready: (result) => result !== null,
+      },
+    );
+    // The bar takes room of its own beside the rows and the header, rather
+    // than lie over them; a press on it stays with the box.
+    expect(pressed.bar).toBeGreaterThan(0);
+    expect(pressed).toMatchObject({ onHeader: false, onBox: true });
+  }, 120_000);
+
   it("keeps mounting the Papers rows near the screen, and brings a far paper into view, after the Library View moves into a pop-out", async () => {
     await using cleanup = new AsyncDisposableStack();
     closeLibrary(cleanup);
