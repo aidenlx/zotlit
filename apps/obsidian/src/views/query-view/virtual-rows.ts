@@ -273,6 +273,10 @@ export function useVirtualRows({
     // The first draw, before the scroller is measured, fills a window.
     initialRect: { width: 0, height: (own?.win ?? activeWindow).innerHeight },
   });
+  // The entries stand in normal flow, at the heights they draw at: the rows
+  // a scroll drew stand where the reader saw them when the scroll ends and
+  // they take their heights, so the list does not scroll for those heights.
+  virtualizer.shouldAdjustScrollPositionOnItemSizeChange = () => false;
 
   // The list moves in the scroller as the content above it changes, such as
   // a Table's header. Read its place as the list mounts, as the header

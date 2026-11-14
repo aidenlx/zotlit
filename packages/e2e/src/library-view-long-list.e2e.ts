@@ -1177,6 +1177,122 @@ describe.skipIf(!reachable)("Library View long lists", () => {
     expect(indented.heightMoved).toBe(0);
   }, 180_000);
 
+  /**
+   * A List whose rows wrap to different numbers of lines: a paper in three
+   * repeats its title, with Indent properties on or off.
+   */
+  const wrappingList = (indent: boolean) =>
+    [
+      "formulas:",
+      '  long: \'if(date.year % 3 == 0, title + " " + title + " " + title, title)\'',
+      "views:",
+      "  - type: list",
+      "    name: All",
+      "    from: items",
+      '    filters: library == "personal"',
+      "    order:",
+      "      - formula.long",
+      "      - date",
+      "      - itemType",
+      ...(indent ? ["    indentProperties: true"] : []),
+      "",
+    ].join("\n");
+
+  it("keeps a long List's rows in place as a scroll ends, where rows above the screen drew taller than their text foretold", async () => {
+    const path = "Scroll end.zotquery";
+    await using cleanup = new AsyncDisposableStack();
+    await createFiles(cleanup, { [path]: wrappingList(false) });
+    await obRun(
+      vaultId,
+      async ({ app }, { path }) => {
+        const leaf = app.workspace.getLeaf("tab");
+        await leaf.openFile(app.vault.getFileByPath(path)!);
+        app.workspace.setActiveLeaf(leaf, { focus: true });
+      },
+      { path },
+    );
+    const settled = await obRunUntil(
+      vaultId,
+      async ({ app }, { path }) => {
+        const list = app.workspace
+          .getLeavesOfType("zotlit-query-file")
+          .find((l) => (l.view as MarkdownView).file?.path === path)
+          ?.view.containerEl.querySelector<HTMLElement>(
+            '[data-query-layout="list"]',
+          );
+        if (!list || list.scrollHeight < list.clientHeight + 1000) return null;
+        const frame = () =>
+          new Promise((resolve) => requestAnimationFrame(resolve));
+        for (let still = 0, last = -1; still < 5;) {
+          await frame();
+          if (list.scrollHeight !== last && last !== -1) return null;
+          still++;
+          last = list.scrollHeight;
+        }
+        // The rows' letters stand wider apart than the canvas measured them,
+        // as with a font the browser draws in place of the one asked for: a
+        // row the scroll brings into view can wrap a line more than its text
+        // foretold.
+        const style = list.doc.createElement("style");
+        style.dataset.e2eScrollEnd = "";
+        style.textContent =
+          '[data-query-layout="list"] li[data-query-row] { letter-spacing: 0.08em; }';
+        list.doc.head.append(style);
+        try {
+          /** Each mounted row's top, from the box's top. */
+          const tops = () => {
+            const top = list.getBoundingClientRect().top;
+            return new Map(
+              [...list.querySelectorAll<HTMLElement>("li[data-index]")].map(
+                (el) => [
+                  el.dataset.index!,
+                  el.getBoundingClientRect().top - top,
+                ],
+              ),
+            );
+          };
+          list.scrollTop = 0;
+          await frame();
+          // A scroll down of 150 px a frame, as a wheel's.
+          for (let step = 0; step < 30; step++) {
+            list.scrollTop += 150;
+            await frame();
+          }
+          const last = tops();
+          const length = list.scrollHeight;
+          // The scroll ends; the rows it drew take their heights then, which
+          // makes the list longer.
+          let moved = 0;
+          let grew = false;
+          for (let frames = 0, after = 0; after < 3 && frames < 240; frames++) {
+            await frame();
+            for (const [index, top] of tops()) {
+              const was = last.get(index);
+              if (was !== undefined)
+                moved = Math.max(moved, Math.abs(top - was));
+            }
+            if (list.scrollHeight !== length) grew = true;
+            if (grew) after++;
+          }
+          return { grew, moved: Math.round(moved * 10) / 10 };
+        } finally {
+          style.remove();
+        }
+      },
+      { path },
+      {
+        what: "the List scrolled and at rest",
+        ready: (result) => result !== null,
+      },
+    );
+    console.log(`scroll end: ${JSON.stringify(settled)}`);
+    // The scroll measured rows that drew taller, and no row moved for it.
+    expect({ grew: settled!.grew, still: settled!.moved <= 1 }).toEqual({
+      grew: true,
+      still: true,
+    });
+  }, 120_000);
+
   it.each(
     (["embed", "Query Block"] as const).flatMap((kind) =>
       NOTE_MODES.map((mode) => [kind, mode] as const),
