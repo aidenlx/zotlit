@@ -522,6 +522,11 @@ export class QueryView extends Component implements HistorySurface {
    */
   #shownBinding: string | null = null;
   #settled: Promise<void> = Promise.resolve();
+  /**
+   * Whether the view waits to run, as an embed far from the screen does
+   * ({@link hold}), and whether a run waits for {@link release}.
+   */
+  #held: { waiting: boolean } | null = null;
   #subscriptions: DisposableStack | null = null;
   /** Whether the view draws into an element; until then no card waits to show. */
   #rendered = false;
@@ -1003,6 +1008,27 @@ export class QueryView extends Component implements HistorySurface {
     this.#refresh(false);
   }
 
+  /**
+   * Run nothing until {@link release}: the view stands where no one sees
+   * it yet. A run asked for meanwhile waits, and the last one starts on the
+   * release.
+   */
+  hold(): void {
+    this.#held ??= { waiting: false };
+  }
+
+  /** Run the query a {@link hold} kept waiting, and run as asked from now on. */
+  release(): void {
+    const held = this.#held;
+    this.#held = null;
+    if (held?.waiting) this.refresh();
+  }
+
+  /** Whether the view waits for {@link release} to run. */
+  get held(): boolean {
+    return this.#held !== null;
+  }
+
   /** @param fromList whether a list change asked for the run. */
   #refresh(fromList: boolean): void {
     this.#finishRun?.();
@@ -1017,6 +1043,10 @@ export class QueryView extends Component implements HistorySurface {
         results: null,
         failure: null,
       });
+      return;
+    }
+    if (this.#held) {
+      this.#held.waiting = true;
       return;
     }
     const plan = this.#planner.plan(file, view);

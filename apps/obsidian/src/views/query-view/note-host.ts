@@ -34,12 +34,19 @@ export class NoteQueryHost extends Component {
       el,
       sourcePath,
       storage,
+      reserve = false,
     }: {
       /** The element the view draws into. */
       el: HTMLElement;
       /** The note that holds the view. */
       sourcePath: () => string;
       storage: NoteStorage;
+      /**
+       * Whether the view stands at the most room its rows take until they
+       * come, as a Query File embed does: the note keeps its height as its
+       * views load.
+       */
+      reserve?: boolean;
     },
   ) {
     super();
@@ -58,6 +65,9 @@ export class NoteQueryHost extends Component {
       context: () => (this.#item === null ? undefined : { item: this.#item }),
       contextSource: "note",
     });
+    // The view runs once it comes near the screen (see `onload`).
+    this.#query.hold();
+    if (reserve) el.dataset.queryWaiting = "";
     // e2e-only: packages/e2e reaches the view of every host from its element.
     // A dev-build port, absent from a production build.
     if (__DEV__) Object.assign(el, { zotlitQueryView: this.#query });
@@ -66,6 +76,20 @@ export class NoteQueryHost extends Component {
   override onload(): void {
     this.addChild(this.#query);
     this.#query.render(this.#el);
+    // A note can hold many views, each a query of its own: a view runs once
+    // it stands within a screen of what the note shows, so the ones on
+    // screen come first. One the note hides, as a folded callout or the
+    // editor behind Reading view does, runs once it shows.
+    this.register(whenNear(this.#el, () => this.#release()));
+    this.register(
+      this.#query.state.subscribe((state) => {
+        const settled =
+          state.phase === "ready" ||
+          state.phase === "failed" ||
+          state.problems.length > 0;
+        if (settled) delete this.#el.dataset.queryWaiting;
+      }),
+    );
     // A card in the view takes the card keys while it has focus.
     const keys = this.#deps.cardFocus.hold(this.#el, this.#scope, this.#query);
     this.register(() => keys[Symbol.dispose]());
@@ -98,8 +122,15 @@ export class NoteQueryHost extends Component {
    * Settles once the view shows its first rows, as Export to PDF waits for
    * it to print them. Never rejects.
    */
-  shown(): Promise<void> {
-    return this.#query.shownIn(this.#el);
+  async shown(): Promise<void> {
+    // Export to PDF prints every view of the note, near the screen or not.
+    if (this.#el.closest(".print")) this.#release();
+    await this.#query.shownIn(this.#el);
+  }
+
+  /** Run the view, which waited to come near the screen. */
+  #release(): void {
+    if (this.#query.held) this.#query.release();
   }
 
   #readItem(): string | null {
@@ -109,4 +140,64 @@ export class NoteQueryHost extends Component {
       ? null
       : itemKeyFromFrontmatter(metadataCache.getFileCache(note));
   }
+}
+
+/**
+ * Call `near` once `el` stands within a screen of what the box it scrolls in
+ * shows, in whichever window shows it; an element the note hides never
+ * comes near. Returns what ends the watch.
+ */
+function whenNear(el: HTMLElement, near: () => void): () => void {
+  let observer: IntersectionObserver | null = null;
+  let frame: { win: Window; id: number } | null = null;
+  let done = false;
+  const end = () => {
+    observer?.disconnect();
+    observer = null;
+    if (frame) frame.win.cancelAnimationFrame(frame.id);
+    frame = null;
+  };
+  const watch = (win: Window) => {
+    end();
+    if (done) return;
+    const { IntersectionObserver } = win as Partial<typeof window>;
+    // A test window may have none: the view runs at once.
+    if (!IntersectionObserver) {
+      done = true;
+      return near();
+    }
+    // The element joins the note after the host loads; its box is known then.
+    if (!el.isConnected) {
+      frame = { win, id: win.requestAnimationFrame(() => watch(win)) };
+      return;
+    }
+    observer = new IntersectionObserver(
+      (entries) => {
+        if (!entries.some((entry) => entry.isIntersecting)) return;
+        done = true;
+        end();
+        near();
+      },
+      // The box the note scrolls in, a screen further up and down: the
+      // window and the panes around the note would clip the margin.
+      { root: scrollBox(el), rootMargin: "100% 0px" },
+    );
+    observer.observe(el);
+  };
+  watch(el.win);
+  const unmigrate = el.onWindowMigrated(watch);
+  return () => {
+    done = true;
+    unmigrate();
+    end();
+  };
+}
+
+/** The nearest box `el` scrolls in; `null` for the window. */
+function scrollBox(el: HTMLElement): HTMLElement | null {
+  for (let box = el.parentElement; box; box = box.parentElement) {
+    const { overflowY } = box.win.getComputedStyle(box);
+    if (overflowY === "auto" || overflowY === "scroll") return box;
+  }
+  return null;
 }

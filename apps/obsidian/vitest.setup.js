@@ -190,3 +190,31 @@ if (globalThis.document && !globalThis.document.fonts)
     value: new EventTarget(),
     configurable: true,
   });
+
+// Chromium's `IntersectionObserver` tells a note's Query View when it comes
+// near the screen; the test DOM lays nothing out, and happy-dom's never
+// calls back. Every element it observes stands on screen.
+if (globalThis.window) {
+  class OnScreen {
+    readonly #callback;
+    #observing = true;
+    constructor(callback) {
+      this.#callback = callback;
+    }
+    observe(target) {
+      queueMicrotask(() => {
+        if (this.#observing)
+          this.#callback([{ target, isIntersecting: true }], this);
+      });
+    }
+    unobserve() {}
+    disconnect() {
+      this.#observing = false;
+    }
+    takeRecords() {
+      return [];
+    }
+  }
+  globalThis.window.IntersectionObserver = OnScreen;
+  globalThis.IntersectionObserver = OnScreen;
+}

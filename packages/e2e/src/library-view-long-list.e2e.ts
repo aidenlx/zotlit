@@ -852,7 +852,7 @@ describe.skipIf(!reachable)("Library View long lists", () => {
     expect(indented.heightMoved).toBeLessThan(50);
   }, 180_000);
 
-  it("mounts a bounded number of rows of a long embed in a folded callout, and the rows near the screen once it unfolds", async () => {
+  it("runs a long embed only once it shows: not behind Reading view nor in a folded callout, which holds its room and runs as it unfolds", async () => {
     const queryPath = "Long fold.zotquery";
     const notePath = "Long fold.md";
     await using cleanup = new AsyncDisposableStack();
@@ -867,6 +867,8 @@ describe.skipIf(!reachable)("Library View long lists", () => {
       ].join("\n"),
       [notePath]: [
         "# Folded",
+        "",
+        `![[${queryPath}]]`,
         "",
         "> [!note]- Long list",
         `> ![[${queryPath}]]`,
@@ -886,15 +888,14 @@ describe.skipIf(!reachable)("Library View long lists", () => {
       },
       { notePath },
     );
-    /** The folded state, and the embed's listed, mounted and shown rows. */
+    /**
+     * The embeds Reading view shows, and those of the editor it hides: for
+     * each, whether it waits to run and holds its room, its listed, mounted
+     * and shown rows.
+     */
     const state = (
       what: string,
-      ready: (s: {
-        folded: boolean;
-        listed: number;
-        mounted: number;
-        shown: number;
-      }) => boolean,
+      ready: (s: { shown: Embed[]; hidden: Embed[] }) => boolean,
     ) =>
       obRunUntil(
         vaultId,
@@ -905,55 +906,92 @@ describe.skipIf(!reachable)("Library View long lists", () => {
           const scroller = leaf.view.containerEl.querySelector<HTMLElement>(
             ".markdown-preview-view",
           )!;
-          const callout = scroller.querySelector<HTMLElement>(".callout");
-          const host =
-            scroller.querySelector<QueryViewElement>(".zt-query-view");
           const bounds = scroller.getBoundingClientRect();
-          const rows = [
-            ...(host?.querySelectorAll<HTMLElement>(
-              "[data-query-papers-row]",
-            ) ?? []),
+          const read = (host: QueryViewElement) => {
+            const rows = [
+              ...host.querySelectorAll<HTMLElement>("[data-query-papers-row]"),
+            ];
+            return {
+              held: host.zotlitQueryView?.held ?? true,
+              waiting: host.hasAttribute("data-query-waiting"),
+              folded: host.closest(".callout.is-collapsed") !== null,
+              listed:
+                host.zotlitQueryView?.state.getState().results?.rows.length ??
+                0,
+              mounted: rows.length,
+              shown: rows.filter((row) => {
+                const rowBounds = row.getBoundingClientRect();
+                return (
+                  rowBounds.height > 0 &&
+                  rowBounds.bottom > bounds.top &&
+                  rowBounds.top < bounds.bottom
+                );
+              }).length,
+            };
+          };
+          const hosts = [
+            ...leaf.view.containerEl.querySelectorAll<QueryViewElement>(
+              ".zt-query-note",
+            ),
           ];
           return {
-            folded: callout?.classList.contains("is-collapsed") ?? false,
-            listed:
-              host?.zotlitQueryView?.state.getState().results?.rows.length ?? 0,
-            mounted: rows.length,
-            shown: rows.filter((row) => {
-              const rowBounds = row.getBoundingClientRect();
-              return (
-                rowBounds.height > 0 &&
-                rowBounds.bottom > bounds.top &&
-                rowBounds.top < bounds.bottom
-              );
-            }).length,
+            shown: hosts.filter((h) => scroller.contains(h)).map(read),
+            hidden: hosts.filter((h) => !scroller.contains(h)).map(read),
           };
         },
         { notePath },
-        { what, ready },
+        { what, ready: (s) => s.shown.length === 2 && ready(s) },
       );
-    const folded = await state(
-      "the embed's rows listed in the folded callout",
-      (s) => s.folded && s.listed > LISTED,
-    );
-    expect(folded.mounted).toBeLessThan(80);
+    type Embed = {
+      held: boolean;
+      waiting: boolean;
+      folded: boolean;
+      listed: number;
+      mounted: number;
+      shown: number;
+    };
+    const loaded = await state("the first embed's rows", ({ shown }) => {
+      const [first] = shown;
+      return first!.shown > 0;
+    });
+    const [top, folded] = loaded.shown;
+    expect(top!.listed).toBeGreaterThan(LISTED);
+    // The folded embed runs nothing, and holds the room its rows take at
+    // most for when it unfolds.
+    expect(folded).toMatchObject({
+      folded: true,
+      held: true,
+      waiting: true,
+      listed: 0,
+    });
+    // Nor does the editor that Reading view hides run its embeds.
+    for (const hidden of loaded.hidden)
+      expect(hidden).toMatchObject({ held: true, listed: 0 });
     await obRun(
       vaultId,
       ({ app }, { notePath }) => {
         const leaf = app.workspace
           .getLeavesOfType("markdown")
           .find((l) => (l.view as MarkdownView).file?.path === notePath)!;
-        leaf.view.containerEl
-          .querySelector<HTMLElement>(".markdown-preview-view .callout-title")!
-          .click();
+        const callout = leaf.view.containerEl.querySelector<HTMLElement>(
+          ".markdown-preview-view .callout",
+        )!;
+        callout.querySelector<HTMLElement>(".callout-title")!.click();
+        callout.scrollIntoView({ block: "start" });
       },
       { notePath },
     );
     const open = await state(
-      "the embed's rows in view once the callout unfolds",
-      (s) => !s.folded && s.shown > 0,
+      "the folded embed's rows in view once the callout unfolds",
+      ({ shown }) => {
+        const [, unfolded] = shown;
+        return !unfolded!.folded && unfolded!.shown > 0;
+      },
     );
-    expect(open.mounted).toBeLessThan(80);
+    const [, unfolded] = open.shown;
+    expect(unfolded).toMatchObject({ held: false, waiting: false });
+    expect(unfolded!.listed).toBeGreaterThan(LISTED);
+    expect(unfolded!.mounted).toBeLessThan(80);
   }, 180_000);
 
   it("hides the rows a Table embed in a callout scrolls under its header, in the callout's tint", async () => {
