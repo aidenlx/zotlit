@@ -22,7 +22,7 @@ import type { HTMLAttributes, LiHTMLAttributes, ReactNode } from "react";
 import { observeResize } from "@/lib/observe-resize";
 import { cn } from "@/lib/utils";
 
-import { NO_ROWS } from "./item-rows";
+import { ITEM_ROW_ATTRIBUTE, NO_ROWS } from "./item-rows";
 import type { QueryView } from "./view";
 import { useVirtualRows } from "./virtual-rows";
 import type { VirtualRows } from "./virtual-rows";
@@ -318,12 +318,16 @@ function useItemsWindow(
       keys,
       scrollTo: (key) => {
         const index = places.get(key);
-        return index !== undefined && scrollTo(index);
+        if (index === undefined || scrollTo(index)) return;
+        // A list that mounts every row scrolls the row's own element.
+        [...(own?.querySelectorAll(`[${ITEM_ROW_ATTRIBUTE}]`) ?? [])]
+          .find((row) => row.getAttribute(ITEM_ROW_ATTRIBUTE) === key)
+          ?.scrollIntoView({ block: "nearest" });
       },
     });
     // A layout that goes shows no rows.
     return () => gestures?.shown(NO_ROWS);
-  }, [gestures, keys, places, scrollTo]);
+  }, [gestures, keys, places, scrollTo, own]);
 
   return { ...rows, box: setOwn };
 }

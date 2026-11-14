@@ -62,17 +62,17 @@ export interface ItemRowGestures {
 }
 
 /** The rows of no layout. */
-export const NO_ROWS: ShownRows = { keys: [], scrollTo: () => false };
+export const NO_ROWS: ShownRows = { keys: [], scrollTo: () => {} };
 
 /** The Item rows of a layout, for its host. */
 export interface ShownRows {
   /** The Indexed Keys of the Item rows, in the order the layout shows them. */
   readonly keys: readonly string[];
   /**
-   * Scroll the row of `key` into view, where the layout mounts its rows as
-   * they scroll in; `false` where the row's element scrolls itself.
+   * Scroll the row of `key` into view: a long list places it as the rows
+   * around it are measured.
    */
-  scrollTo(key: string): boolean;
+  scrollTo(key: string): void;
 }
 
 /** The attribute that holds an Item row's Indexed Key, for the host's keys. */

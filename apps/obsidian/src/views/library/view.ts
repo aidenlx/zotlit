@@ -975,8 +975,7 @@ export class LibraryView extends ItemView {
    */
   #scrollTo(row: HTMLElement): void {
     const key = row.getAttribute(ITEM_ROW_ATTRIBUTE);
-    if (key === null || !this.#listed.scrollTo(key))
-      row.scrollIntoView({ block: "nearest" });
+    if (key !== null) this.#listed.scrollTo(key);
   }
 
   /**
