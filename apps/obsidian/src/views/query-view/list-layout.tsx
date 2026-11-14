@@ -36,7 +36,7 @@ import {
 import type { RecordCells } from "./record-rows";
 import type { QueryView } from "./view";
 import type { PropertyEntry } from "./view-properties";
-import { ListSpacer } from "./virtual-spacers";
+import { LIST_GHOST, ListSpacer, placeholderRow } from "./virtual-spacers";
 
 export const LIST_LAYOUT: QueryLayout = {
   type: "list",
@@ -266,6 +266,7 @@ export function ListLayout({ view }: { view: QueryView }) {
       ref={rows.box}
       className="zt:min-h-0 zt:flex-1 zt:overflow-auto zt:px-3 zt:pt-2 zt:pb-11 zt:[overflow-anchor:none] zt:in-[.zt-query-note]:pb-2"
       data-query-layout="list"
+      style={placeholderRow(rows.learned.get("row") ?? ESTIMATES.row)}
     >
       {/* A word too long for the line breaks, as `list-heights.ts` lays it out. */}
       <List
@@ -285,7 +286,9 @@ export function ListLayout({ view }: { view: QueryView }) {
           if (entry.kind === "heading")
             return (
               <Fragment key={entry.key}>
-                {before > 0 && <ListSpacer height={before} />}
+                {before > 0 && (
+                  <ListSpacer height={before} ghost={LIST_GHOST} />
+                )}
                 {/* The heading stands at the list's start edge, out of the
                     indent the markers take. */}
                 <li
@@ -314,7 +317,7 @@ export function ListLayout({ view }: { view: QueryView }) {
           const [first = "", ...rest] = filled;
           return (
             <Fragment key={entry.key}>
-              {before > 0 && <ListSpacer height={before} />}
+              {before > 0 && <ListSpacer height={before} ghost={LIST_GHOST} />}
               <li
                 ref={rows.measure}
                 data-index={index}
@@ -354,7 +357,9 @@ export function ListLayout({ view }: { view: QueryView }) {
             </Fragment>
           );
         })}
-        {rows.after > 0 && <ListSpacer height={rows.after} />}
+        {rows.after > 0 && (
+          <ListSpacer height={rows.after} ghost={LIST_GHOST} />
+        )}
       </List>
     </div>
   );

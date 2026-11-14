@@ -345,6 +345,42 @@ describe.skipIf(!reachable)("Library View long lists", () => {
     );
   }, 180_000);
 
+  it("mounts the Papers rows ahead of a scroll down, and draws a bar for each row not yet mounted", async () => {
+    await using cleanup = new AsyncDisposableStack();
+    closeLibrary(cleanup);
+    await openLibrary("papers");
+    const ahead = await obRun(
+      vaultId,
+      async ({ app }, { box }) => {
+        const view = app.workspace.getLeavesOfType("zotlit-library")[0]!
+          .view as LibraryView;
+        const list = view.contentEl.querySelector<HTMLElement>(box)!;
+        list.scrollTop = 0;
+        await new Promise((resolve) => requestAnimationFrame(resolve));
+        // A scroll of 100 px a frame, as a slow drag of the scroll bar.
+        for (let step = 0; step < 30; step++) {
+          list.scrollTop += 100;
+          await new Promise((resolve) => requestAnimationFrame(resolve));
+        }
+        const rows = list.querySelectorAll<HTMLElement>(
+          "[data-query-papers-row]",
+        );
+        const spacer = list.querySelector<HTMLElement>("[data-query-spacer]");
+        return {
+          below:
+            rows[rows.length - 1]!.getBoundingClientRect().bottom -
+            list.getBoundingClientRect().bottom,
+          bars: spacer ? getComputedStyle(spacer).backgroundImage : "none",
+        };
+      },
+      { box: BOX },
+    );
+    // The overscan alone mounts eight rows, about 370 px, past the screen;
+    // the scroll mounts four of its steps more.
+    expect(ahead.below).toBeGreaterThan(600);
+    expect(ahead.bars).toContain("linear-gradient");
+  }, 120_000);
+
   it("brings a far paper into view from Show in Library, and ↓ steps on from it after the Papers list scrolled away", async () => {
     await using cleanup = new AsyncDisposableStack();
     closeLibrary(cleanup);
@@ -875,4 +911,60 @@ describe.skipIf(!reachable)("Library View long lists", () => {
     );
     expect(open.mounted).toBeLessThan(80);
   }, 180_000);
+
+  it("hides the rows a Table embed in a callout scrolls under its header, in the callout's tint", async () => {
+    const queryPath = "Long callout table.zotquery";
+    const notePath = "Long callout table.md";
+    await using cleanup = new AsyncDisposableStack();
+    await createFiles(cleanup, {
+      [queryPath]: [
+        "views:",
+        "  - type: table",
+        "    name: All",
+        "    from: items",
+        '    filters: library == "personal"',
+        "",
+      ].join("\n"),
+      [notePath]: ["> [!note] A table", `> ![[${queryPath}]]`, ""].join("\n"),
+    });
+    await obRun(
+      vaultId,
+      async ({ app }, { notePath }) => {
+        const leaf = app.workspace.getLeaf("tab");
+        await leaf.openFile(app.vault.getFileByPath(notePath)!, {
+          state: { mode: "preview" },
+        });
+        app.workspace.setActiveLeaf(leaf, { focus: true });
+      },
+      { notePath },
+    );
+    const header = await obRunUntil(
+      vaultId,
+      ({ app }, { notePath }) => {
+        const leaf = app.workspace
+          .getLeavesOfType("markdown")
+          .find((l) => (l.view as MarkdownView).file?.path === notePath)!;
+        const table = leaf.view.containerEl.querySelector<HTMLTableElement>(
+          ".markdown-preview-view .callout [data-query-table]",
+        );
+        const cell = table?.tHead?.rows[0]?.cells[1];
+        if (!table || !cell || !table.tBodies.length) return null;
+        table.parentElement!.scrollTop = 600;
+        const style = getComputedStyle(cell);
+        return {
+          scrolled: table.parentElement!.scrollTop,
+          color: style.backgroundColor,
+          tint: style.backgroundImage,
+        };
+      },
+      { notePath },
+      {
+        what: "the callout's Table scrolled under its header",
+        ready: (h) => h !== null && h.scrolled > 0,
+      },
+    );
+    // An opaque colour has no alpha part, `rgb(...)`; the tint lies over it.
+    expect(header!.color).toMatch(/^rgb\(/);
+    expect(header!.tint).toContain("linear-gradient");
+  }, 120_000);
 });

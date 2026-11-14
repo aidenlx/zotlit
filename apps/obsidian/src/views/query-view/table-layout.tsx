@@ -51,7 +51,7 @@ import { VaultEditCell, useVaultVersion } from "./vault-cell";
 import type { QueryView } from "./view";
 import { useViewProperties } from "./view-properties";
 import type { PropertyEntry } from "./view-properties";
-import { TableSpacer } from "./virtual-spacers";
+import { placeholderRow, TableSpacer } from "./virtual-spacers";
 
 export const TABLE_LAYOUT: QueryLayout = {
   type: "table",
@@ -595,9 +595,13 @@ const VAULT = "zt:relative zt:p-0 zt:overflow-visible";
  */
 const SPANNING = cn(CELL, CLIP);
 const ROW = "zt:hover:bg-(--table-row-background-hover)";
-/** A header cell, which stays at the top as the rows scroll under it. */
+/**
+ * A header cell, which stays at the top as the rows scroll under it. It
+ * hides them: in a callout it draws the callout's tint over the page, as
+ * the callout does, rather than the callout's see-through background.
+ */
 const HEADER =
-  "zt:sticky zt:top-0 zt:z-(--layer-cover) zt:bg-background zt:py-0 zt:font-(--font-weight) zt:whitespace-nowrap zt:text-muted-foreground zt:in-[.mod-sidedock]:bg-(--background-secondary) zt:in-[.callout]:bg-transparent";
+  "zt:sticky zt:top-0 zt:z-(--layer-cover) zt:bg-background zt:py-0 zt:font-(--font-weight) zt:whitespace-nowrap zt:text-muted-foreground zt:in-[.mod-sidedock]:bg-(--background-secondary) zt:in-[.callout]:bg-[image:linear-gradient(color-mix(in_oklch,var(--callout-color)_10%,transparent),color-mix(in_oklch,var(--callout-color)_10%,transparent))]";
 
 /**
  * The columns a child row's one cell spans beside the gutter: every column
@@ -815,6 +819,7 @@ export function TableLayout({ view }: { view: QueryView }) {
     <div
       ref={mountScroller}
       className="zt:relative zt:min-h-0 zt:flex-1 zt:overflow-auto zt:[overflow-anchor:none]"
+      style={placeholderRow(mounted.learned.get("row") ?? ESTIMATES.row)}
     >
       <table
         className="zt:min-w-full zt:border-separate zt:border-spacing-0 zt:text-(length:--bases-table-font-size)"
@@ -862,7 +867,9 @@ export function TableLayout({ view }: { view: QueryView }) {
             ) : null;
           return (
             <Fragment key={entries[index]!.key}>
-              {before > 0 && <TableSpacer height={before} span={span} />}
+              {before > 0 && (
+                <TableSpacer height={before} columns={columns.length} />
+              )}
               {/* One body per Item, the unit a long table measures and
                   mounts: its heading, its row and the rows under it. */}
               <tbody ref={mounted.measure} data-index={index}>
@@ -882,7 +889,7 @@ export function TableLayout({ view }: { view: QueryView }) {
           );
         })}
         {mounted.after > 0 && (
-          <TableSpacer height={mounted.after} span={span} />
+          <TableSpacer height={mounted.after} columns={columns.length} />
         )}
       </table>
     </div>

@@ -46,7 +46,7 @@ import {
 import type { ChildState, TableRecord } from "./table-layout";
 import type { LiteratureNotes } from "./table-notes";
 import type { QueryView } from "./view";
-import { ListSpacer } from "./virtual-spacers";
+import { ListSpacer, placeholderRow } from "./virtual-spacers";
 
 export const PAPERS_LAYOUT: QueryLayout = {
   type: "papers",
@@ -183,6 +183,19 @@ function useNotePath(notes: LiteratureNotes, itemKey: string): string | null {
 /** The height of a Papers entry of each kind, before it is measured. */
 const ESTIMATES = { heading: HEADING_ESTIMATE, row: 46, line: 32 };
 
+/**
+ * The outline of a row not yet drawn, where a row draws its parts: past the
+ * room of the expand button, the type's icon on the title's line, a bar for
+ * the title and a shorter one for the second line, and the line under the
+ * row. The places are those of a row at Obsidian's interface font.
+ */
+const GHOST = cn(
+  "zt:bg-repeat-y zt:[--zt-ghost:var(--background-modifier-hover)]",
+  "zt:bg-[image:linear-gradient(to_bottom,transparent_6px,var(--zt-ghost)_0_22px,transparent_0),linear-gradient(to_bottom,transparent_10px,var(--zt-ghost)_0_19px,transparent_0),linear-gradient(to_bottom,transparent_27px,var(--zt-ghost)_0_35px,transparent_0),linear-gradient(to_bottom,transparent_calc(100%-var(--border-width)),var(--background-modifier-border)_0)]",
+  "zt:bg-size-[16px_var(--zt-virtual-row),min(55%,24rem)_var(--zt-virtual-row),min(35%,16rem)_var(--zt-virtual-row),100%_var(--zt-virtual-row)]",
+  "zt:bg-position-[36px_0,58px_0,58px_0,0_0]",
+);
+
 /** The rows of the shown view as a reading list, under their group headings. */
 export function PapersLayout({ view }: { view: QueryView }) {
   const { groups } = useRecordGroups(view);
@@ -218,6 +231,7 @@ export function PapersLayout({ view }: { view: QueryView }) {
       ref={rows.box}
       className="zt:min-h-0 zt:flex-1 zt:overflow-auto zt:px-1 zt:pb-11 zt:[overflow-anchor:none] zt:not-in-[.zt-query-note]:scroll-gutter zt:in-[.zt-query-note]:pb-2"
       data-query-layout="papers"
+      style={placeholderRow(rows.learned.get("row") ?? ESTIMATES.row)}
     >
       <ul
         ref={rows.list}
@@ -228,7 +242,7 @@ export function PapersLayout({ view }: { view: QueryView }) {
           const entry = entries[index]!;
           return (
             <Fragment key={entry.key}>
-              {before > 0 && <ListSpacer height={before} />}
+              {before > 0 && <ListSpacer height={before} ghost={GHOST} />}
               {entry.kind === "heading" ? (
                 // The heading drops its own top margin as the first child
                 // here; the entry keeps it after a row.
@@ -259,7 +273,7 @@ export function PapersLayout({ view }: { view: QueryView }) {
             </Fragment>
           );
         })}
-        {rows.after > 0 && <ListSpacer height={rows.after} />}
+        {rows.after > 0 && <ListSpacer height={rows.after} ghost={GHOST} />}
       </ul>
     </div>
   );

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { flow, learn, withPinned } from "./virtual-rows";
+import { flow, leadOf, learn, withLead, withPinned } from "./virtual-rows";
 
 describe("flow", () => {
   it("leaves the room of the entries before, between and after the drawn ones", () => {
@@ -47,5 +47,55 @@ describe("learn", () => {
     const rows = [31, 31, 30, 52, 31].map((size) => ({ kind: "row", size }));
     const headings = [38, 38].map((size) => ({ kind: "heading", size }));
     expect(learn([...rows, ...headings])).toEqual(new Map([["row", 31]]));
+  });
+});
+
+describe("withLead", () => {
+  // Rows of 10 px; the screen shows rows 10 to 12.
+  const places = Array.from({ length: 100 }, (_, i) => ({
+    start: i * 10,
+    end: i * 10 + 10,
+  }));
+  const range = { startIndex: 10, endIndex: 12, overscan: 1, count: 100 };
+
+  const scroll = (direction: "forward" | "backward" | null, lead: number) => ({
+    measurements: places,
+    direction,
+    lead,
+  });
+
+  it("mounts the room ahead of a scroll down", () => {
+    expect(withLead(range, scroll("forward", 25))).toEqual({
+      ...range,
+      endIndex: 15,
+    });
+  });
+
+  it("mounts the room ahead of a scroll up", () => {
+    expect(withLead(range, scroll("backward", 25))).toEqual({
+      ...range,
+      startIndex: 7,
+    });
+  });
+
+  it("stops at the ends of the list", () => {
+    expect(withLead(range, scroll("forward", 10_000)).endIndex).toBe(99);
+    expect(withLead(range, scroll("backward", 10_000)).startIndex).toBe(0);
+  });
+
+  it("keeps the range while the list does not scroll", () => {
+    expect(withLead(range, scroll(null, 25))).toBe(range);
+  });
+});
+
+describe("leadOf", () => {
+  it("leads a scroll by four of its steps, up to two screens", () => {
+    expect(leadOf(100, 700)).toBe(400);
+    expect(leadOf(600, 700)).toBe(1400);
+  });
+
+  it("leads no scroll of a screen or more a step, nor a stopped one", () => {
+    expect(leadOf(700, 700)).toBe(0);
+    expect(leadOf(0, 700)).toBe(0);
   });
 });
