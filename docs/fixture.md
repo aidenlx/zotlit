@@ -613,6 +613,8 @@ Pass a non-negative safe integer to set the synthetic Item count:
 pnpm fixture stress 100000
 ```
 
+One synthetic Item in ten (by position) has a long subtitle, a long Venue and twelve creators, so a long list of them draws rows of unlike heights. Each title starts with `Synthetic stress item <n>`.
+
 For Item Query performance work, fill My Library to an exact Item count. The measured tiers are 10,000, 50,000, and 100,000 Items:
 
 ```sh
