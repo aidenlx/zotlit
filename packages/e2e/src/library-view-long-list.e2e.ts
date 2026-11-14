@@ -1294,4 +1294,168 @@ describe.skipIf(!reachable)("Library View long lists", () => {
     },
     120_000,
   );
+
+  /** The box a note scrolls in, in each mode. */
+  const NOTE_SCROLLER = {
+    preview: ".markdown-preview-view",
+    source: ".markdown-source-view .cm-scroller",
+  } as const;
+
+  it.each(
+    (["papers", "table", "list"] as const).flatMap((layout) =>
+      NOTE_MODES.map((mode) => [layout, mode] as const),
+    ),
+  )(
+    "keeps a long %s embed's place in %s as the note scrolls far away and back",
+    async (layout, mode) => {
+      const queryPath = `Far ${layout}.zotquery`;
+      const notePath = `Far ${layout}.md`;
+      const paragraph = (n: number) =>
+        `Paragraph ${n}. The reader scrolls past this text on the way to the end of the note, and back again to the list of papers.`;
+      await using cleanup = new AsyncDisposableStack();
+      await createFiles(cleanup, {
+        [queryPath]: [
+          "views:",
+          `  - type: ${layout}`,
+          "    name: All",
+          "    from: items",
+          '    filters: library == "personal"',
+          "",
+        ].join("\n"),
+        // Text far above and below the embed: the note drops it from the
+        // page as it scrolls far away.
+        [notePath]: [
+          "# Far embed",
+          "",
+          ...Array.from({ length: 150 }, (_, n) => [paragraph(n), ""]).flat(),
+          `![[${queryPath}]]`,
+          "",
+          ...Array.from({ length: 400 }, (_, n) => [
+            paragraph(150 + n),
+            "",
+          ]).flat(),
+          "The end.",
+          "",
+        ].join("\n"),
+      });
+      await obRun(
+        vaultId,
+        async ({ app }, { notePath, mode }) => {
+          const leaf = app.workspace.getLeaf("tab");
+          await leaf.openFile(app.vault.getFileByPath(notePath)!, {
+            state: { mode },
+          });
+          app.workspace.setActiveLeaf(leaf, { focus: true });
+          // The cursor stays on the heading, far from the embed.
+          if (mode === "source")
+            (leaf.view as MarkdownView).editor.setCursor({ line: 0, ch: 0 });
+        },
+        { notePath, mode },
+      );
+      await revealQueryView(vaultId, notePath, { embed: queryPath });
+      // The embed's own box scrolls far down its rows.
+      const deep = await obRunUntil(
+        vaultId,
+        async ({ app }, { notePath, root, box, rowSelector }) => {
+          const leaf = app.workspace
+            .getLeavesOfType("markdown")
+            .find((l) => (l.view as MarkdownView).file?.path === notePath)!;
+          const list = leaf.view.containerEl
+            .querySelector(root)
+            ?.querySelector(".zt-query-note")
+            ?.querySelector<HTMLElement>(box);
+          if (!list) return { top: 0, shown: 0 };
+          const target = Math.round(
+            Math.min(20_000, (list.scrollHeight - list.clientHeight) * 0.6),
+          );
+          if (Math.abs(list.scrollTop - target) > 1) list.scrollTop = target;
+          await new Promise((resolve) => setTimeout(resolve, 300));
+          const bounds = list.getBoundingClientRect();
+          const shown = [
+            ...list.querySelectorAll<HTMLElement>(rowSelector),
+          ].filter((row) => {
+            const r = row.getBoundingClientRect();
+            return (
+              r.height > 0 && r.bottom > bounds.top && r.top < bounds.bottom
+            );
+          }).length;
+          return { top: list.scrollTop, shown };
+        },
+        {
+          notePath,
+          root: MODE_ROOT[mode],
+          box: EMBED_BOX,
+          rowSelector: ROWS[layout],
+        },
+        {
+          what: `the ${layout} embed's box scrolled far down its rows`,
+          ready: ({ top, shown }) => top >= 5000 && shown > 0,
+        },
+      );
+      // The note scrolls to its end, until the embed has left the page, and
+      // back to where it stood; the embed then shows its rows where it was,
+      // with no scroll of its own.
+      const back = await obRun(
+        vaultId,
+        async ({ app }, { notePath, root, scroller, box, rowSelector }) => {
+          const leaf = app.workspace
+            .getLeavesOfType("markdown")
+            .find((l) => (l.view as MarkdownView).file?.path === notePath)!;
+          const note =
+            leaf.view.containerEl.querySelector<HTMLElement>(scroller)!;
+          const host = leaf.view.containerEl
+            .querySelector(root)!
+            .querySelector<HTMLElement>(".zt-query-note")!;
+          const frame = () =>
+            new Promise((resolve) => requestAnimationFrame(resolve));
+          const saved = note.scrollTop;
+          const start = performance.now();
+          let gone = false;
+          while (performance.now() - start < 4000) {
+            note.scrollTop = note.scrollHeight;
+            await frame();
+            if (!host.isConnected) gone = true;
+            if (gone && performance.now() - start > 600) break;
+          }
+          note.scrollTop = saved;
+          const shownAt = performance.now();
+          let state = { connected: false, top: 0, shown: 0 };
+          while (performance.now() - shownAt < 3000) {
+            await frame();
+            const list = leaf.view.containerEl
+              .querySelector(root)
+              ?.querySelector(".zt-query-note")
+              ?.querySelector<HTMLElement>(box);
+            if (!list) continue;
+            const bounds = list.getBoundingClientRect();
+            const shown = [
+              ...list.querySelectorAll<HTMLElement>(rowSelector),
+            ].filter((row) => {
+              const r = row.getBoundingClientRect();
+              return (
+                r.height > 0 && r.bottom > bounds.top && r.top < bounds.bottom
+              );
+            }).length;
+            state = { connected: host.isConnected, top: list.scrollTop, shown };
+            if (shown > 0 && performance.now() - shownAt > 500) break;
+          }
+          return { gone, ...state };
+        },
+        {
+          notePath,
+          root: MODE_ROOT[mode],
+          scroller: NOTE_SCROLLER[mode],
+          box: EMBED_BOX,
+          rowSelector: ROWS[layout],
+        },
+        { timeoutMs: 60_000 },
+      );
+      // The note took the embed off the page, and put the same one back.
+      expect(back.gone).toBe(true);
+      expect(back.connected).toBe(true);
+      expect(Math.abs(back.top - deep.top)).toBeLessThanOrEqual(1);
+      expect(back.shown).toBeGreaterThan(0);
+    },
+    120_000,
+  );
 });

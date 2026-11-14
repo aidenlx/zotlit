@@ -322,7 +322,17 @@ export function useVirtualRows({
     observeElementRect: (instance, cb) => {
       const el = instance.scrollElement;
       if (!el) return;
-      const read = () => cb({ width: el.clientWidth, height: el.clientHeight });
+      let shown = el.clientHeight > 0;
+      const read = () => {
+        // A note takes an embed off the page as it scrolls far from it, and
+        // puts the same element back: the browser then shows the scroller
+        // at its top, with no scroll event. It scrolls back to where the
+        // rows stand, and the scroll event tells the virtualizer.
+        if (!shown && el.clientHeight > 0 && instance.scrollOffset)
+          el.scrollTop = instance.scrollOffset;
+        shown = el.clientHeight > 0;
+        cb({ width: el.clientWidth, height: el.clientHeight });
+      };
       read();
       const observing = observeResize(el, [el], read);
       return () => observing[Symbol.dispose]();
