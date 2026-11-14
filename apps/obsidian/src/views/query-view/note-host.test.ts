@@ -107,6 +107,17 @@ async function setup(kind: HostKind) {
     Promise.resolve(EMPTY),
   );
   const runtime = testRuntime();
+  /**
+   * Where each view stands: on screen as it loads, or `far` from it until
+   * `come` brings it near.
+   */
+  const screen = {
+    far: false,
+    waiting: new Map<HTMLElement, () => void>(),
+    come(el: HTMLElement) {
+      screen.waiting.get(el)?.();
+    },
+  };
   const deps = stubService<QueryViewDeps & QueryHostDeps>("QueryViewDeps", {
     runtime,
     registry: testAnnotHost().registry,
@@ -126,6 +137,14 @@ async function setup(kind: HostKind) {
     }),
     query: fakeQuery(run),
     cardFocus,
+    nearScreen: (el, near) => {
+      if (!screen.far) {
+        near();
+        return () => {};
+      }
+      screen.waiting.set(el, near);
+      return () => screen.waiting.delete(el);
+    },
     opener: stubService<QueryViewDeps["opener"]>("TargetOpener", {}),
     literatureNotes: noLiteratureNotes(),
   });
@@ -236,7 +255,7 @@ async function setup(kind: HostKind) {
     cleanup.defer(() => act(unload));
     return { el, view: viewOf(el), unload };
   }
-  return { host, run, show, hold, block, scopes, cardFocus };
+  return { host, run, show, hold, block, scopes, cardFocus, screen };
 }
 
 describe.each<HostKind>(["embed", "block"])("a %s", (kind) => {
@@ -272,6 +291,36 @@ describe.each<HostKind>(["embed", "block"])("a %s", (kind) => {
     expect(run.mock.calls.at(-1)![0].context).toBeUndefined();
   });
 
+  it("runs nothing until it comes near the screen, and runs then with the note's last Item", async () => {
+    const { show, run, host, screen } = await setup(kind);
+    screen.far = true;
+    let held: Held | undefined;
+    await act(async () => {
+      held = await show("notes/Lab.md", document.body);
+    });
+    const { el, view } = held!;
+    let settled = false;
+    void view.settled.then(() => {
+      settled = true;
+    });
+    // The note's Item changes while the view waits, which asks for a run.
+    await act(async () => {
+      host.vault.modifyFile("notes/Lab.md", NOTE("SMITHJ25"));
+      await delay(50);
+    });
+    expect(run).not.toHaveBeenCalled();
+    expect(view.state.getState().phase).toBe("waiting");
+    expect(settled).toBe(false);
+
+    await act(async () => {
+      screen.come(el);
+      await view.settled;
+    });
+    expect(run).toHaveBeenCalledTimes(1);
+    expect(run.mock.calls[0]![0].context).toEqual({ item: "SMITHJ25" });
+    expect(view.state.getState().phase).toBe("ready");
+  });
+
   it("settles with its first rows when it comes near the screen before it reads its text", async () => {
     const { show, run } = await setup(kind);
     const answer = Promise.withResolvers<QueryViewOutcome>();
@@ -292,8 +341,9 @@ describe.each<HostKind>(["embed", "block"])("a %s", (kind) => {
     expect(phase).toBe("ready");
   });
 
-  it("settles once the first rows show, as Export to PDF waits for it", async () => {
-    const { show, run } = await setup(kind);
+  it("settles once the first rows show, as Export to PDF waits for it, though it stands far from the screen", async () => {
+    const { show, run, screen } = await setup(kind);
+    screen.far = true;
     const answer = Promise.withResolvers<QueryViewOutcome>();
     run.mockReturnValueOnce(answer.promise);
     const print = document.body.createDiv({ cls: "print" });

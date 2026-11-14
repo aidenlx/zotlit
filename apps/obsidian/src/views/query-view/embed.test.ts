@@ -107,6 +107,11 @@ async function setup() {
     }),
     query: fakeQuery(run),
     cardFocus: new QueryCardFocus(app),
+    // Every embed stands on screen.
+    nearScreen: (_el, near) => {
+      near();
+      return () => {};
+    },
     opener: stubService<QueryViewDeps["opener"]>("TargetOpener", {}),
     literatureNotes: noLiteratureNotes(),
   });

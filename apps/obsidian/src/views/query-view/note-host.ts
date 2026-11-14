@@ -82,7 +82,7 @@ export class NoteQueryHost extends Component {
     // it stands within a screen of what the note shows, so the ones on
     // screen come first. One the note hides, as a folded callout or the
     // editor behind Reading view does, runs once it shows.
-    this.register(whenNear(this.#el, () => this.#start.resolve()));
+    this.register(this.#deps.nearScreen(this.#el, () => this.#start.resolve()));
     this.register(
       this.#query.state.subscribe((state) => {
         const settled =
@@ -147,7 +147,7 @@ export class NoteQueryHost extends Component {
  * shows, in whichever window shows it; an element the note hides never
  * comes near. Returns what ends the watch.
  */
-function whenNear(el: HTMLElement, near: () => void): () => void {
+export function whenNear(el: HTMLElement, near: () => void): () => void {
   let observer: IntersectionObserver | null = null;
   let frame: { win: Window; id: number } | null = null;
   let done = false;
@@ -160,17 +160,13 @@ function whenNear(el: HTMLElement, near: () => void): () => void {
   const watch = (win: Window) => {
     end();
     if (done) return;
-    const { IntersectionObserver } = win as Partial<typeof window>;
-    // A test window may have none: the view runs at once.
-    if (!IntersectionObserver) {
-      done = true;
-      return near();
-    }
     // The element joins the note after the host loads; its box is known then.
     if (!el.isConnected) {
       frame = { win, id: win.requestAnimationFrame(() => watch(win)) };
       return;
     }
+    // The window's own observer: a pop-out window has one of its own.
+    const { IntersectionObserver } = win as typeof window;
     observer = new IntersectionObserver(
       (entries) => {
         if (!entries.some((entry) => entry.isIntersecting)) return;

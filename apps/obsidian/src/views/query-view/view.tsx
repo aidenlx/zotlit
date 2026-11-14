@@ -127,6 +127,11 @@ export interface QueryViewDeps extends AnnotationsLayoutDeps {
   runtime: SubscriptionRuntime;
   /** The keyboard of a view that a note holds, which the embed and the block share. */
   cardFocus: Pick<QueryCardFocus, "hold">;
+  /**
+   * Call `near` once `el`, a view that a note holds, comes near the screen;
+   * returns what ends the watch. The view runs then (see `note-host.ts`).
+   */
+  nearScreen: (el: HTMLElement, near: () => void) => () => void;
   /** What the Table's Literature Note Property reads and does. */
   literatureNotes: LiteratureNotes;
 }
