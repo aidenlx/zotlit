@@ -62,6 +62,7 @@ import { CardsLayout } from "./cards-layout";
 import { contextHint } from "./context-hint";
 import type { ContextSource } from "./context-hint";
 import { datasetSpec, grouping } from "./datasets";
+import { DrawLatch } from "./draw-latch";
 import { FilterButton } from "./filter-popover";
 import { GroupEditor } from "./group-control";
 import type { ItemRowGestures } from "./item-rows";
@@ -126,6 +127,11 @@ export interface QueryViewDeps extends AnnotationsLayoutDeps {
   runtime: SubscriptionRuntime;
   /** The keyboard of a view that a note holds, which the embed and the block share. */
   cardFocus: Pick<QueryCardFocus, "hold">;
+  /**
+   * Call `near` once `el`, a view that a note holds, comes near the screen;
+   * returns what ends the watch. The view runs then (see `note-host.ts`).
+   */
+  nearScreen: (el: HTMLElement, near: () => void) => () => void;
   /** What the Table's Literature Note Property reads and does. */
   literatureNotes: LiteratureNotes;
 }
@@ -172,6 +178,14 @@ export interface QueryViewHost {
   canSave?: () => boolean;
   /** Open the Query File; the toolbar shows a link button when the host gives it. */
   openFile?: (event: MouseEvent) => void;
+  /**
+   * What the view waits for before it runs, as a note's view waits to come
+   * near the screen. Until it settles the view's phase is `waiting`: a run
+   * asked for meanwhile waits, and the last one starts as it settles;
+   * {@link QueryView.settled} waits for that run. Absent: the view runs as
+   * asked.
+   */
+  start?: Promise<void>;
   /**
    * What the host gives the Annotations Layout beside the Scope and the
    * source path: the sidebar's own gestures and its list frame.
@@ -353,7 +367,8 @@ export interface QueryViewState {
   view: QueryFileView | null;
   /** What keeps the view from running, for the file and for the view. */
   problems: readonly string[];
-  phase: "idle" | "loading" | "ready" | "failed";
+  /** `waiting`: the view waits for its host's {@link QueryViewHost.start}. */
+  phase: "waiting" | "idle" | "loading" | "ready" | "failed";
   /**
    * The rows of the last run that gave rows, with what that run says about
    * them; `null` while no rows are on screen. A failed run keeps them whole
@@ -521,13 +536,27 @@ export class QueryView extends Component implements HistorySurface {
    */
   #shownBinding: string | null = null;
   #settled: Promise<void> = Promise.resolve();
+  /**
+   * The wait for the host's {@link QueryViewHost.start}: whether it settled,
+   * whether a run waits for it, and what {@link settled} gives until the
+   * first run after it; `null` once that run starts.
+   */
+  #waiting: {
+    open: boolean;
+    asked: boolean;
+    first: PromiseWithResolvers<void>;
+  } | null = null;
   #subscriptions: DisposableStack | null = null;
   /** Whether the view draws into an element; until then no card waits to show. */
   #rendered = false;
-  /** The cards the list last drew, as the layout's store held them. */
-  #drawnCards: AnnotState["annotations"] | undefined = undefined;
-  /** What waits for the list to draw the cards the store holds now. */
-  #drawWaiters: (() => void)[] = [];
+  /** A print's wait for the list to draw the cards the store holds now. */
+  readonly #cards = new DrawLatch(
+    () => this.#layout.store.getState().annotations,
+  );
+  /** A print's wait for an Items layout to draw the records of the last run. */
+  readonly #records = new DrawLatch(
+    () => (this.state.getState().results ?? NO_RESULTS).records,
+  );
   #rerunTimer: { id: number; win: Window } | null = null;
   /** The element the view draws into, once it draws. */
   #el: HTMLElement | null = null;
@@ -560,6 +589,7 @@ export class QueryView extends Component implements HistorySurface {
       host: () => this.vaultHost(),
       notes: deps.literatureNotes,
     });
+    if (host.start) this.#wait(host.start);
   }
 
   /**
@@ -641,11 +671,34 @@ export class QueryView extends Component implements HistorySurface {
    * Elsewhere it settles as {@link settled}. Never rejects.
    */
   async shownIn(el: HTMLElement): Promise<void> {
+    // A view that does not draw has nothing to wait for.
+    if (el.closest(".print") === null || !this.#rendered) return this.settled;
+    return this.drawn();
+  }
+
+  /**
+   * Settles once the Layout has drawn the rows of the last run the view
+   * started, which can be a paint after the state that holds them. Never
+   * rejects.
+   */
+  async drawn(): Promise<void> {
     await this.settled;
-    // A List or Cards layout draws its rows from the state, with no list of
-    // cards to wait for.
-    if (el.closest(".print") !== null && this.#cardsShown)
-      await this.#cardsDrawn();
+    // A view that unloaded meanwhile draws nothing more.
+    if (!this.#rendered) return;
+    if (this.#cardsShown) return this.#cards.drawn();
+    // Only a run that gave rows has records for a Layout to draw: a view
+    // the file lacks, a problem or a failed run draws a message.
+    const { phase, results } = this.state.getState();
+    if (phase === "ready" && results !== null) await this.#records.drawn();
+  }
+
+  /**
+   * An Items layout (Papers, Table, List, Cards) drew these records. As for
+   * the cards, a hidden print window can draw them later than the run that
+   * read them.
+   */
+  drewRecords(records: ResultSnapshot["records"]): void {
+    this.#records.drew(records);
   }
 
   /**
@@ -654,20 +707,7 @@ export class QueryView extends Component implements HistorySurface {
    * than the read that made it.
    */
   drewCards(cards: AnnotState["annotations"]): void {
-    this.#drawnCards = cards;
-    if (cards !== this.#layout.store.getState().annotations) return;
-    const waiters = this.#drawWaiters;
-    this.#drawWaiters = [];
-    for (const resolve of waiters) resolve();
-  }
-
-  #cardsDrawn(): Promise<void> {
-    if (
-      !this.#rendered ||
-      this.#drawnCards === this.#layout.store.getState().annotations
-    )
-      return Promise.resolve();
-    return new Promise((resolve) => this.#drawWaiters.push(resolve));
+    this.#cards.drew(cards);
   }
 
   override onload(): void {
@@ -743,9 +783,13 @@ export class QueryView extends Component implements HistorySurface {
     this.#runRequest = null;
     this.#rendered = false;
     this.#el = null;
-    const waiters = this.#drawWaiters;
-    this.#drawWaiters = [];
-    for (const resolve of waiters) resolve();
+    this.#cards.release();
+    this.#records.release();
+  }
+
+  /** Whether the view draws for Export to PDF, which prints every row. */
+  get printing(): boolean {
+    return this.#el?.closest(".print") != null;
   }
 
   /** Draw the toolbar and the cards into `el`. Call it once the view has loaded. */
@@ -999,8 +1043,48 @@ export class QueryView extends Component implements HistorySurface {
     this.#refresh(false);
   }
 
+  /**
+   * Run nothing until `start` settles (see {@link QueryViewHost.start}); the
+   * last run asked for meanwhile starts then. {@link settled} waits for the
+   * first run after it, also where the host gives the view its text later.
+   */
+  #wait(start: Promise<void>): void {
+    const waiting = {
+      open: false,
+      asked: false,
+      first: Promise.withResolvers<void>(),
+    };
+    this.#waiting = waiting;
+    this.#settled = waiting.first.promise;
+    this.state.setState({ phase: "waiting" });
+    void start.then(() => {
+      waiting.open = true;
+      if (waiting.asked) this.refresh();
+      else this.state.setState({ phase: "idle" });
+    });
+  }
+
   /** @param fromList whether a list change asked for the run. */
   #refresh(fromList: boolean): void {
+    const waiting = this.#waiting;
+    if (waiting && !waiting.open) {
+      waiting.asked = true;
+      return;
+    }
+    this.#waiting = null;
+    try {
+      this.#run(fromList);
+    } finally {
+      // The first run after the start settles what `settled` gave meanwhile.
+      if (waiting) {
+        const { first } = waiting;
+        if (this.#settled === first.promise) this.#settled = Promise.resolve();
+        first.resolve(this.#settled);
+      }
+    }
+  }
+
+  #run(fromList: boolean): void {
     this.#finishRun?.();
     this.#finishRun = null;
     this.registry.set(this.#runCommand, Atom.Reset);
@@ -1477,9 +1561,13 @@ function rankedLayout(
 /** The rows, drawn by the shown view's Layout. */
 function LayoutBody({ view }: { view: QueryView }) {
   const type = useQueryViewState(view, (s) =>
-    s.view ? layoutOf(s.view)?.type : undefined,
+    s.view ? layoutOf(s.view)?.type : null,
   );
   switch (type) {
+    // No view to draw, as before the host gives the view its text: the
+    // body takes no room that the rows then give back.
+    case null:
+      return null;
     case "list":
       return <ListLayout view={view} />;
     case "cards":
@@ -1628,8 +1716,12 @@ function QueryViewBody({ view }: { view: QueryView }) {
   const toolbarName = useUniqueId();
   return (
     // A host's column can give the body its height, `grow` where the host
-    // is a flex column, as the Library View's list is.
-    <div className="zt:flex zt:h-full zt:grow zt:flex-col zt:in-[.print]:h-auto">
+    // is a flex column, as the Library View's list is. In a note the body
+    // stands no taller than `--zt-query-note-max-height`, the height
+    // Obsidian gives a Kanban Base, and the rows scroll in the layout: a
+    // long list neither stretches the note nor draws as the note scrolls.
+    // Export to PDF prints every row.
+    <div className="zt:flex zt:h-full zt:min-h-0 zt:grow zt:flex-col zt:in-[.print]:h-auto zt:not-in-[.print]:in-[.zt-query-note]:max-h-[var(--zt-query-note-max-height,500px)]">
       {/* The toolbar is a size container: on a narrow pane its buttons show
           icons only, and it stays one row. In a Query File tab it runs to
           the pane's edges, as the Bases header does (see file-view.css).

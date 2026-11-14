@@ -96,6 +96,7 @@ Add a new case to the area file that matches its feature (create a new area file
 | `query-file.e2e.ts` | Query File tabs, new-query hotkey |
 | `query-view.e2e.ts`, `query-view-properties.e2e.ts`, `query-view-table.e2e.ts`, `query-view-filter.e2e.ts` | Query View UI, formulas, table and Items layout, the Filter's property list |
 | `library-view.e2e.ts`, `library-view-navigation.e2e.ts`, `library-view-reading.e2e.ts` | Library View browsing, search, Reading Card |
+| `library-view-long-list.e2e.ts` | Long lists on an isolated Stress Build: the Library View's Papers and Table rows mounted near the screen, Show in Library and the arrow keys past them, a long Query File embed, and its Export to PDF |
 | `literature-notes.e2e.ts` | Literature Note create/update, profiles, match workbench |
 | `template-workbench.e2e.ts` | Template Workbench editing: Properties rows keep their example values through a reorder while the preview renders again |
 | `local-bridge.e2e.ts` | Local Bridge / web workbench (needs `WEB_WORKBENCH_ENABLED=true`) |

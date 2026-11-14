@@ -6,9 +6,12 @@
 // as a Bases cell does, by the property's type: one line of text, a link, a
 // number at the end, a checkbox, a date in the locale's form, or a row of
 // items or tags, clipped at the cell's edge; an edit opens over the cell and
-// grows down over the rows below, so no row moves. A key the note's Profile
-// replaces on each update stays read-only. On a row with no note, the commit
-// of an edit creates the note first; opening the editor creates nothing.
+// grows down over the rows below, or up over the rows above where its box
+// shows more room above the cell, so no row moves and the box keeps its
+// length. A key the note's
+// Profile replaces on each update stays read-only. On a row with no note,
+// the commit of an edit creates the note first; opening the editor creates
+// nothing.
 //
 // @see apps/obsidian/docs/adr/0070-vault-properties-are-answered-outside-zotlit-query.md
 import { Effect } from "effect";
@@ -208,12 +211,11 @@ export function VaultCell(props: VaultCellProps) {
 /**
  * The line a Table cell shows at rest: one line a row tall, which clips what
  * does not fit. What it holds takes the {@link LINE} the editor takes, so
- * the text does not move when an edit opens. A column the researcher sized
- * takes its width from its header; another stops at the width of a Bases
- * column.
+ * the text does not move when an edit opens. It takes its width from its
+ * column's header.
  */
 const REST =
-  "zt:flex zt:h-(--bases-table-row-height) zt:max-w-75 zt:min-w-0 zt:items-center zt:overflow-hidden zt:whitespace-nowrap zt:group-data-sized/cell:w-0 zt:group-data-sized/cell:max-w-none zt:group-data-sized/cell:min-w-full";
+  "zt:flex zt:h-(--bases-table-row-height) zt:w-0 zt:min-w-full zt:items-center zt:overflow-hidden zt:whitespace-nowrap";
 
 /** What a Table cell shows of its value at rest, by the property's type. */
 function VaultPreview({
@@ -364,8 +366,9 @@ function neighbour(
  * and edits as a Bases cell does. The whole cell is the target of an edit,
  * by a click or by Enter or Space, where the note's Profile does not
  * replace the key; a click toggles a checkbox. The editor opens over the
- * cell in the Bases edit ring and grows down over the rows below, so no row
- * moves. Enter, Tab or focus leaving the editor writes it, creating the
+ * cell in the Bases edit ring and grows down over the rows below, or up
+ * over the rows above where the box shows more room above, so no row moves.
+ * Enter, Tab or focus leaving the editor writes it, creating the
  * note where the Item has none; Escape drops it. After Enter or Escape
  * focus returns to the cell; Tab and Shift+Tab move it to the next or the
  * previous vault cell of the row. The click stops at the cell, so the
@@ -386,6 +389,37 @@ export function VaultEditCell(props: VaultCellProps) {
   const cell = useRef<HTMLDivElement>(null);
   const labelId = useUniqueId();
   const editing = draft !== null;
+  const editor = useRef<HTMLDivElement>(null);
+  // The editor grows down from the cell, or up over the rows above where the
+  // box shows more room above the cell, under its header, than below it (a
+  // long Table clips the editor at the box's end). The side holds while the
+  // edit lasts, so text that grows the editor does not move it, and the
+  // larger room takes the text a reader adds.
+  const [up, setUp] = useState(false);
+  useLayoutEffect(() => {
+    const el = editor.current;
+    const at = cell.current;
+    const box = at?.closest<HTMLElement>(".zt-table-scroller");
+    if (!el || !at || !box) return;
+    // A cell shown in part comes into view whole, as the focus of its field
+    // would bring it, its part under the header too.
+    at.scrollIntoView({
+      block: "nearest",
+      inline: "nearest",
+      behavior: "instant",
+    });
+    const top = box.getBoundingClientRect().top + box.clientTop;
+    const end = top + box.clientHeight;
+    // The rows show under the header, which stays at the box's top.
+    const start = top + (box.querySelector("thead")?.offsetHeight ?? 0);
+    // A part of a pixel is the rounding of a height.
+    const under = at.getBoundingClientRect().top - start;
+    if (under < -0.5) box.scrollTop += under;
+    const rect = at.getBoundingClientRect();
+    const below = end - rect.top;
+    const above = rect.bottom - start;
+    setUp(above > below);
+  }, [editing]);
   useLayoutEffect(() => {
     const how = after.current;
     if (editing || how === null) return;
@@ -584,8 +618,11 @@ export function VaultEditCell(props: VaultCellProps) {
         )}
         {draft !== null && (
           <div
+            ref={editor}
             data-query-vault-editor=""
-            className="zt:absolute zt:inset-x-0 zt:top-0 zt:z-1 zt:min-h-(--bases-table-row-height) zt:rounded-(--bases-table-cell-radius-focus) zt:bg-(--background-primary) zt:shadow-(--bases-table-cell-shadow-focus)"
+            data-up={up ? "" : undefined}
+            // Up, a one-line editor stands where it stands down.
+            className="zt:absolute zt:inset-x-0 zt:top-0 zt:z-1 zt:min-h-(--bases-table-row-height) zt:rounded-(--bases-table-cell-radius-focus) zt:bg-(--background-primary) zt:shadow-(--bases-table-cell-shadow-focus) zt:data-up:top-auto zt:data-up:-bottom-(--border-width)"
           >
             <VaultEditor
               type={type}

@@ -1632,6 +1632,262 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     expect((await readFile(pdfPath)).subarray(0, 5).toString()).toBe("%PDF-");
   }, 240000);
 
+  it.each(["preview", "source"] as const)(
+    "exports a note to PDF from %s whose Query Block holds no view, with the embed's rows and the block's problem",
+    async (mode) => {
+      const notePath = `query-files/Export no view ${mode}.md`;
+      const pdfPath = join(
+        workspaceRoot,
+        ".scratch",
+        `e2e-query-no-view-${mode}.pdf`,
+      );
+      const layout = await obRun(
+        run.vaultId,
+        async ({ app }) => {
+          return JSON.stringify(app.workspace.getLayout());
+        },
+        undefined,
+      );
+      await using cleanup = new AsyncDisposableStack();
+      cleanup.defer(async () => {
+        await rm(pdfPath, { force: true });
+        await obRun(
+          run.vaultId,
+          async ({ app }, { layout, notePath }) => {
+            await app.workspace.changeLayout(JSON.parse(layout));
+            const file = app.vault.getFileByPath(notePath)!;
+            if (file) await app.vault.delete(file);
+          },
+          { layout, notePath },
+        );
+      });
+      const note = [
+        "---",
+        "zotero-key: SAKIMA22",
+        "---",
+        "![[Lab annotations.zotquery#This item]]",
+        "",
+        "```zotquery",
+        "views: []",
+        "```",
+        "",
+      ].join("\n");
+
+      // Obsidian's own Export to PDF, as in the case above. A print that waits
+      // past the deadline for a view that draws no rows ends the case.
+      const printed = JSON.parse(
+        await obRun(
+          run.vaultId,
+          async ({ app }, { notePath, note, pdfPath, mode }) => {
+            const file = await app.vault.create(notePath, note);
+            const leaf = app.workspace.getLeaf("tab");
+            await leaf.openFile(file, { state: { mode } });
+            app.workspace.setActiveLeaf(leaf, { focus: true });
+            const modalProto = Object.getPrototypeOf(
+              Object.getPrototypeOf(Object.getPrototypeOf(app.setting)),
+            ) as Pick<QueryPrintModal, "open">;
+            const open = modalProto.open;
+            const capture: { modal: QueryPrintModal | null } = { modal: null };
+            modalProto.open = new Proxy(open, {
+              apply(target, receiver: QueryPrintModal, args) {
+                capture.modal = receiver;
+                return Reflect.apply(target, receiver, args);
+              },
+            });
+            try {
+              (
+                leaf.view as import("obsidian").MarkdownView & {
+                  printToPdf(): void;
+                }
+              ).printToPdf();
+            } finally {
+              modalProto.open = open;
+            }
+            const modal = capture.modal!;
+            modal.close();
+            let views: {
+              host: string;
+              cards: number;
+              problem: string | null;
+            }[] = [];
+            const print = modal.print.bind(modal);
+            modal.print = async (
+              el: HTMLElement,
+              component: import("obsidian").Component,
+              includeName: boolean,
+            ) => {
+              const out = await print(el, component, includeName);
+              views = [
+                ...el.querySelectorAll<HTMLElement>(".zt-query-view"),
+              ].map((view) => ({
+                host: view.classList.contains("internal-embed")
+                  ? "embed"
+                  : view.classList.contains("block-language-zotquery")
+                    ? "block"
+                    : "other",
+                cards: view.querySelectorAll(".zt-annot-card").length,
+                problem:
+                  view.querySelector("[data-query-problems]")?.textContent ??
+                  null,
+              }));
+              return out;
+            };
+            const outcome = await Promise.race([
+              modal
+                .printToPdf({
+                  filepath: pdfPath,
+                  includeName: true,
+                  pageSize: "A4",
+                  landscape: false,
+                  marginsType: 0,
+                  scaleFactor: 100,
+                  scale: 1,
+                  open: false,
+                })
+                .then(() => "printed"),
+              new Promise((resolve) => setTimeout(resolve, 30000, "timed out")),
+            ]);
+            return JSON.stringify({ outcome, views });
+          },
+          { notePath, note, pdfPath, mode },
+          { timeoutMs: 60000 },
+        ),
+      ) as {
+        outcome: string;
+        views: { host: string; cards: number; problem: string | null }[];
+      };
+      expect(printed.outcome).toBe("printed");
+      expect(printed.views).toEqual([
+        { host: "embed", cards: expect.any(Number), problem: null },
+        {
+          host: "block",
+          cards: 0,
+          problem: expect.stringContaining(run.m.query_view_problem_no_views()),
+        },
+      ]);
+      expect(printed.views[0]!.cards).toBeGreaterThan(1);
+      expect((await readFile(pdfPath)).subarray(0, 5).toString()).toBe("%PDF-");
+    },
+    120000,
+  );
+
+  it.each(["preview", "source"] as const)(
+    "moves the text under a short Query Block in %s at most once, and only down, as the note first opens",
+    async (mode) => {
+      // A note of its own for each mode: the session remembers the height a
+      // view drew at, and this case is about a view the note never drew.
+      const notePath = `query-files/Short block first open ${mode}.md`;
+      const layout = await obRun(
+        run.vaultId,
+        async ({ app }) => {
+          return JSON.stringify(app.workspace.getLayout());
+        },
+        undefined,
+      );
+      await using cleanup = new AsyncDisposableStack();
+      cleanup.defer(async () => {
+        await obRun(
+          run.vaultId,
+          async ({ app }, { layout, notePath }) => {
+            await app.workspace.changeLayout(JSON.parse(layout));
+            const file = app.vault.getFileByPath(notePath)!;
+            if (file) await app.vault.delete(file);
+          },
+          { layout, notePath },
+        );
+      });
+      const note = [
+        "# Short block",
+        "",
+        "```zotquery",
+        "views:",
+        "  - type: papers",
+        "    name: Three papers",
+        "    from: items",
+        "    limit: 3",
+        "```",
+        "",
+        "The end.",
+        "",
+      ].join("\n");
+      /**
+       * The place of the text under the block in the note, on each frame
+       * from the moment the note opens until its rows have drawn: `null`
+       * while the text is not on the page.
+       */
+      const { tops, rows } = await obRun(
+        run.vaultId,
+        async ({ app }, { notePath, note, mode }) => {
+          const file = await app.vault.create(notePath, note);
+          const leaf = app.workspace.getLeaf("tab");
+          const frame = () =>
+            new Promise((resolve) => requestAnimationFrame(resolve));
+          const scroller =
+            mode === "preview" ? ".markdown-preview-view" : ".cm-scroller";
+          const below = () => {
+            const box =
+              leaf.view.containerEl.querySelector<HTMLElement>(scroller);
+            const text = [
+              ...(box?.querySelectorAll<HTMLElement>("p, .cm-line") ?? []),
+            ].find((el) => el.textContent.trim() === "The end.");
+            if (!box || !text) return null;
+            return (
+              text.getBoundingClientRect().top -
+              box.getBoundingClientRect().top +
+              box.scrollTop
+            );
+          };
+          const host = () =>
+            leaf.view.containerEl.querySelector<
+              HTMLElement & {
+                zotlitQueryView?: { state: { getState(): { phase: string } } };
+              }
+            >(`${scroller} .zt-query-note`);
+          const tops: (number | null)[] = [];
+          let sampling = true;
+          const sampled = (async () => {
+            while (sampling) {
+              tops.push(below());
+              await frame();
+            }
+          })();
+          await leaf.openFile(file, { state: { mode } });
+          app.workspace.setActiveLeaf(leaf, { focus: true });
+          // Until the rows have drawn and the view let its room go, then a
+          // little longer.
+          const deadline = performance.now() + 20000;
+          while (
+            performance.now() < deadline &&
+            !(
+              host()?.zotlitQueryView?.state.getState().phase === "ready" &&
+              !host()!.hasAttribute("data-query-waiting")
+            )
+          )
+            await frame();
+          for (let i = 0; i < 30; i++) await frame();
+          sampling = false;
+          await sampled;
+          return {
+            tops,
+            rows: host()?.querySelectorAll("[data-query-papers-row]").length,
+          };
+        },
+        { notePath, note, mode },
+        { timeoutMs: 60000 },
+      );
+      expect(rows).toBe(3);
+      const placed = tops.filter((top): top is number => top !== null);
+      // The places the text stood at, in order, one entry per move.
+      const moves = placed.filter(
+        (top, i) => i === 0 || Math.abs(top - placed[i - 1]!) > 0.5,
+      );
+      // At most one move, and down: each place lower than the one before.
+      expect(moves.length, JSON.stringify(moves)).toBeLessThanOrEqual(2);
+      expect(moves).toEqual(moves.toSorted((a, b) => a - b));
+    },
+    90000,
+  );
+
   it("filters a Query File tab from its Filter popover, and the file text and the cards follow", async () => {
     const layout = await obRun(
       run.vaultId,

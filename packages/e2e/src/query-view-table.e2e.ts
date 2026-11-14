@@ -18,6 +18,7 @@ import { obRun } from "./obsidian-cli.ts";
 import { obRunUntil } from "./obsidian-cli.ts";
 import { cliCommand, waitFor } from "./obsidian-cli.ts";
 import { raiseWindow } from "./reader-gestures.ts";
+import { expectEditorSide, openEditorAt } from "./vault-editor-side.ts";
 describe.skipIf(!reachable)("End-to-end Run", () => {
   registerEndToEndRunHooks();
 
@@ -1572,6 +1573,158 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     );
     expect(sorted.rows).toEqual([tieSecond, tieFirst]);
   }, 180000);
+
+  // A vault cell's editor stands over the rows out of the flow: it grows
+  // down from a row in the middle of a Table that scrolls, and up from the
+  // last row, where the box shows nothing below it. Neither open moves a row
+  // or the box's length.
+  it("opens a vault cell's editor down from a middle row and up from the last row, inside the box, with no row moved", async () => {
+    const path = "query-files/Editor side.zotquery";
+    // The vault cells showcase notes, the paper with the longest note last.
+    const keys = [
+      "BUSH45AA",
+      "GRFLD55A",
+      "NELSN65A",
+      "SMALL73A",
+      "LHMNN82A",
+      "BRNRS52A",
+      "AHRNS27A",
+      "MATSC29A",
+    ];
+    const [last, middle] = ["BUSH45AA", "NELSN65A"] as const;
+    const layout = await obRun(run.vaultId, ({ app }) =>
+      JSON.stringify(app.workspace.getLayout()),
+    );
+    // The middle paper's note holds the last one's long note too, so the
+    // side follows the row's place alone.
+    const seeded = await obRun(
+      run.vaultId,
+      async ({ app, zotlit }, { last, middle }) => {
+        const noteOf = (key: string) =>
+          zotlit.services.bridge.runSync(
+            zotlit.services.noteIndex.getNotesByItemKey(key),
+          )[0]!;
+        const target = noteOf(middle);
+        const original = await app.vault.read(target);
+        const text = app.metadataCache.getFileCache(noteOf(last))!.frontmatter![
+          "note"
+        ] as string;
+        await app.fileManager.processFrontMatter(target, (fm) => {
+          fm["note"] = text;
+        });
+        return { path: target.path, original, text };
+      },
+      { last, middle },
+    );
+    await using cleanup = new AsyncDisposableStack();
+    cleanup.defer(async () => {
+      await obRun(
+        run.vaultId,
+        async ({ app }, { path, seeded, layout }) => {
+          for (const leaf of app.workspace.getLeavesOfType("zotlit-query-file"))
+            leaf.detach();
+          const file = app.vault.getFileByPath(path);
+          if (file) await app.vault.delete(file);
+          await app.vault.modify(
+            app.vault.getFileByPath(seeded.path)!,
+            seeded.original,
+          );
+          await app.workspace.changeLayout(JSON.parse(layout));
+        },
+        { path, seeded, layout },
+      );
+    });
+    await obRun(
+      run.vaultId,
+      async ({ app }, { path, keys }) => {
+        await app.vault.create(
+          path,
+          [
+            "views:",
+            "  - type: table",
+            "    name: Editor side",
+            "    from: items",
+            `    filters: '${JSON.stringify(keys)}.contains(indexedKey)'`,
+            "    sort:",
+            "      - property: title",
+            "        direction: DESC",
+            "    order:",
+            "      - title",
+            "      - vault.note",
+            "      - vault.summary",
+            "",
+          ].join("\n"),
+        );
+        const leaf = app.workspace.getLeaf("tab");
+        await leaf.openFile(app.vault.getFileByPath(path)!);
+        app.workspace.setActiveLeaf(leaf, { focus: true });
+      },
+      { path, keys },
+    );
+    await raiseWindow(run.vaultId);
+    // The Table stands in a box five rows tall under its header, so it
+    // scrolls, with the long note on its middle and its last row.
+    const rows = await obRunUntil(
+      run.vaultId,
+      async ({ app }, { middle, text }) => {
+        const view = app.workspace.getLeavesOfType("zotlit-query-file")[0]
+          ?.view as import("@/views/query-view/file-view").QueryFileView;
+        if (!view) return [];
+        await view.query.settled;
+        const box =
+          view.contentEl.querySelector<HTMLElement>(".zt-table-scroller");
+        const rows = [
+          ...(box?.querySelectorAll<HTMLElement>(
+            'tr[data-query-table-row="item"]',
+          ) ?? []),
+        ];
+        const shown = box
+          ?.querySelector(
+            `[data-query-key="${middle}"] [data-query-vault-name="note"]`,
+          )
+          ?.textContent?.includes(text);
+        if (!box || !shown || rows.length === 0) return [];
+        box.style.flex = "none";
+        box.style.height = `${box.querySelector("thead")!.offsetHeight + 5 * rows[0]!.offsetHeight}px`;
+        return rows.map((row) => row.getAttribute("data-query-key")!);
+      },
+      { middle, text: seeded.text },
+      {
+        what: "the Editor side Table with the long note on its middle row",
+        ready: (rows) => rows.length === keys.length,
+      },
+    );
+    expect(rows.at(-1)).toBe(last);
+    expect(rows.indexOf(middle)).toBeGreaterThan(0);
+    expect(rows.indexOf(middle)).toBeLessThan(keys.length - 2);
+
+    expectEditorSide(
+      await openEditorAt(run.vaultId, {
+        key: middle,
+        name: "note",
+        place: "top",
+      }),
+      false,
+    );
+    expectEditorSide(
+      await openEditorAt(run.vaultId, {
+        key: last,
+        name: "note",
+        place: "end",
+      }),
+      true,
+    );
+    // An empty cell on the last row opens one line tall and opens up too, so
+    // the text the reader types wraps over the rows above, inside the box.
+    const typed = await openEditorAt(run.vaultId, {
+      key: last,
+      name: "summary",
+      place: "end",
+      lines: 3,
+    });
+    expectEditorSide(typed, true);
+    expect(typed.caret, "the caret shown at the end of the text").toBe(true);
+  }, 120_000);
 
   // A List or Cards view of Items gathers its rows by a grouping whose
   // fields it does not show, as the Table does (#1495).

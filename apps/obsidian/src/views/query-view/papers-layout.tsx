@@ -7,7 +7,7 @@
 // of the Reading State.
 //
 // @see apps/obsidian/docs/adr/0075-the-papers-layout-is-a-query-view-layout-the-library-view-offers-with-the-table.md
-import { Fragment, useSyncExternalStore } from "react";
+import { Fragment, useMemo, useSyncExternalStore } from "react";
 import type { CSSProperties, ReactNode } from "react";
 
 import { resolveVenue } from "@zotlit/db";
@@ -21,14 +21,21 @@ import type { TargetOpenGesture } from "@/services/attachment-open/actions";
 import type { OpenTarget } from "@/services/attachment-open/open-target";
 import type { QueryViewValue } from "@/services/item-query/query-view";
 
+import { ExpanderSpace } from "./expander-space";
 import { useItemRow } from "./item-rows";
 import type { ItemRowGestures } from "./item-rows";
+import { ItemsWindow } from "./items-window";
+import type { DrawnEntry, WindowEntry } from "./items-window";
 import type { QueryLayout } from "./layouts";
 import { useQueryTask } from "./model";
-import { RecordGroupHeading, useRecordGroups } from "./record-rows";
+import {
+  HEADING_ESTIMATE,
+  RecordGroupHeading,
+  groupEntries,
+  useRecordGroups,
+} from "./record-rows";
 import {
   Expander,
-  ExpanderSpace,
   LOADING_TEXT,
   ReaderLink,
   TABLE_FIELDS,
@@ -172,45 +179,101 @@ function useNotePath(notes: LiteratureNotes, itemKey: string): string | null {
   );
 }
 
+/** The height of a Papers entry of each kind, before it is measured. */
+const ESTIMATES = { heading: HEADING_ESTIMATE, row: 46, line: 32 };
+
+/**
+ * The outline of a row not yet drawn, where a row draws its parts: past the
+ * room of the expand button, the type's icon on the title's line, a bar for
+ * the title and a shorter one for the second line, and the line under the
+ * row. The places follow the sizes the row's parts take: its padding, the
+ * expand button's, the icon's, and the lines of its two text sizes.
+ */
+const GHOST = cn(
+  "zt:bg-repeat-y zt:[--zt-ghost:var(--background-modifier-hover)]",
+  // The row's padding above its title, and the line of the title and of the
+  // second line.
+  "zt:[--zt-ghost-meta:calc(var(--font-ui-smaller)*var(--line-height-tight))] zt:[--zt-ghost-pad:var(--size-2-3)] zt:[--zt-ghost-title:calc(var(--font-ui-small)*var(--line-height-tight))]",
+  // The left of the icon, past the row's padding and the expand button with
+  // a gap after each; and of the text, past the icon and its gap.
+  "zt:[--zt-ghost-icon:calc(var(--size-4-1)+var(--icon-xs)+3*var(--size-2-3))] zt:[--zt-ghost-text:calc(var(--zt-ghost-icon)+var(--icon-s)+var(--size-2-3))]",
+  "zt:bg-[image:linear-gradient(to_bottom,transparent_calc(var(--zt-ghost-pad)+(var(--zt-ghost-title)-var(--icon-s))/2),var(--zt-ghost)_0_calc(var(--zt-ghost-pad)+(var(--zt-ghost-title)+var(--icon-s))/2),transparent_0),linear-gradient(to_bottom,transparent_calc(var(--zt-ghost-pad)+var(--zt-ghost-title)/2-0.35*var(--font-ui-small)),var(--zt-ghost)_0_calc(var(--zt-ghost-pad)+var(--zt-ghost-title)/2+0.35*var(--font-ui-small)),transparent_0),linear-gradient(to_bottom,transparent_calc(var(--zt-ghost-pad)+var(--zt-ghost-title)+var(--zt-ghost-meta)/2-0.35*var(--font-ui-smaller)),var(--zt-ghost)_0_calc(var(--zt-ghost-pad)+var(--zt-ghost-title)+var(--zt-ghost-meta)/2+0.35*var(--font-ui-smaller)),transparent_0),linear-gradient(to_bottom,transparent_calc(100%-var(--border-width)),var(--background-modifier-border)_0)]",
+  "zt:bg-size-[var(--icon-s)_var(--zt-virtual-row),min(55%,24rem)_var(--zt-virtual-row),min(35%,16rem)_var(--zt-virtual-row),100%_var(--zt-virtual-row)]",
+  "zt:bg-position-[var(--zt-ghost-icon)_0,var(--zt-ghost-text)_0,var(--zt-ghost-text)_0,0_0]",
+);
+
 /** The rows of the shown view as a reading list, under their group headings. */
 export function PapersLayout({ view }: { view: QueryView }) {
   const { groups } = useRecordGroups(view);
   const { literatureNotes, readers } = view.tableDeps;
   const { children: expanded, toggle } = useChildren(view);
+  const gestures = view.rows;
+  const entries = useMemo(() => groupEntries(groups), [groups]);
+  const windowEntries = useMemo(
+    () =>
+      entries.map((entry): WindowEntry => {
+        if (entry.kind === "heading")
+          return { key: entry.key, kind: "heading", item: null };
+        const { row } = entry.record;
+        return {
+          key: entry.key,
+          // A row with no second line is one line high.
+          kind:
+            metaText(row.values) !== "" || view.reason(row) !== null
+              ? "row"
+              : "line",
+          item: row.indexedKey,
+          own: expanded.has(id({ kind: "item", key: row.indexedKey })),
+        };
+      }),
+    [entries, expanded, view],
+  );
+  const draw = (index: number): DrawnEntry => {
+    const entry = entries[index]!;
+    if (entry.kind === "heading")
+      return {
+        // The heading drops its own top margin as the first child here; the
+        // entry keeps it after a row.
+        props: { className: cn(index > 0 && "zt:pt-2") },
+        children: <RecordGroupHeading group={entry.group} />,
+      };
+    const { row } = entry.record;
+    return {
+      props: {
+        className: "zt:border-b-(length:--border-width) zt:border-border",
+        "data-query-papers-row": row.indexedKey,
+      },
+      children: (
+        <PaperRow
+          item={{ kind: "item", key: row.indexedKey, values: row.values }}
+          reason={view.reason(row)}
+          notes={literatureNotes}
+          readers={readers}
+          expanded={expanded}
+          toggle={toggle}
+          gestures={gestures}
+        />
+      ),
+    };
+  };
   return (
-    <div
-      className="zt:min-h-0 zt:flex-1 zt:overflow-auto zt:px-1 zt:pb-11 zt:not-in-[.zt-query-note]:scroll-gutter zt:in-[.zt-query-note]:pb-2"
-      data-query-layout="papers"
-    >
-      {groups.map((group, groupIndex) => (
-        <section key={`${groupIndex}\n${group.key ?? ""}`}>
-          <RecordGroupHeading group={group} />
-          {!group.collapsed && (
-            <ul className="zt:m-0 zt:list-none zt:p-0">
-              {group.rows.map(({ row }, index) => {
-                const item: TableRecord = {
-                  kind: "item",
-                  key: row.indexedKey,
-                  values: row.values,
-                };
-                return (
-                  <PaperRow
-                    key={`${row.indexedKey}\n${index}`}
-                    item={item}
-                    reason={view.reason(row)}
-                    notes={literatureNotes}
-                    readers={readers}
-                    expanded={expanded}
-                    toggle={toggle}
-                    gestures={view.rows}
-                  />
-                );
-              })}
-            </ul>
-          )}
-        </section>
-      ))}
-    </div>
+    <ItemsWindow
+      view={view}
+      entries={windowEntries}
+      estimates={ESTIMATES}
+      box={{
+        className:
+          "zt:px-1 zt:pb-11 zt:not-in-[.zt-query-note]:scroll-gutter zt:in-[.zt-query-note]:pb-2",
+        "data-query-layout": "papers",
+      }}
+      flow={{
+        kind: "list",
+        as: "ul",
+        props: { className: "zt:m-0 zt:list-none zt:p-0" },
+        ghost: GHOST,
+      }}
+      draw={draw}
+    />
   );
 }
 
@@ -220,6 +283,7 @@ interface Expansion {
   readonly readers: TargetOpenGesture;
 }
 
+/** What a Papers row's `li` holds: the row, and the rows it expands into. */
 function PaperRow({
   item,
   notes,
@@ -246,14 +310,7 @@ function PaperRow({
   const kind = mainAttachmentKind(values);
   const typeIcon = itemTypeIcon(text(values.itemType) || null);
   return (
-    // `content-visibility: auto` lets the browser skip layout of the rows
-    // out of view: a sidebar collapse or a resize lays out the visible rows
-    // instead of the whole list. The size until a row is first laid out is
-    // that of a row of two lines.
-    <li
-      className="zt:border-b-(length:--border-width) zt:border-border zt:[contain-intrinsic-size:auto_2.875rem] zt:[content-visibility:auto]"
-      data-query-papers-row={item.key}
-    >
+    <>
       {/* A row the host lets take focus is a group named by its title: an
           `aria-label` would show a tooltip. */}
       <div
@@ -281,9 +338,11 @@ function PaperRow({
           />
         </FirstLine>
         <div className="zt:min-w-0 zt:flex-1">
+          {/* An Item with no title keeps the title's line, so the row's
+              height follows its second line alone. */}
           <div
             id={titleId}
-            className="zt:truncate zt:text-sm zt:font-(--font-medium) zt:text-foreground"
+            className="zt:min-h-lh zt:truncate zt:text-sm zt:font-(--font-medium) zt:text-foreground"
             data-query-papers-title=""
           >
             {text(values.title)}
@@ -337,7 +396,7 @@ function PaperRow({
           {note !== null && <LiteratureNoteRow notes={notes} item={item} />}
         </ul>
       )}
-    </li>
+    </>
   );
 }
 

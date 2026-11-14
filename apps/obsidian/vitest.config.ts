@@ -28,6 +28,8 @@ export default defineConfig({
       // The published `obsidian` package is types-only; redirect runtime
       // imports to our local mock so tests can `import { ... } from "obsidian"`.
       obsidian: resolve(packageRoot, "__mocks__/obsidian.ts"),
+      // Pretext measures text with a canvas, which the test DOM lacks.
+      "@chenglou/pretext": resolve(packageRoot, "__mocks__/pretext.ts"),
       "virtual:citation-parse-worker": resolve(
         packageRoot,
         "__mocks__/worker-source.ts",
@@ -71,7 +73,11 @@ export default defineConfig({
       deps: {
         // Run through Vite so its `react` import lands on the Preact alias
         // like our own sources; externalized, it would load real React.
-        inline: ["@effect/atom-react", "@uiw/react-codemirror"],
+        inline: [
+          "@effect/atom-react",
+          "@uiw/react-codemirror",
+          "@tanstack/react-virtual",
+        ],
       },
     },
     setupFiles: ["./vitest.setup.js"],

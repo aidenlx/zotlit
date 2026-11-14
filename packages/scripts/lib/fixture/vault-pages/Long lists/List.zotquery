@@ -1,0 +1,52 @@
+formulas:
+  tagList: 'tags.sort().join(", ")'
+properties:
+  formula.tagList:
+    displayName: Tags
+views:
+  - type: list
+    name: All
+    from: items
+    filters: library == "personal"
+    sort:
+      - property: dateModified
+        direction: DESC
+    order:
+      - title
+      - firstAuthor
+      - creators
+      - date
+      - itemType
+      - publicationTitle
+      - formula.tagList
+  - type: list
+    name: Indented properties
+    from: items
+    filters: library == "personal"
+    sort:
+      - property: dateModified
+        direction: DESC
+    order:
+      - title
+      - firstAuthor
+      - creators
+      - date
+      - itemType
+      - publicationTitle
+      - formula.tagList
+    indentProperties: true
+  - type: list
+    name: Grouped by item type
+    from: items
+    filters: library == "personal"
+    sort:
+      - property: title
+        direction: ASC
+    groupBy:
+      property: itemType
+      direction: ASC
+    order:
+      - title
+      - firstAuthor
+      - creators
+      - date

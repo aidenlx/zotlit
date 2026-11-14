@@ -1,0 +1,30 @@
+formulas:
+  tagList: 'tags.sort().join(", ")'
+properties:
+  formula.tagList:
+    displayName: Tags
+views:
+  - type: papers
+    name: All, mixed
+    from: items
+    filters: library == "personal"
+    sort:
+      - property: dateModified
+        direction: DESC
+  - type: papers
+    name: Grouped by item type
+    from: items
+    filters: library == "personal"
+    sort:
+      - property: title
+        direction: ASC
+    groupBy:
+      property: itemType
+      direction: ASC
+  - type: papers
+    name: Grouped by tag
+    from: items
+    filters: library == "personal"
+    groupBy:
+      property: tags[]
+      direction: ASC
