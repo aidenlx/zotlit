@@ -54,9 +54,8 @@ export interface SelectProps extends Omit<
   onChange: (next: string) => void;
   options: readonly SelectOption[];
   /**
-   * The trigger's text while the value is empty, in the placeholder ink, even
-   * where an option, such as "None", takes the empty value. A value that
-   * names no option shows as itself.
+   * The trigger's text while the value is empty, in the placeholder ink. A
+   * value that names no option shows as itself.
    */
   placeholder?: string;
   ref?: Ref<HTMLButtonElement>;
@@ -170,12 +169,7 @@ function SelectBody({
   ...rest
 }: SelectBodyProps) {
   const openSearch = useChooserOpenSearch();
-  // An empty value with a placeholder shows the placeholder, even where an
-  // option takes the empty value, as a "None" that names no choice does.
-  const current =
-    value === "" && placeholder !== undefined
-      ? undefined
-      : options.find((option) => option.value === value);
+  const current = options.find((option) => option.value === value);
   const glyphs = options.some((option) => option.icon !== undefined);
   const rows: SelectRow[] = options.map((option) => ({
     value: option.value,

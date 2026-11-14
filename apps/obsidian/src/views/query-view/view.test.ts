@@ -2940,18 +2940,32 @@ it("shows an empty sort row while the view sorts by nothing, as Bases does, and 
   ).toBe("Title");
 });
 
-it("shows the property placeholder, not None, in the Group select while the view groups by nothing", async () => {
-  const { view, el, settle } = await mount([result([])]);
+it("shows the property placeholder in the Group select while the view groups by nothing, and clears a grouping with its delete button, not a None option", async () => {
+  const { view, el, settle, saved } = await mount([
+    result([]),
+    result([]),
+    result([]),
+  ]);
   await act(() => view.setText(TABLE_FILE));
   await settle();
   const editor = await openPopover(el, "group");
-  const trigger = editor.querySelector<HTMLElement>("[data-group-property]")!;
-  expect(trigger.textContent).toBe("Property");
-  expect(trigger.querySelector("[data-placeholder]")).not.toBeNull();
-  // None stays an option, to clear a grouping.
+  const trigger = () =>
+    editor.querySelector<HTMLElement>("[data-group-property]")!;
+  expect(trigger().textContent).toBe("Property");
+  expect(trigger().querySelector("[data-placeholder]")).not.toBeNull();
   expect(
-    (await selectOptions(trigger)).map((option) => option.label),
-  ).toContain("None");
+    (await selectOptions(trigger())).map((option) => option.label),
+  ).not.toContain("None");
+
+  await choose(trigger(), "itemType");
+  await settle();
+  expect(saved.at(-1)).toContain("    groupBy:\n      property: itemType\n");
+  await act(() =>
+    editor.querySelector<HTMLElement>("[data-group-remove]")!.click(),
+  );
+  await settle();
+  expect(saved.at(-1)).not.toContain("groupBy");
+  expect(trigger().textContent).toBe("Property");
 });
 
 it("offers Item fields to sort and group a view of Items by", async () => {

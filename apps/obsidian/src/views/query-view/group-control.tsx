@@ -78,12 +78,12 @@ export function GroupEditor({
                   aria-label={m.query_view_group_by()}
                   data-group-property=""
                   className="zt:min-w-0 zt:flex-1"
-                  // "None" names no property: the trigger shows the
-                  // placeholder for it, as the Bases Group menu does.
+                  // Grouped by nothing, the select shows the placeholder,
+                  // as the Bases Group menu does; the delete button beside
+                  // it clears a grouping.
                   placeholder={m.query_view_property_placeholder()}
                   value={groupBy?.property ?? NONE}
                   options={[
-                    { value: NONE, label: m.query_view_group_by_none() },
                     ...(!option && groupBy
                       ? [
                           propertySelectOption(
@@ -94,16 +94,12 @@ export function GroupEditor({
                     ...options.map(propertySelectOption),
                   ]}
                   onChange={(property) =>
-                    onChange(
-                      property === NONE
-                        ? {}
-                        : {
-                            groupBy: {
-                              property,
-                              direction: groupBy?.direction ?? "ASC",
-                            },
-                          },
-                    )
+                    onChange({
+                      groupBy: {
+                        property,
+                        direction: groupBy?.direction ?? "ASC",
+                      },
+                    })
                   }
                 />
               }
