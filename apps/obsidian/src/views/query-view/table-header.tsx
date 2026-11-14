@@ -41,6 +41,8 @@ export interface HeaderClasses {
   readonly first: string;
   /** A column after the first. */
   readonly later: string;
+  /** The empty column after the last, which takes the room the columns leave. */
+  readonly filler: string;
 }
 
 /** A transparent image, so a drag shows the drop line and no picture of the header. */
@@ -157,39 +159,28 @@ const isRTL = (el: HTMLElement) =>
   el.win.getComputedStyle(el).direction === "rtl";
 
 /**
- * A header cell with a set width holds its column at that width: the
- * `--zt-column-width` of a cell marked `data-sized`.
+ * A header cell holds its column at its `--zt-column-width`: the width the
+ * researcher set, else the default its column's class gives (ADR 0083).
  */
 const SIZED =
-  "zt:data-sized:w-(--zt-column-width) zt:data-sized:min-w-(--zt-column-width) zt:data-sized:max-w-(--zt-column-width)";
+  "zt:w-(--zt-column-width) zt:min-w-(--zt-column-width) zt:max-w-(--zt-column-width)";
 
 const COLUMN_WIDTH = "--zt-column-width";
 
 const widthStyle = (width: number) =>
   ({ [COLUMN_WIDTH]: `${width}px` }) as CSSProperties;
 
-/** The body cells of the column of `th`: one in each Item row. */
-function bodyCells(th: HTMLTableCellElement): HTMLElement[] {
-  const rows = th
-    .closest("table")
-    ?.querySelectorAll<HTMLTableRowElement>(
-      ':scope > tbody > tr[data-query-table-row="item"]',
-    );
-  return [...(rows ?? [])].flatMap((row) => row.cells[th.cellIndex] ?? []);
-}
-
 /**
- * Mark the column of `th` as set, or not, at once, ahead of the save that
- * renders the mark: a set column clips its body cells.
+ * Mark the column of `th` as set by the researcher, or not, at once, ahead
+ * of the save that renders the mark.
  */
 function markSized(th: HTMLTableCellElement, sized: boolean): void {
-  for (const cell of [th, ...bodyCells(th)])
-    if (sized) cell.dataset.sized = "";
-    else delete cell.dataset.sized;
+  if (sized) th.dataset.sized = "";
+  else delete th.dataset.sized;
 }
 
-/** The `data-sized` mark of the cells of the column of `path`. */
-export const sizedMark = (
+/** The `data-sized` mark of a header whose width the researcher set. */
+const sizedMark = (
   sizes: ColumnSizes | undefined,
   path: string,
 ): "" | undefined => (sizes?.[path] === undefined ? undefined : "");
@@ -201,11 +192,10 @@ function showWidth(th: HTMLTableCellElement, width: number): void {
 }
 
 /**
- * A header label, which a set column clips: it takes no room of its own,
- * so the column can be narrower than the label.
+ * A header label, which its column clips: it takes no room of its own, so
+ * the column can be narrower than the label.
  */
-const LABEL =
-  "zt:flex zt:items-center zt:gap-1 zt:group-data-sized/column:w-0 zt:group-data-sized/column:min-w-full";
+const LABEL = "zt:flex zt:w-0 zt:min-w-full zt:items-center zt:gap-1";
 
 /**
  * Obsidian's drop line between table columns, placed by `--zt-drop-*`;
@@ -447,7 +437,7 @@ export function TableHeader({
     menu.setParentElement(th).showAtMouseEvent(event.nativeEvent);
   };
 
-  const { gutter, cell, first, later } = classes;
+  const { gutter, cell, first, later, filler } = classes;
   return (
     <thead>
       <tr className="zt:text-start">
@@ -546,6 +536,8 @@ export function TableHeader({
             </th>
           );
         })}
+        {/* The filler names no column, so it is no header cell. */}
+        <td aria-hidden="true" className={cn(cell, filler)} />
       </tr>
     </thead>
   );

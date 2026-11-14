@@ -42,10 +42,9 @@ import type { WindowEntry } from "./items-window";
 import type { QueryLayout } from "./layouts";
 import { useQueryTask, useQueryViewState } from "./model";
 import { LITERATURE_NOTE, vaultName } from "./query-file";
-import type { ColumnSizes } from "./query-file";
 import { CellContent, recordCells, searchFinds } from "./record-rows";
 import { NO_RESULTS } from "./results";
-import { TableHeader, sizedMark } from "./table-header";
+import { TableHeader } from "./table-header";
 import type { LiteratureNotes, VaultHost } from "./table-notes";
 import { cellText } from "./value-text";
 import { VaultEditCell, useVaultVersion } from "./vault-cell";
@@ -551,36 +550,50 @@ const indent = (depth: number) =>
  * restyles it. Every row is one line, so no value makes a row taller.
  */
 const CELL =
-  "zt:group/cell zt:h-(--bases-table-row-height) zt:border-b-(length:--border-width) zt:border-(--table-border-color) zt:px-2 zt:py-1 zt:whitespace-nowrap";
+  "zt:h-(--bases-table-row-height) zt:border-b-(length:--border-width) zt:border-(--table-border-color) zt:px-2 zt:py-1 zt:whitespace-nowrap";
 /** The narrow first column that holds a row's expand button. */
 const GUTTER = cn(CELL, "zt:w-0 zt:py-0 zt:ps-1 zt:pe-0");
 /**
- * A cell of a column the researcher resized, marked `data-sized`: it takes
- * no room of its own, so the header's width holds the column, and what does
- * not fit is clipped, as in a Bases table.
+ * The empty column after the last, the one column without a width: it takes
+ * the room the columns leave in a wide pane, so each column keeps the width
+ * its header gives it (ADR 0083), and the rows' lines still reach the edge.
  */
-const CLIP =
-  "zt:data-sized:max-w-0 zt:data-sized:overflow-hidden zt:data-sized:text-ellipsis";
+const FILLER = "zt:p-0";
 /**
- * The first column of properties. It keeps a width a title reads well in,
- * from its header cell, where a width the researcher sets replaces it.
+ * A body cell takes no room of its own, so its header's width holds the
+ * column (ADR 0083), and what does not fit is clipped, as in a Bases table.
+ */
+const CLIP = "zt:max-w-0 zt:overflow-hidden zt:text-ellipsis";
+/**
+ * The first column of properties. Its default width is the widest Bases
+ * gives a column of its own accord, where a title reads.
  */
 const FIRST = cn("zt:ps-1", CLIP);
-const FIRST_HEADER = cn(FIRST, "zt:min-w-48");
-/** A column after the first: a line parts it from the one before it. */
-const LATER = cn("zt:border-s-(length:--border-width)", CLIP);
+const FIRST_HEADER = cn(
+  FIRST,
+  "zt:[--zt-column-width:calc(var(--bases-table-column-max-width)*1px)]",
+);
 /**
- * The line of a cell, which ends in an ellipsis: a column that is not sized
- * stops at the width of a Bases column, or wider for the first, where a
- * title reads; a sized one takes the width of its header.
+ * A column after the first: a line parts it from the one before it. Its
+ * default width is half the first's.
  */
-const LINE =
-  "zt:block zt:truncate zt:group-data-sized/cell:w-0 zt:group-data-sized/cell:max-w-none zt:group-data-sized/cell:min-w-full";
+const LATER = cn("zt:border-s-(length:--border-width)", CLIP);
+const LATER_HEADER = cn(
+  LATER,
+  "zt:[--zt-column-width:calc(var(--bases-table-column-max-width)*0.5px)]",
+);
+/** The line of a cell, which takes its header's width and ends in an ellipsis. */
+const LINE = "zt:block zt:w-0 zt:min-w-full zt:truncate";
 /**
  * A vault cell: its own line clips its value, so the table cell lets the
  * editor that opens over it grow down over the rows below.
  */
-const VAULT = "zt:relative zt:p-0 zt:data-sized:overflow-visible";
+const VAULT = "zt:relative zt:p-0 zt:overflow-visible";
+/**
+ * A cell that spans the columns, a group's heading or a child row: it
+ * clips too, so a long line never widens the columns it spans.
+ */
+const SPANNING = cn(CELL, CLIP);
 const ROW = "zt:hover:bg-(--table-row-background-hover)";
 /** A header cell, which stays at the top as the rows scroll under it. */
 const HEADER =
@@ -588,10 +601,10 @@ const HEADER =
 
 /**
  * The columns a child row's one cell spans beside the gutter: every column
- * of properties, and one where the view shows none, so the row still has
- * room for its text.
+ * of properties and the filler after them, which gives the row room for its
+ * text where the view shows no property.
  */
-const childSpan = (columns: number) => Math.max(columns, 1);
+const childSpan = (columns: number) => columns + 1;
 
 /** The rows under one expanded row, and the rows under those that are expanded. */
 function ChildRows({
@@ -617,7 +630,7 @@ function ChildRows({
         <td className={GUTTER} />
         <td
           colSpan={childSpan(columns)}
-          className={cn(CELL, "zt:ps-1 zt:text-(--text-muted)")}
+          className={cn(SPANNING, "zt:ps-1 zt:text-(--text-muted)")}
         >
           <span
             className="zt:flex zt:min-w-0 zt:items-center zt:gap-1.5 zt:ps-(--zt-indent)"
@@ -645,7 +658,7 @@ function ChildRows({
         <td
           colSpan={childSpan(columns)}
           style={indent(depth)}
-          className={cn(CELL, "zt:ps-(--zt-indent) zt:text-(--text-muted)")}
+          className={cn(SPANNING, "zt:ps-(--zt-indent) zt:text-(--text-muted)")}
         >
           {m.query_view_table_children_failed()}
         </td>
@@ -705,7 +718,7 @@ function ChildRow({
         data-query-key={record.key}
       >
         <td className={GUTTER} />
-        <td colSpan={childSpan(columns)} className={cn(CELL, "zt:ps-1")}>
+        <td colSpan={childSpan(columns)} className={cn(SPANNING, "zt:ps-1")}>
           <span
             className="zt:flex zt:min-w-0 zt:items-center zt:gap-1.5 zt:ps-(--zt-indent)"
             style={indent(depth)}
@@ -819,7 +832,8 @@ export function TableLayout({ view }: { view: QueryView }) {
               gutter: cn(GUTTER, HEADER),
               cell: cn(CELL, HEADER),
               first: FIRST_HEADER,
-              later: LATER,
+              later: LATER_HEADER,
+              filler: FILLER,
             }}
           />
         )}
@@ -838,7 +852,7 @@ export function TableLayout({ view }: { view: QueryView }) {
                 <th
                   colSpan={span}
                   className={cn(
-                    CELL,
+                    SPANNING,
                     "zt:bg-card zt:text-start zt:font-(--font-semibold)",
                   )}
                 >
@@ -856,7 +870,6 @@ export function TableLayout({ view }: { view: QueryView }) {
                   heading={heading}
                   record={record}
                   columns={columns}
-                  sizes={sizes}
                   notes={literatureNotes}
                   host={view.vaultHost()}
                   expanded={expanded}
@@ -883,7 +896,6 @@ function ItemRow({
   heading,
   record,
   columns,
-  sizes,
   notes,
   host,
   expanded,
@@ -894,8 +906,6 @@ function ItemRow({
   heading: ReactNode;
   record: TableRecord;
   columns: readonly PropertyEntry[];
-  /** The widths the researcher set, by property path. */
-  sizes: ColumnSizes | undefined;
   notes: LiteratureNotes;
   /** The note that holds the view, where a note holds it. */
   host: VaultHost | null;
@@ -928,7 +938,6 @@ function ItemRow({
         {columns.map(({ path }, at) => {
           const note = path === LITERATURE_NOTE;
           const name = note ? null : vaultName(path);
-          const line = cn(LINE, at === 0 ? "zt:max-w-100" : "zt:max-w-75");
           return (
             <td
               key={path}
@@ -939,10 +948,9 @@ function ItemRow({
                 // A vault cell fills the cell, so the whole of it edits.
                 name !== null && VAULT,
               )}
-              data-sized={sizedMark(sizes, path)}
             >
               {note ? (
-                <span className={line}>
+                <span className={LINE}>
                   <NoteCell notes={notes} itemKey={record.key} />
                 </span>
               ) : name !== null ? (
@@ -953,7 +961,7 @@ function ItemRow({
                   host={host}
                 />
               ) : (
-                <span className={line}>
+                <span className={LINE}>
                   <CellContent
                     value={record.values[path]}
                     text={cellText(path, record.values[path])}
@@ -963,6 +971,7 @@ function ItemRow({
             </td>
           );
         })}
+        <td aria-hidden="true" className={cn(CELL, FILLER)} />
       </tr>
       <ChildRows
         parent={record}

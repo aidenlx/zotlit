@@ -144,8 +144,9 @@ describe.skipIf(!reachable)("Library View long lists", () => {
 
   /**
    * The list's rows as the pointer drags its scroll bar from top to end, a
-   * step each frame: how many are mounted and how far the list's height
-   * moved. The drag starts once the list holds its height.
+   * step each frame: how many are mounted, how far the list's height moved,
+   * and each set of widths a Table's property columns took on the way. The
+   * drag starts once the list holds its height.
    */
   async function dragToEnd(rowSelector: string) {
     await obRunUntil(
@@ -169,6 +170,7 @@ describe.skipIf(!reachable)("Library View long lists", () => {
           .view as LibraryView;
         const list = view.contentEl.querySelector<HTMLElement>(box)!;
         const heights = new Set<number>();
+        const columns = new Set<string>();
         let mounted = 0;
         let off = 0;
         const end = list.scrollHeight - list.clientHeight;
@@ -177,6 +179,11 @@ describe.skipIf(!reachable)("Library View long lists", () => {
           list.scrollTop = at;
           await new Promise((resolve) => requestAnimationFrame(resolve));
           heights.add(list.scrollHeight);
+          columns.add(
+            [...list.querySelectorAll("th[data-query-column]")]
+              .map((th) => Math.round(th.getBoundingClientRect().width))
+              .join(" "),
+          );
           mounted = Math.max(
             mounted,
             list.querySelectorAll(rowSelector).length,
@@ -190,6 +197,7 @@ describe.skipIf(!reachable)("Library View long lists", () => {
           mounted,
           heightMoved: Math.max(...heights) - Math.min(...heights),
           off,
+          columnWidths: [...columns],
         };
       },
       { rowSelector, box: BOX },
@@ -352,6 +360,38 @@ describe.skipIf(!reachable)("Library View long lists", () => {
     expect(drag.mounted).toBeLessThan(80);
     expect(drag.heightMoved).toBeLessThan(50);
     expect(drag.off).toBe(0);
+    // A column the researcher has not sized holds its default width, wherever
+    // the list scrolls: the first, where a title reads, wider than the rest.
+    expect(drag.columnWidths).toHaveLength(1);
+    const [first, ...later] = drag.columnWidths[0]!.split(" ").map(Number);
+    expect(first).toBe(300);
+    expect(new Set(later)).toEqual(new Set([150]));
+    // A pane wider than the columns leaves its room to the filler after them.
+    const wide = await obRun(
+      vaultId,
+      async ({ app }, { box }) => {
+        const view = app.workspace.getLeavesOfType("zotlit-library")[0]!
+          .view as LibraryView;
+        const list = view.contentEl.querySelector<HTMLElement>(box)!;
+        const widths = () =>
+          [...list.querySelectorAll("th[data-query-column]")]
+            .map((th) => Math.round(th.getBoundingClientRect().width))
+            .join(" ");
+        const { width, flex } = list.style;
+        list.style.flex = "none";
+        list.style.width = `${list.scrollWidth + 600}px`;
+        await new Promise((resolve) => requestAnimationFrame(resolve));
+        const table = list.querySelector("table")!;
+        const shown = {
+          widths: widths(),
+          fills: Math.abs(table.offsetWidth - list.clientWidth) <= 1,
+        };
+        Object.assign(list.style, { width, flex });
+        return shown;
+      },
+      { box: BOX },
+    );
+    expect(wide).toEqual({ widths: drag.columnWidths[0], fills: true });
     await revealThenStep();
   }, 180_000);
 

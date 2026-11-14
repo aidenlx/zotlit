@@ -208,12 +208,11 @@ export function VaultCell(props: VaultCellProps) {
 /**
  * The line a Table cell shows at rest: one line a row tall, which clips what
  * does not fit. What it holds takes the {@link LINE} the editor takes, so
- * the text does not move when an edit opens. A column the researcher sized
- * takes its width from its header; another stops at the width of a Bases
- * column.
+ * the text does not move when an edit opens. It takes its width from its
+ * column's header.
  */
 const REST =
-  "zt:flex zt:h-(--bases-table-row-height) zt:max-w-75 zt:min-w-0 zt:items-center zt:overflow-hidden zt:whitespace-nowrap zt:group-data-sized/cell:w-0 zt:group-data-sized/cell:max-w-none zt:group-data-sized/cell:min-w-full";
+  "zt:flex zt:h-(--bases-table-row-height) zt:w-0 zt:min-w-full zt:items-center zt:overflow-hidden zt:whitespace-nowrap";
 
 /** What a Table cell shows of its value at rest, by the property's type. */
 function VaultPreview({
