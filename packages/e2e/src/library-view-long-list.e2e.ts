@@ -136,6 +136,18 @@ describe.skipIf(!reachable)("Library View long lists", () => {
   /** The scroll box of a Library View list. */
   const BOX = '[data-query-layout="papers"], .zt-table-scroller';
 
+  /** The entries the Items Window mounts past each end of the screen (`virtual-rows.ts`). */
+  const OVERSCAN = 8;
+
+  /**
+   * The most rows a long list mounts in a box `box` px tall whose shortest
+   * entry is `row` px: the screen's, one cut at each end, the overscan
+   * past each end, and the selected, first and focused rows kept mounted
+   * wherever they are.
+   */
+  const mountBound = ({ box, row }: { box: number; row: number }) =>
+    Math.ceil(box / row) + 1 + 2 * OVERSCAN + 3;
+
   /** Close the Library View once the case ends, as it found none open. */
   function closeLibrary(cleanup: AsyncDisposableStack) {
     cleanup.defer(() =>
@@ -149,23 +161,37 @@ describe.skipIf(!reachable)("Library View long lists", () => {
   /**
    * The list's rows as the pointer drags its scroll bar from top to end, a
    * step each frame: how many are mounted, how far the list's height moved,
-   * and each set of widths a Table's property columns took on the way. The
-   * drag starts once the list holds its height.
+   * and each set of widths a Table's property columns took on the way; and
+   * the box's height and its shortest entry. The drag starts once the
+   * list's height, its mounted rows and its columns hold.
    */
   async function dragToEnd(rowSelector: string) {
     await obRunUntil(
       vaultId,
-      async ({ app }, { box }) => {
+      async ({ app }, { box, rowSelector }) => {
         const view = app.workspace.getLeavesOfType("zotlit-library")[0]!
           .view as LibraryView;
         const list = view.contentEl.querySelector<HTMLElement>(box)!;
         list.scrollTop = 0;
-        const before = list.scrollHeight;
-        await new Promise((resolve) => list.win.requestAnimationFrame(resolve));
-        return list.scrollHeight === before;
+        const read = () =>
+          [
+            list.scrollHeight,
+            list.querySelectorAll(rowSelector).length,
+            ...[...list.querySelectorAll("th[data-query-column]")].map((th) =>
+              Math.round(th.getBoundingClientRect().width),
+            ),
+          ].join(" ");
+        const before = read();
+        for (let still = 0; still < 5; still++) {
+          await new Promise((resolve) =>
+            list.win.requestAnimationFrame(resolve),
+          );
+          if (read() !== before) return false;
+        }
+        return true;
       },
-      { box: BOX },
-      { what: "the list's height before the drag" },
+      { box: BOX, rowSelector },
+      { what: "the list's height, rows and columns before the drag" },
     );
     return await obRun(
       vaultId,
@@ -176,6 +202,7 @@ describe.skipIf(!reachable)("Library View long lists", () => {
         const heights = new Set<number>();
         const columns = new Set<string>();
         let mounted = 0;
+        let row = Infinity;
         let off = 0;
         const end = list.scrollHeight - list.clientHeight;
         // The pointer moves the bar once a frame, as a drag does.
@@ -194,6 +221,8 @@ describe.skipIf(!reachable)("Library View long lists", () => {
             mounted,
             list.querySelectorAll(rowSelector).length,
           );
+          for (const entry of list.querySelectorAll("[data-index]"))
+            row = Math.min(row, entry.getBoundingClientRect().height);
           // A step past the end the list has now is the browser's clamp.
           const max = list.scrollHeight - list.clientHeight;
           if (at <= max && Math.abs(list.scrollTop - at) > 1) off++;
@@ -201,6 +230,8 @@ describe.skipIf(!reachable)("Library View long lists", () => {
         list.scrollTop = list.scrollHeight;
         return {
           mounted,
+          box: list.clientHeight,
+          row,
           heightMoved: Math.max(...heights) - Math.min(...heights),
           off,
           columnWidths: [...columns],
@@ -325,7 +356,7 @@ describe.skipIf(!reachable)("Library View long lists", () => {
     const listed = await openLibrary("papers");
     expect(listed).toBeGreaterThan(LISTED);
     const drag = await dragToEnd("[data-query-papers-row]");
-    expect(drag.mounted).toBeLessThan(80);
+    expect(drag.mounted).toBeLessThanOrEqual(mountBound(drag));
     // The list stands at the height its window lays out, whatever the rows
     // measured on the way draw: the scroll bar stays under the pointer.
     expect(drag.heightMoved).toBe(0);
@@ -676,7 +707,7 @@ describe.skipIf(!reachable)("Library View long lists", () => {
     closeLibrary(cleanup);
     await openLibrary("table");
     const drag = await dragToEnd('tr[data-query-table-row="item"]');
-    expect(drag.mounted).toBeLessThan(80);
+    expect(drag.mounted).toBeLessThanOrEqual(mountBound(drag));
     expect(drag.heightMoved).toBe(0);
     expect(drag.off).toBe(0);
     // A column the researcher has not sized holds its default width, wherever
@@ -728,7 +759,7 @@ describe.skipIf(!reachable)("Library View long lists", () => {
         const list = view.contentEl.querySelector<HTMLElement>(box)!;
         const head = list.querySelector("thead")!;
         list.scrollTop = list.scrollHeight / 2;
-        await new Promise((resolve) => setTimeout(resolve, 300));
+        await new Promise((resolve) => requestAnimationFrame(resolve));
         const bar = list.offsetWidth - list.clientWidth;
         const target = new Promise<EventTarget | null>((resolve) =>
           list.win.addEventListener("pointerdown", (e) => resolve(e.target), {
@@ -783,7 +814,7 @@ describe.skipIf(!reachable)("Library View long lists", () => {
       { what: "the Library View's rows in the pop-out" },
     );
     const drag = await dragToEnd("[data-query-papers-row]");
-    expect(drag.mounted).toBeLessThan(80);
+    expect(drag.mounted).toBeLessThanOrEqual(mountBound(drag));
     expect(drag.heightMoved).toBe(0);
     expect(drag.off).toBe(0);
     await revealThenStep();
@@ -875,7 +906,12 @@ describe.skipIf(!reachable)("Library View long lists", () => {
           const el = await page.revealQueryView(view);
           const list = el.querySelector<HTMLElement>(box)!;
           list.scrollTop = 0;
-          await new Promise((resolve) => setTimeout(resolve, 300));
+          for (let still = 0, last = -1, tries = 0; still < 5; tries++) {
+            if (tries > 120) throw new Error("The embed's length never held");
+            await new Promise((resolve) => requestAnimationFrame(resolve));
+            still = list.scrollHeight === last ? still + 1 : 0;
+            last = list.scrollHeight;
+          }
           const seen = new Set<number>();
           for (let step = 0; step < 60; step++) {
             list.scrollTop += list.clientHeight;
@@ -932,11 +968,19 @@ describe.skipIf(!reachable)("Library View long lists", () => {
           const rows = [
             ...(host?.querySelectorAll<HTMLElement>(rowSelector) ?? []),
           ];
-          if (!bounds) return { listed: 0, mounted: 0, shown: 0 };
+          if (!bounds)
+            return { listed: 0, mounted: 0, shown: 0, box: 0, row: 0 };
+          const heights = [
+            ...(host
+              ?.querySelector(box)
+              ?.querySelectorAll<HTMLElement>("[data-index]") ?? []),
+          ].map((el) => el.getBoundingClientRect().height);
           return {
             listed:
               host?.zotlitQueryView?.state.getState().results?.rows.length ?? 0,
             mounted: rows.length,
+            box: bounds.height,
+            row: Math.min(...heights),
             shown: rows.filter((row) => {
               const rowBounds = row.getBoundingClientRect();
               return (
@@ -956,7 +1000,7 @@ describe.skipIf(!reachable)("Library View long lists", () => {
           what: `${layout} rows in view 5,000 px into the embed`,
         },
       );
-      expect(scrolled.mounted).toBeLessThan(80);
+      expect(scrolled.mounted).toBeLessThanOrEqual(mountBound(scrolled));
 
       // Obsidian's own Export to PDF, as the Query View print case drives it.
       const printed = await obRun(
@@ -1133,6 +1177,7 @@ describe.skipIf(!reachable)("Library View long lists", () => {
             const start = list.scrollHeight;
             const heights = new Set<number>();
             let mounted = 0;
+            let row = Infinity;
             const end = list.scrollHeight - list.clientHeight;
             for (let at = 0; at <= end; at += 200) {
               list.scrollTop = at;
@@ -1142,10 +1187,14 @@ describe.skipIf(!reachable)("Library View long lists", () => {
                 mounted,
                 list.querySelectorAll("li[data-query-row]").length,
               );
+              for (const entry of list.querySelectorAll("[data-index]"))
+                row = Math.min(row, entry.getBoundingClientRect().height);
             }
             return {
               start,
               mounted,
+              box: list.clientHeight,
+              row,
               heightMoved: Math.max(...heights) - Math.min(...heights),
             };
           } finally {
@@ -1170,8 +1219,8 @@ describe.skipIf(!reachable)("Library View long lists", () => {
     );
     await drawn(true);
     const indented = await drag();
-    expect(inline.mounted).toBeLessThan(80);
-    expect(indented.mounted).toBeLessThan(80);
+    expect(inline.mounted).toBeLessThanOrEqual(mountBound(inline));
+    expect(indented.mounted).toBeLessThanOrEqual(mountBound(indented));
     // The rows take more lines, and the list learns their new height.
     expect(indented.start).toBeGreaterThan(inline.start * 1.3);
     expect(indented.heightMoved).toBe(0);
@@ -1364,6 +1413,11 @@ describe.skipIf(!reachable)("Library View long lists", () => {
                   "[data-query-papers-row]",
                 ),
               ];
+              const heights = [
+                ...host.querySelectorAll<HTMLElement>("[data-index]"),
+              ]
+                .map((el) => el.getBoundingClientRect().height)
+                .filter((height) => height > 0);
               return {
                 phase:
                   host.zotlitQueryView?.state.getState().phase ?? "waiting",
@@ -1375,6 +1429,11 @@ describe.skipIf(!reachable)("Library View long lists", () => {
                   host.zotlitQueryView?.state.getState().results?.rows.length ??
                   0,
                 mounted: rows.length,
+                box:
+                  host.querySelector<HTMLElement>(
+                    '[data-query-layout="papers"]',
+                  )?.clientHeight ?? 0,
+                row: heights.length > 0 ? Math.min(...heights) : 0,
                 shown: rows.filter((row) => {
                   const rowBounds = row.getBoundingClientRect();
                   return (
@@ -1406,6 +1465,8 @@ describe.skipIf(!reachable)("Library View long lists", () => {
         folded: boolean;
         listed: number;
         mounted: number;
+        box: number;
+        row: number;
         shown: number;
       };
       const loaded = await state(`the first ${kind}'s rows`, ({ shown }) => {
@@ -1463,7 +1524,7 @@ describe.skipIf(!reachable)("Library View long lists", () => {
       });
       expect(unfolded!.height).toBeLessThanOrEqual(501);
       expect(unfolded!.listed).toBeGreaterThan(LISTED);
-      expect(unfolded!.mounted).toBeLessThan(80);
+      expect(unfolded!.mounted).toBeLessThanOrEqual(mountBound(unfolded!));
     },
     180_000,
   );
@@ -1802,7 +1863,7 @@ describe.skipIf(!reachable)("Library View long lists", () => {
             Math.abs(list.scrollLeft - across) > 1
           )
             list.scrollTo({ top: target, left: across, behavior: "instant" });
-          await new Promise((resolve) => setTimeout(resolve, 300));
+          await new Promise((resolve) => requestAnimationFrame(resolve));
           const bounds = list.getBoundingClientRect();
           const shown = [
             ...list.querySelectorAll<HTMLElement>(rowSelector),

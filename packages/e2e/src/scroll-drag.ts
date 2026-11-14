@@ -122,8 +122,6 @@ export async function dragScrollBar(
       if (!box) throw new Error(`No long list in ${JSON.stringify(host)}`);
       const win = box.win;
       const doc = box.doc;
-      const sleep = (ms: number) =>
-        new Promise((resolve) => win.setTimeout(resolve, ms));
       const frame = () =>
         new Promise((resolve) => win.requestAnimationFrame(resolve));
       if (host.kind === "note") box.scrollIntoView({ block: "center" });
@@ -263,6 +261,8 @@ export async function dragScrollBar(
           ]);
         };
         try {
+          // A reader's pointer comes to the thumb, rests, and presses it;
+          // the pauses model the hand, not a wait for the page.
           for (let i = 0; i < 3; i++) {
             send("mouseMove", g.top - 2 + i);
             await nap(40);
@@ -294,7 +294,6 @@ export async function dragScrollBar(
             at = to;
           }
           send("mouseUp", g.top + g.span * at);
-          await nap(300);
         } finally {
           if (g.crop) w.endFrameSubscription();
         }
@@ -306,9 +305,9 @@ export async function dragScrollBar(
       /** Show an overlay scroll bar, which shows only after a scroll. */
       const showBar = async (el: HTMLElement) => {
         el.scrollTop = 2;
-        await sleep(40);
+        await frame();
         el.scrollTop = 0;
-        await sleep(100);
+        await frame();
       };
 
       // A plain box of the same size and length, with no rows, tells the
@@ -484,7 +483,20 @@ export async function dragScrollBar(
       const shown = shots.filter(([t]) => t >= starts[0]! && t <= up[0]);
       // The rows at the list's top, at rest: a group's heading among them.
       box.scrollTop = 0;
-      await sleep(400);
+      /** The heights of the mounted entries, once the top's are mounted. */
+      const drawn = () =>
+        box.querySelector("[data-index]")?.getAttribute("data-index") === "0"
+          ? [...box.querySelectorAll<HTMLElement>("[data-index]")]
+              .map((el) => el.getBoundingClientRect().height)
+              .join(" ")
+          : null;
+      for (let still = 0, last = drawn(), tries = 0; still < 3; tries++) {
+        if (tries > 120) throw new Error("The rows at the top never held");
+        await frame();
+        const now = drawn();
+        still = now !== null && now === last ? still + 1 : 0;
+        last = now;
+      }
       const row = Number.parseFloat(
         getComputedStyle(box).getPropertyValue("--zt-virtual-row"),
       );
