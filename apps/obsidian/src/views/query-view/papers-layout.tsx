@@ -21,6 +21,7 @@ import type { TargetOpenGesture } from "@/services/attachment-open/actions";
 import type { OpenTarget } from "@/services/attachment-open/open-target";
 import type { QueryViewValue } from "@/services/item-query/query-view";
 
+import { ExpanderSpace } from "./expander-space";
 import { useItemRow } from "./item-rows";
 import type { ItemRowGestures } from "./item-rows";
 import { ItemsWindow } from "./items-window";
@@ -35,7 +36,6 @@ import {
 } from "./record-rows";
 import {
   Expander,
-  ExpanderSpace,
   LOADING_TEXT,
   ReaderLink,
   TABLE_FIELDS,

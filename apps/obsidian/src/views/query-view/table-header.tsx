@@ -10,6 +10,7 @@ import * as m from "@/lib/i18n/generated/messages";
 import { pointerDrag } from "@/lib/pointer-drag";
 import { cn, tooltipAttrs } from "@/lib/utils";
 
+import { ExpanderSpace } from "./expander-space";
 import { propertyIcon } from "./property-icon";
 import type { ColumnSizes, QueryFileDataset } from "./query-file";
 import { moved } from "./reorder";
@@ -19,7 +20,6 @@ import {
   resizedWidth,
   withColumnWidth,
 } from "./table-columns";
-import { ExpanderSpace } from "./table-layout";
 import { useVaultVersion } from "./vault-cell";
 import "./table-header.css";
 import type { QueryView } from "./view";

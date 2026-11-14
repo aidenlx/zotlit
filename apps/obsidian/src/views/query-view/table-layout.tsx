@@ -33,6 +33,7 @@ import type {
 import type { ItemQueryError } from "@/services/item-query/service";
 import { useAnnotStore } from "@/views/annot-view/store";
 
+import { ExpanderSpace } from "./expander-space";
 import { useItemRow } from "./item-rows";
 import type { ItemRowGestures } from "./item-rows";
 import { ItemsWindow } from "./items-window";
@@ -373,15 +374,6 @@ export function useChildren(view: QueryView) {
     );
   };
   return { children, toggle };
-}
-
-/** The room of a chevron, in a row with nothing under it. */
-export function ExpanderSpace() {
-  return (
-    <span className="clickable-icon zt:invisible zt:shrink-0">
-      <Icon name="chevron-right" size="xs" />
-    </span>
-  );
 }
 
 export function Expander({

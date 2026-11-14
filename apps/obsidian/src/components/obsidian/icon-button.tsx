@@ -90,3 +90,23 @@ export function IconButton({
     </div>
   );
 }
+
+/**
+ * The room of an icon button, unseen, for a row that has no button where its
+ * neighbours do: every row's content then starts at one edge.
+ */
+export function IconButtonSpace({
+  icon,
+  size,
+  className,
+}: {
+  icon: IconName;
+  size?: IconSize;
+  className?: string;
+}) {
+  return (
+    <span className={iconButton({ className: ["zt:invisible", className] })}>
+      <Icon name={icon} size={size} />
+    </span>
+  );
+}
