@@ -351,11 +351,11 @@ describe.skipIf(!reachable)("Library View long lists", () => {
     );
   }, 180_000);
 
-  it("mounts the Papers rows ahead of a scroll down, and the box draws a bar for each row under them", async () => {
+  it("draws a bar on a long Papers list's box for each row, under the rows and the spacers", async () => {
     await using cleanup = new AsyncDisposableStack();
     closeLibrary(cleanup);
     await openLibrary("papers");
-    const ahead = await obRun(
+    const drawn = await obRun(
       vaultId,
       async ({ app }, { box }) => {
         const view = app.workspace.getLeavesOfType("zotlit-library")[0]!
@@ -373,9 +373,6 @@ describe.skipIf(!reachable)("Library View long lists", () => {
         );
         const spacer = list.querySelector<HTMLElement>("[data-query-spacer]");
         return {
-          below:
-            rows[rows.length - 1]!.getBoundingClientRect().bottom -
-            list.getBoundingClientRect().bottom,
           bars: getComputedStyle(list).backgroundImage,
           spacer: spacer ? getComputedStyle(spacer).backgroundImage : null,
           row: getComputedStyle(rows[0]!).backgroundColor,
@@ -383,14 +380,11 @@ describe.skipIf(!reachable)("Library View long lists", () => {
       },
       { box: BOX },
     );
-    // The overscan alone mounts eight rows, about 370 px, past the screen;
-    // the scroll mounts four of its steps more.
-    expect(ahead.below).toBeGreaterThan(600);
     // The bars are the box's own, which stay on the screen as its content
     // scrolls; a spacer only takes its height, and a row covers the bars.
-    expect(ahead.bars).toContain("linear-gradient");
-    expect(ahead.spacer).toBe("none");
-    expect(ahead.row).toMatch(/^rgb\(/);
+    expect(drawn.bars).toContain("linear-gradient");
+    expect(drawn.spacer).toBe("none");
+    expect(drawn.row).toMatch(/^rgb\(/);
   }, 120_000);
 
   it("brings a far paper into view from Show in Library, and ↓ steps on from it after the Papers list scrolled away", async () => {

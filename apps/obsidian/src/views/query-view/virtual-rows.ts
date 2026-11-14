@@ -25,57 +25,6 @@ const VIRTUAL_MIN_ENTRIES = 100;
 /** The entries mounted past each end of the screen. */
 const OVERSCAN = 8;
 
-/**
- * The scroll steps of room mounted ahead of a scroll, past `OVERSCAN`. The
- * browser moves a scroll bar dragged by the pointer a few frames before the
- * page draws the rows for the new place, and shows the room it has: the
- * rows mounted ahead cover the screen until then.
- */
-const LEAD_STEPS = 4;
-
-/** The most room mounted ahead of a scroll, in screens. */
-const LEAD_SCREENS = 2;
-
-/**
- * The room to mount ahead of a scroll that last moved `step` pixels on a
- * screen `screen` pixels tall. A scroll of a screen or more a step outruns
- * any room ahead, and the browser cannot paint a new screen each frame even
- * of rows it has: the list then mounts no more than the screen, and each
- * frame stays cheap.
- */
-export function leadOf(step: number, screen: number): number {
-  if (step <= 0 || step >= screen) return 0;
-  return Math.min(step * LEAD_STEPS, screen * LEAD_SCREENS);
-}
-
-/** A scroll as the room ahead of it follows it. */
-export interface Scroll {
-  /** The places of the entries, in pixels. */
-  readonly measurements: readonly { start: number; end: number }[];
-  readonly direction: "forward" | "backward" | null;
-  /** The room to mount ahead of the scroll, in pixels. */
-  readonly lead: number;
-}
-
-/** `range` grown by the room ahead of `scroll`, in its direction. */
-export function withLead(
-  range: Range,
-  { measurements, direction, lead }: Scroll,
-): Range {
-  if (direction === null || lead <= 0 || measurements.length === 0)
-    return range;
-  if (direction === "forward") {
-    let end = range.endIndex;
-    const limit = (measurements[end]?.end ?? 0) + lead;
-    while (end + 1 < range.count && measurements[end + 1]!.start < limit) end++;
-    return { ...range, endIndex: end };
-  }
-  let start = range.startIndex;
-  const limit = (measurements[start]?.start ?? 0) - lead;
-  while (start > 0 && measurements[start - 1]!.end > limit) start--;
-  return { ...range, startIndex: start };
-}
-
 /** One mounted entry, with the room its left-out entries take before it. */
 export interface MountedEntry {
   readonly index: number;
@@ -244,8 +193,6 @@ export function useVirtualRows({
     () => (focusedIndex === -1 ? pinned : [...pinned, focusedIndex]),
     [pinned, focusedIndex],
   );
-  /** The last scroll offset, and the step the scroll took to it. */
-  const scrolling = useRef({ offset: 0, step: 0 });
   /** Whether a scroll drew entries it has not measured yet. */
   const deferred = useRef(false);
   /**
@@ -253,26 +200,8 @@ export function useVirtualRows({
    * heights it measures as it goes, so it measures them.
    */
   const revealing = useRef(false);
-  /** The virtualizer, which the range extractor reads the scroll from. */
-  const instance = useRef<{
-    measurementsCache: readonly { start: number; end: number }[];
-    scrollDirection: "forward" | "backward" | null;
-    scrollRect: { height: number } | null;
-  } | null>(null);
   const rangeExtractor = useCallback(
-    (range: Range) => {
-      const v = instance.current;
-      if (!v) return withPinned(range, kept);
-      const lead = leadOf(scrolling.current.step, v.scrollRect?.height ?? 0);
-      return withPinned(
-        withLead(range, {
-          measurements: v.measurementsCache,
-          direction: v.scrollDirection,
-          lead,
-        }),
-        kept,
-      );
-    },
+    (range: Range) => withPinned(range, kept),
     [kept],
   );
 
@@ -297,13 +226,8 @@ export function useVirtualRows({
     ),
     overscan: OVERSCAN,
     rangeExtractor,
-    // The step of each scroll, which the room ahead follows; none once the
-    // scroll stops.
     onChange: (v) => {
-      const offset = v.scrollOffset ?? 0;
-      const last = scrolling.current;
       if (!v.isScrolling) {
-        scrolling.current = { offset, step: 0 };
         revealing.current = false;
         // The entries drawn while the scroll went on take their heights now.
         if (deferred.current) {
@@ -312,8 +236,7 @@ export function useVirtualRows({
             for (const el of v.elementsCache.values()) v.measureElement(el);
           });
         }
-      } else if (offset !== last.offset)
-        scrolling.current = { offset, step: Math.abs(offset - last.offset) };
+      }
     },
     scrollMargin: margin,
     scrollPaddingStart: sticky,
@@ -350,7 +273,6 @@ export function useVirtualRows({
     // The first draw, before the scroller is measured, fills a window.
     initialRect: { width: 0, height: (own?.win ?? activeWindow).innerHeight },
   });
-  instance.current = virtualizer;
 
   // The list moves in the scroller as the content above it changes, such as
   // a Table's header. Read its place as the list mounts, as the header

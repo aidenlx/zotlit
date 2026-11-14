@@ -61,15 +61,20 @@ export interface DragRecord {
     readonly most: number;
     readonly frames: number;
     readonly empty: number;
+    /** The frames that showed rows: the ink of text in the box. */
+    readonly rows: number;
   }[];
   /**
    * The screen frames of the box from the first move to the release: how
    * many, how many showed nothing in the box at all, neither rows nor
-   * outlines, and the largest share of the box one frame left blank.
+   * outlines, how many showed rows, and the largest share of the box one
+   * frame left blank. A frame neither empty nor with rows showed outlines
+   * only.
    */
   readonly screen: {
     readonly frames: number;
     readonly empty: number;
+    readonly rows: number;
     readonly blankShare: number;
   };
   /** Each set of header cell places the drag drew (a Table's), or none. */
@@ -179,8 +184,13 @@ export async function dragScrollBar(
         const nap = (ms: number) =>
           new Promise((resolve) => setTimeout(resolve, ms));
         const sends: [number, number, number][] = [];
-        const shots: [number, number][] = [];
+        const shots: [number, number, number][] = [];
         const BANDS = 24;
+        /**
+         * The least a pixel of text stands off the box's colour, against
+         * the faint bars of the outlines and the lines between rows.
+         */
+        const TEXT = 48;
         if (g.crop)
           w.beginFrameSubscription(false, (image) => {
             const t = clock();
@@ -210,6 +220,15 @@ export async function dragScrollBar(
             let bg = 0;
             for (let i = 1; i < 256; i++) if (hist[i]! > hist[bg]!) bg = i;
             let blank = 0;
+            let text = 0;
+            for (let y = 0; y < H; y++) {
+              let line = 0;
+              for (let x = 0; x < W; x++)
+                if (Math.abs(lum(x, y) - bg) > TEXT) line++;
+              // A pixel row inked across half the box is the line under a
+              // row, an outline's too, not text.
+              if (line < W / 2) text += line;
+            }
             for (let b = 0; b < BANDS; b++) {
               let n = 0;
               let ink = 0;
@@ -222,7 +241,9 @@ export async function dragScrollBar(
                 }
               if (ink / Math.max(1, n) < 0.002) blank++;
             }
-            shots.push([t, blank / BANDS]);
+            // A frame shows rows where some pixels hold text: a few
+            // hundred in a screenful of rows.
+            shots.push([t, blank / BANDS, text >= 20 ? 1 : 0]);
           });
         const send = (
           type: "mouseMove" | "mouseDown" | "mouseUp",
@@ -384,7 +405,7 @@ export async function dragScrollBar(
       };
       let run: {
         sends: [number, number, number][];
-        shots: [number, number][];
+        shots: [number, number, number][];
       };
       try {
         run = JSON.parse(
@@ -449,6 +470,7 @@ export async function dragScrollBar(
           most: Math.max(...mounted),
           frames: screens.length,
           empty: screens.filter(([, blank]) => blank >= EMPTY).length,
+          rows: screens.filter(([, , rows]) => rows === 1).length,
         });
         if (to === at) {
           const last = during.filter(([t]) => t <= end - 20).at(-1);
@@ -479,6 +501,7 @@ export async function dragScrollBar(
         screen: {
           frames: shown.length,
           empty: shown.filter(([, blank]) => blank >= EMPTY).length,
+          rows: shown.filter(([, , rows]) => rows === 1).length,
           blankShare:
             Math.round(Math.max(0, ...shown.map(([, blank]) => blank)) * 100) /
             100,
