@@ -1311,15 +1311,27 @@ describe.skipIf(!reachable)("Library View long lists", () => {
     source: ".markdown-source-view .cm-scroller",
   } as const;
 
+  /** The box and the rows of each Layout a note takes off the page. */
+  const FAR_BOX = `${EMBED_BOX}, [data-query-layout="cards"]`;
+  const FAR_ROWS = { ...ROWS, cards: '[role="listitem"]' } as const;
+
   it.each(
-    (["papers", "table", "list"] as const).flatMap((layout) =>
-      NOTE_MODES.map((mode) => [layout, mode] as const),
-    ),
+    (
+      [
+        ["papers", "long"],
+        ["papers", "short"],
+        ["table", "long"],
+        ["table", "short"],
+        ["list", "long"],
+        ["list", "short"],
+        ["cards", "short"],
+      ] as const
+    ).flatMap((view) => NOTE_MODES.map((mode) => [...view, mode] as const)),
   )(
-    "keeps a long %s embed's place in %s as the note scrolls far away and back",
-    async (layout, mode) => {
-      const queryPath = `Far ${layout}.zotquery`;
-      const notePath = `Far ${layout}.md`;
+    "keeps a %s embed's place, %s, in %s as the note scrolls far away and back",
+    async (layout, size, mode) => {
+      const queryPath = `Far ${layout} ${size}.zotquery`;
+      const notePath = `Far ${layout} ${size}.md`;
       const paragraph = (n: number) =>
         `Paragraph ${n}. The reader scrolls past this text on the way to the end of the note, and back again to the list of papers.`;
       await using cleanup = new AsyncDisposableStack();
@@ -1330,6 +1342,23 @@ describe.skipIf(!reachable)("Library View long lists", () => {
           "    name: All",
           "    from: items",
           '    filters: library == "personal"',
+          // A Table wider than the note scrolls sideways too.
+          ...(layout === "table"
+            ? [
+                "    order:",
+                "      - title",
+                "      - date",
+                "      - itemType",
+                "      - publicationTitle",
+                "      - DOI",
+                "      - url",
+                "      - dateAdded",
+                "      - dateModified",
+                "      - abstractNote",
+              ]
+            : []),
+          // A short list mounts every row.
+          ...(size === "short" ? ["    limit: 40"] : []),
           "",
         ].join("\n"),
         // Text far above and below the embed: the note drops it from the
@@ -1374,11 +1403,16 @@ describe.skipIf(!reachable)("Library View long lists", () => {
             .querySelector(root)
             ?.querySelector(".zt-query-note")
             ?.querySelector<HTMLElement>(box);
-          if (!list) return { top: 0, shown: 0 };
+          if (!list) return { top: 0, left: 0, shown: 0 };
           const target = Math.round(
             Math.min(20_000, (list.scrollHeight - list.clientHeight) * 0.6),
           );
-          if (Math.abs(list.scrollTop - target) > 1) list.scrollTop = target;
+          const across = Math.round((list.scrollWidth - list.clientWidth) / 2);
+          if (
+            Math.abs(list.scrollTop - target) > 1 ||
+            Math.abs(list.scrollLeft - across) > 1
+          )
+            list.scrollTo({ top: target, left: across, behavior: "instant" });
           await new Promise((resolve) => setTimeout(resolve, 300));
           const bounds = list.getBoundingClientRect();
           const shown = [
@@ -1389,17 +1423,20 @@ describe.skipIf(!reachable)("Library View long lists", () => {
               r.height > 0 && r.bottom > bounds.top && r.top < bounds.bottom
             );
           }).length;
-          return { top: list.scrollTop, shown };
+          return { top: list.scrollTop, left: list.scrollLeft, shown };
         },
         {
           notePath,
           root: MODE_ROOT[mode],
-          box: EMBED_BOX,
-          rowSelector: ROWS[layout],
+          box: FAR_BOX,
+          rowSelector: FAR_ROWS[layout],
         },
         {
           what: `the ${layout} embed's box scrolled far down its rows`,
-          ready: ({ top, shown }) => top >= 5000 && shown > 0,
+          ready: ({ top, left, shown }) =>
+            top >= (size === "long" ? 5000 : 300) &&
+            (layout !== "table" || left > 0) &&
+            shown > 0,
         },
       );
       // The note scrolls to its end, until the embed has left the page, and
@@ -1429,7 +1466,7 @@ describe.skipIf(!reachable)("Library View long lists", () => {
           }
           note.scrollTop = saved;
           const shownAt = performance.now();
-          let state = { connected: false, top: 0, shown: 0 };
+          let state = { connected: false, top: 0, left: 0, shown: 0 };
           while (performance.now() - shownAt < 3000) {
             await frame();
             const list = leaf.view.containerEl
@@ -1446,7 +1483,12 @@ describe.skipIf(!reachable)("Library View long lists", () => {
                 r.height > 0 && r.bottom > bounds.top && r.top < bounds.bottom
               );
             }).length;
-            state = { connected: host.isConnected, top: list.scrollTop, shown };
+            state = {
+              connected: host.isConnected,
+              top: list.scrollTop,
+              left: list.scrollLeft,
+              shown,
+            };
             if (shown > 0 && performance.now() - shownAt > 500) break;
           }
           return { gone, ...state };
@@ -1455,8 +1497,8 @@ describe.skipIf(!reachable)("Library View long lists", () => {
           notePath,
           root: MODE_ROOT[mode],
           scroller: NOTE_SCROLLER[mode],
-          box: EMBED_BOX,
-          rowSelector: ROWS[layout],
+          box: FAR_BOX,
+          rowSelector: FAR_ROWS[layout],
         },
         { timeoutMs: 60_000 },
       );
@@ -1464,6 +1506,7 @@ describe.skipIf(!reachable)("Library View long lists", () => {
       expect(back.gone).toBe(true);
       expect(back.connected).toBe(true);
       expect(Math.abs(back.top - deep.top)).toBeLessThanOrEqual(1);
+      expect(Math.abs(back.left - deep.left)).toBeLessThanOrEqual(1);
       expect(back.shown).toBeGreaterThan(0);
     },
     120_000,

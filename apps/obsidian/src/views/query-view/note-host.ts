@@ -8,6 +8,7 @@
 // @see apps/obsidian/docs/adr/0068-query-files-are-a-zotlit-file-type-embedded-through-the-private-embed-registry.md
 import { Component, Scope } from "obsidian";
 
+import { keepPlaces } from "@/lib/keep-places";
 import { observeResize } from "@/lib/observe-resize";
 import { itemKeyFromFrontmatter } from "@/services/note-index/parse";
 
@@ -118,6 +119,10 @@ export class NoteQueryHost extends Component {
     );
     const resize = observeResize(this.#el, [this.#el], () => this.#drew());
     this.register(() => resize[Symbol.dispose]());
+    // The note takes the element off the page as it scrolls far from it:
+    // the view's lists come back where the reader left them.
+    const places = keepPlaces(this.#el);
+    this.register(() => places[Symbol.dispose]());
     // A card in the view takes the card keys while it has focus.
     const keys = this.#deps.cardFocus.hold(this.#el, this.#scope, this.#query);
     this.register(() => keys[Symbol.dispose]());
