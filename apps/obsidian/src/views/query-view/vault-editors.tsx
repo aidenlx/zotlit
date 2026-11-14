@@ -572,7 +572,9 @@ function FieldEditor({
   useLayoutEffect(() => {
     const el = field.current;
     if (!el) return;
-    el.focus();
+    // The cell places the editor once it is drawn: the focus scrolls
+    // nothing toward where it first stands.
+    el.focus({ preventScroll: true });
     // Entering edit puts the caret at the end, as a Bases cell does.
     if (el.type === "text" || el.type === "textarea")
       el.setSelectionRange(el.value.length, el.value.length);
@@ -675,7 +677,10 @@ function ListEditor({
   useEditorScope(root);
   // An edit that opens on an item from its menu starts in that item.
   useLayoutEffect(() => {
-    if (latest.current.chip === undefined) field.current?.focus();
+    // The cell places the editor once it is drawn: the focus scrolls
+    // nothing toward where it first stands.
+    if (latest.current.chip === undefined)
+      field.current?.focus({ preventScroll: true });
   }, []);
   useLayoutEffect(() => {
     const at = focusAfter.current;
@@ -706,7 +711,7 @@ function ListEditor({
         : edge.right - Number.parseFloat(style.paddingInlineEnd) - start.left;
     box.style.setProperty("--zt-chip-room", `${Math.max(room, 0)}px`);
     chipEnded.current = false;
-    input.focus();
+    input.focus({ preventScroll: true });
     input.setSelectionRange(input.value.length, input.value.length);
   }, [editingAt]);
   const add = (text: string) => onDraft(withPending({ ...draft, text }));
