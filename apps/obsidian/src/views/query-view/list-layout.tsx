@@ -2,14 +2,7 @@
 // properties in the view's order, as the List layout of Bases draws a note.
 // Its options are those of Bases 1.14.4: `markers`, `indentProperties` and
 // `separator`.
-import {
-  Fragment,
-  useCallback,
-  useLayoutEffect,
-  useMemo,
-  useState,
-} from "react";
-import type { CSSProperties } from "react";
+import { Fragment, useMemo, useState } from "react";
 
 import { useUniqueId } from "@zotlit/ui";
 
@@ -19,8 +12,8 @@ import { Toggle } from "@/components/obsidian/toggle";
 import * as m from "@/lib/i18n/generated/messages";
 import { cn } from "@/lib/utils";
 
-import { useItemsWindow } from "./items-window";
-import type { WindowEntry } from "./items-window";
+import { ItemsWindow } from "./items-window";
+import type { DrawnEntry, WindowEntry } from "./items-window";
 import type { QueryLayout } from "./layouts";
 import { readListMetrics, sameMetrics, useRowHeights } from "./list-heights";
 import type { ListMetrics, RowText } from "./list-heights";
@@ -37,7 +30,7 @@ import {
 import type { RecordCells } from "./record-rows";
 import type { QueryView } from "./view";
 import type { PropertyEntry } from "./view-properties";
-import { LIST_GHOST, ListSpacer, placeholderRow } from "./virtual-spacers";
+import { LIST_GHOST } from "./virtual-spacers";
 
 export const LIST_LAYOUT: QueryLayout = {
   type: "list",
@@ -201,13 +194,8 @@ export function ListLayout({ view }: { view: QueryView }) {
 
   // A row's height before it is drawn, from its text, at the font and width
   // its drawn rows show.
-  const [list, setList] = useState<HTMLElement | null>(null);
+  const [box, setBox] = useState<HTMLElement | null>(null);
   const [metrics, setMetrics] = useState<ListMetrics | null>(null);
-  // oxlint-disable-next-line react-hooks/exhaustive-deps -- reads the drawn rows after each draw
-  useLayoutEffect(() => {
-    const read = list && readListMetrics(list);
-    if (read && !sameMetrics(read, metrics)) setMetrics(read);
-  });
   const texts = useMemo(
     () =>
       entries.map((entry) =>
@@ -221,157 +209,125 @@ export function ListLayout({ view }: { view: QueryView }) {
       ),
     [entries, properties, markers, indentProperties, separator],
   );
-  const heights = useRowHeights(texts, metrics, list?.doc ?? null);
+  const heights = useRowHeights(texts, metrics, box?.doc ?? null);
 
-  const rows = useItemsWindow(
-    view,
-    useMemo(
-      () =>
-        entries.map((entry, index): WindowEntry => {
-          if (entry.kind === "heading")
-            return { key: entry.key, kind: "heading", item: null };
-          const height = heights?.[index] ?? null;
-          return {
-            key: entry.key,
-            kind: "row",
-            item: entry.record.row.indexedKey,
-            ...(height !== null && { height }),
-          };
-        }),
-      [entries, heights],
-    ),
-    {
-      estimates: ESTIMATES,
-      fallback: ESTIMATES.row,
+  const windowEntries = useMemo(
+    () =>
+      entries.map((entry, index): WindowEntry => {
+        if (entry.kind === "heading")
+          return { key: entry.key, kind: "heading", item: null };
+        const height = heights?.[index] ?? null;
+        return {
+          key: entry.key,
+          kind: "row",
+          item: entry.record.row.indexedKey,
+          ...(height !== null && { height }),
+        };
+      }),
+    [entries, heights],
+  );
+  /** Read the drawn rows after each draw of the window. */
+  const drew = () => {
+    const read = box && readListMetrics(box);
+    if (read && !sameMetrics(read, metrics)) setMetrics(read);
+  };
+  const draw = (index: number): DrawnEntry => {
+    const entry = entries[index]!;
+    if (entry.kind === "heading")
+      return {
+        // The heading stands at the list's start edge, out of the indent
+        // the markers take.
+        props: {
+          className: cn(
+            "zt:list-none",
+            markers !== "none" && "zt:-ml-(--list-indent)",
+            index > 0 && "zt:pt-2",
+          ),
+        },
+        children: <RecordGroupHeading group={entry.group} />,
+      };
+    const { record, at } = entry;
+    const { row } = record;
+    const filled = shownCells(record).map((cell) => (
+      <RecordCell
+        key={properties[cell]!.path}
+        record={record}
+        properties={properties}
+        at={cell}
+      />
+    ));
+    const [first = "", ...rest] = filled;
+    return {
+      props: {
+        value: markers === "number" ? at + 1 : undefined,
+        className: "zt:py-(--list-spacing)",
+        "data-query-row": row.indexedKey,
+      },
+      children: indentProperties ? (
+        <>
+          <span>{first}</span>
+          {rest.length > 0 && (
+            <span
+              className="zt:block zt:pl-(--list-indent) zt:text-muted-foreground"
+              data-query-row-lines=""
+            >
+              {rest.map((content, line) => (
+                <span key={line} className="zt:block">
+                  {content}
+                </span>
+              ))}
+            </span>
+          )}
+        </>
+      ) : (
+        filled.map((content, part) => (
+          <Fragment key={part}>
+            {part > 0 && (
+              <span className="zt:text-muted-foreground">{separator}</span>
+            )}
+            {content}
+          </Fragment>
+        ))
+      ),
+    };
+  };
+  return (
+    <ItemsWindow
+      view={view}
+      entries={windowEntries}
+      estimates={ESTIMATES}
       // A row's lines follow the options, the properties it shows, and the
       // width and font it wraps at.
-      shape: JSON.stringify([
-        options,
+      shape={JSON.stringify([
+        [markers, indentProperties, separator],
         properties.map(({ path }) => path),
         metrics && [Math.round(metrics.width), metrics.font],
-      ]),
-    },
-  );
-  const { list: windowList } = rows;
-  const listRef = useCallback(
-    (el: HTMLElement | null) => {
-      windowList(el);
-      setList(el);
-    },
-    [windowList],
-  );
-  // Numbers count the rows of a list; bullets and none mark no order.
-  const List = options.markers === "number" ? "ol" : "ul";
-  return (
-    <div
-      ref={rows.box}
-      className="zt:min-h-0 zt:flex-1 zt:overflow-auto zt:px-3 zt:pt-2 zt:pb-11 zt:[overflow-anchor:none] zt:in-[.zt-query-note]:pb-2"
-      data-query-layout="list"
-      style={placeholderRow(rows.learned.get("row") ?? ESTIMATES.row)}
-    >
-      {/* A word too long for the line breaks, as `list-heights.ts` lays it out.
-          A long list stands at the height its window lays out: a row that
-          draws taller than its predicted height then moves the rows under
-          it, not the list's length under a scroll bar drag. */}
-      <List
-        ref={listRef}
-        className={cn(
-          "zt:my-0 zt:py-1 zt:text-(length:--font-smaller) zt:wrap-break-word zt:marker:text-(--list-marker-color)",
-          options.markers === "bullet" && "zt:list-disc zt:pl-(--list-indent)",
-          options.markers === "number" &&
-            "zt:list-decimal zt:pl-(--list-indent)",
-          options.markers === "none" && "zt:list-none zt:pl-0",
-          rows.size !== null &&
-            "zt:box-content zt:h-(--zt-virtual-size) zt:overflow-y-clip",
-        )}
-        style={
-          rows.size === null
-            ? undefined
-            : ({ "--zt-virtual-size": `${rows.size}px` } as CSSProperties)
-        }
-        data-query-markers={options.markers}
-        onFocus={rows.onFocus}
-      >
-        {rows.entries.map(({ index, before }) => {
-          const entry = entries[index]!;
-          if (entry.kind === "heading")
-            return (
-              <Fragment key={entry.key}>
-                {before > 0 && (
-                  <ListSpacer height={before} ghost={LIST_GHOST} />
-                )}
-                {/* The heading stands at the list's start edge, out of the
-                    indent the markers take. */}
-                <li
-                  ref={rows.measure}
-                  data-index={index}
-                  className={cn(
-                    "zt:list-none",
-                    options.markers !== "none" && "zt:-ml-(--list-indent)",
-                    index > 0 && "zt:pt-2",
-                  )}
-                >
-                  <RecordGroupHeading group={entry.group} />
-                </li>
-              </Fragment>
-            );
-          const { record, at } = entry;
-          const { row } = record;
-          const filled = shownCells(record).map((cell) => (
-            <RecordCell
-              key={properties[cell]!.path}
-              record={record}
-              properties={properties}
-              at={cell}
-            />
-          ));
-          const [first = "", ...rest] = filled;
-          return (
-            <Fragment key={entry.key}>
-              {before > 0 && <ListSpacer height={before} ghost={LIST_GHOST} />}
-              <li
-                ref={rows.measure}
-                data-index={index}
-                value={options.markers === "number" ? at + 1 : undefined}
-                className="zt:py-(--list-spacing)"
-                data-query-row={row.indexedKey}
-              >
-                {options.indentProperties ? (
-                  <>
-                    <span>{first}</span>
-                    {rest.length > 0 && (
-                      <span
-                        className="zt:block zt:pl-(--list-indent) zt:text-muted-foreground"
-                        data-query-row-lines=""
-                      >
-                        {rest.map((content, line) => (
-                          <span key={line} className="zt:block">
-                            {content}
-                          </span>
-                        ))}
-                      </span>
-                    )}
-                  </>
-                ) : (
-                  filled.map((content, part) => (
-                    <Fragment key={part}>
-                      {part > 0 && (
-                        <span className="zt:text-muted-foreground">
-                          {options.separator}
-                        </span>
-                      )}
-                      {content}
-                    </Fragment>
-                  ))
-                )}
-              </li>
-            </Fragment>
-          );
-        })}
-        {rows.after > 0 && (
-          <ListSpacer height={rows.after} ghost={LIST_GHOST} />
-        )}
-      </List>
-    </div>
+      ])}
+      box={{
+        className: "zt:px-3 zt:pt-2 zt:pb-11 zt:in-[.zt-query-note]:pb-2",
+        "data-query-layout": "list",
+      }}
+      boxRef={setBox}
+      flow={{
+        kind: "list",
+        // Numbers count the rows of a list; bullets and none mark no order.
+        as: markers === "number" ? "ol" : "ul",
+        // A word too long for the line breaks, as `list-heights.ts` lays it
+        // out.
+        props: {
+          className: cn(
+            "zt:my-0 zt:py-1 zt:text-(length:--font-smaller) zt:wrap-break-word zt:marker:text-(--list-marker-color)",
+            markers === "bullet" && "zt:list-disc zt:pl-(--list-indent)",
+            markers === "number" && "zt:list-decimal zt:pl-(--list-indent)",
+            markers === "none" && "zt:list-none zt:pl-0",
+          ),
+          "data-query-markers": markers,
+        },
+        ghost: LIST_GHOST,
+        holdsLength: true,
+      }}
+      draw={draw}
+      drew={drew}
+    />
   );
 }

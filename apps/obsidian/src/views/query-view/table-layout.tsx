@@ -6,8 +6,6 @@
 import { Effect, Schema } from "effect";
 import { Keymap } from "obsidian";
 import {
-  Fragment,
-  useCallback,
   useEffect,
   useLayoutEffect,
   useMemo,
@@ -37,8 +35,8 @@ import { useAnnotStore } from "@/views/annot-view/store";
 
 import { useItemRow } from "./item-rows";
 import type { ItemRowGestures } from "./item-rows";
-import { useItemsWindow } from "./items-window";
-import type { WindowEntry } from "./items-window";
+import { ItemsWindow } from "./items-window";
+import type { DrawnEntry, WindowEntry } from "./items-window";
 import type { QueryLayout } from "./layouts";
 import { useQueryTask, useQueryViewState } from "./model";
 import { LITERATURE_NOTE, vaultName } from "./query-file";
@@ -51,7 +49,6 @@ import { VaultEditCell, useVaultVersion } from "./vault-cell";
 import type { QueryView } from "./view";
 import { useViewProperties } from "./view-properties";
 import type { PropertyEntry } from "./view-properties";
-import { placeholderRow, TableSpacer } from "./virtual-spacers";
 
 export const TABLE_LAYOUT: QueryLayout = {
   type: "table",
@@ -765,7 +762,7 @@ export function TableLayout({ view }: { view: QueryView }) {
   const properties = useViewProperties(view);
   const dataset = useQueryViewState(view, (s) => s.view?.from ?? "annotations");
   const columns = useMemo(() => properties?.visible ?? [], [properties]);
-  const scroller = useRef<HTMLDivElement>(null);
+  const [scroller, setScroller] = useState<HTMLElement | null>(null);
   const sizes = useQueryViewState(view, (s) => s.view?.columnSize);
   // The search reads the vault properties as the cells do, again on a
   // change of the notes, as the List and Cards search them.
@@ -799,34 +796,63 @@ export function TableLayout({ view }: { view: QueryView }) {
       }),
     [visible, expanded],
   );
-  const mounted = useItemsWindow(view, entries, {
-    estimates: ESTIMATES,
-    fallback: ESTIMATES.row,
-    // A row's height follows its columns and their widths.
-    shape: JSON.stringify([columns.map(({ path }) => path), sizes ?? null]),
-  });
-  const { box } = mounted;
-  const mountScroller = useCallback(
-    (el: HTMLDivElement | null) => {
-      scroller.current = el;
-      box(el);
-    },
-    [box],
-  );
   if (rows.length === 0) return null;
   const span = childSpan(columns.length) + 1;
+  /** One body per Item, the unit a long table measures and mounts: its heading, its row and the rows under it. */
+  const draw = (index: number): DrawnEntry => {
+    const { row, group: placed } = visible[index]!;
+    const record: TableRecord = {
+      kind: "item",
+      key: row.indexedKey,
+      values: row.values,
+    };
+    const heading =
+      placed && entries[index]!.kind === "heading-row" ? (
+        <tr data-query-group={placed.key}>
+          <th
+            colSpan={span}
+            className={cn(
+              SPANNING,
+              "zt:bg-card zt:text-start zt:font-(--font-semibold)",
+            )}
+          >
+            {placed.label}
+          </th>
+        </tr>
+      ) : null;
+    return {
+      children: (
+        <ItemRow
+          heading={heading}
+          record={record}
+          columns={columns}
+          notes={literatureNotes}
+          host={view.vaultHost()}
+          expanded={expanded}
+          toggle={toggle}
+          readers={readers}
+          gestures={gestures}
+        />
+      ),
+    };
+  };
   return (
-    <div
-      ref={mountScroller}
-      className="zt-table-scroller zt:relative zt:min-h-0 zt:flex-1 zt:overflow-auto zt:[overflow-anchor:none]"
-      style={placeholderRow(mounted.learned.get("row") ?? ESTIMATES.row)}
-    >
-      <table
-        className="zt:min-w-full zt:border-separate zt:border-spacing-0 zt:text-(length:--bases-table-font-size)"
-        data-query-table=""
-        onFocus={mounted.onFocus}
-      >
-        {properties && (
+    <ItemsWindow
+      view={view}
+      entries={entries}
+      estimates={ESTIMATES}
+      // A row's height follows its columns and their widths.
+      shape={JSON.stringify([columns.map(({ path }) => path), sizes ?? null])}
+      box={{ className: "zt-table-scroller zt:relative" }}
+      boxRef={setScroller}
+      flow={{
+        kind: "table",
+        props: {
+          className:
+            "zt:min-w-full zt:border-separate zt:border-spacing-0 zt:text-(length:--bases-table-font-size)",
+          "data-query-table": "",
+        },
+        head: properties && (
           <TableHeader
             view={view}
             properties={properties}
@@ -841,58 +867,11 @@ export function TableLayout({ view }: { view: QueryView }) {
               filler: FILLER,
             }}
           />
-        )}
-        {/* The rows start here, under the header. */}
-        <tbody ref={mounted.list} />
-        {mounted.entries.map(({ index, before }) => {
-          const { row, group: placed } = visible[index]!;
-          const record: TableRecord = {
-            kind: "item",
-            key: row.indexedKey,
-            values: row.values,
-          };
-          const heading =
-            placed && entries[index]!.kind === "heading-row" ? (
-              <tr data-query-group={placed.key}>
-                <th
-                  colSpan={span}
-                  className={cn(
-                    SPANNING,
-                    "zt:bg-card zt:text-start zt:font-(--font-semibold)",
-                  )}
-                >
-                  {placed.label}
-                </th>
-              </tr>
-            ) : null;
-          return (
-            <Fragment key={entries[index]!.key}>
-              {before > 0 && (
-                <TableSpacer height={before} columns={columns.length} />
-              )}
-              {/* One body per Item, the unit a long table measures and
-                  mounts: its heading, its row and the rows under it. */}
-              <tbody ref={mounted.measure} data-index={index}>
-                <ItemRow
-                  heading={heading}
-                  record={record}
-                  columns={columns}
-                  notes={literatureNotes}
-                  host={view.vaultHost()}
-                  expanded={expanded}
-                  toggle={toggle}
-                  readers={readers}
-                  gestures={gestures}
-                />
-              </tbody>
-            </Fragment>
-          );
-        })}
-        {mounted.after > 0 && (
-          <TableSpacer height={mounted.after} columns={columns.length} />
-        )}
-      </table>
-    </div>
+        ),
+        columns: columns.length,
+      }}
+      draw={draw}
+    />
   );
 }
 

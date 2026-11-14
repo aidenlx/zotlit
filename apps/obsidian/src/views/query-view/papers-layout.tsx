@@ -23,8 +23,8 @@ import type { QueryViewValue } from "@/services/item-query/query-view";
 
 import { useItemRow } from "./item-rows";
 import type { ItemRowGestures } from "./item-rows";
-import { useItemsWindow } from "./items-window";
-import type { WindowEntry } from "./items-window";
+import { ItemsWindow } from "./items-window";
+import type { DrawnEntry, WindowEntry } from "./items-window";
 import type { QueryLayout } from "./layouts";
 import { useQueryTask } from "./model";
 import {
@@ -46,7 +46,6 @@ import {
 import type { ChildState, TableRecord } from "./table-layout";
 import type { LiteratureNotes } from "./table-notes";
 import type { QueryView } from "./view";
-import { ListSpacer, placeholderRow } from "./virtual-spacers";
 
 export const PAPERS_LAYOUT: QueryLayout = {
   type: "papers",
@@ -203,79 +202,71 @@ export function PapersLayout({ view }: { view: QueryView }) {
   const { children: expanded, toggle } = useChildren(view);
   const gestures = view.rows;
   const entries = useMemo(() => groupEntries(groups), [groups]);
-  const rows = useItemsWindow(
-    view,
-    useMemo(
-      () =>
-        entries.map((entry): WindowEntry => {
-          if (entry.kind === "heading")
-            return { key: entry.key, kind: "heading", item: null };
-          const { row } = entry.record;
-          return {
-            key: entry.key,
-            // A row with no second line is one line high.
-            kind:
-              metaText(row.values) !== "" || view.reason(row) !== null
-                ? "row"
-                : "line",
-            item: row.indexedKey,
-            own: expanded.has(id({ kind: "item", key: row.indexedKey })),
-          };
-        }),
-      [entries, expanded, view],
-    ),
-    { estimates: ESTIMATES, fallback: ESTIMATES.row },
+  const windowEntries = useMemo(
+    () =>
+      entries.map((entry): WindowEntry => {
+        if (entry.kind === "heading")
+          return { key: entry.key, kind: "heading", item: null };
+        const { row } = entry.record;
+        return {
+          key: entry.key,
+          // A row with no second line is one line high.
+          kind:
+            metaText(row.values) !== "" || view.reason(row) !== null
+              ? "row"
+              : "line",
+          item: row.indexedKey,
+          own: expanded.has(id({ kind: "item", key: row.indexedKey })),
+        };
+      }),
+    [entries, expanded, view],
   );
+  const draw = (index: number): DrawnEntry => {
+    const entry = entries[index]!;
+    if (entry.kind === "heading")
+      return {
+        // The heading drops its own top margin as the first child here; the
+        // entry keeps it after a row.
+        props: { className: cn(index > 0 && "zt:pt-2") },
+        children: <RecordGroupHeading group={entry.group} />,
+      };
+    const { row } = entry.record;
+    return {
+      props: {
+        className: "zt:border-b-(length:--border-width) zt:border-border",
+        "data-query-papers-row": row.indexedKey,
+      },
+      children: (
+        <PaperRow
+          item={{ kind: "item", key: row.indexedKey, values: row.values }}
+          reason={view.reason(row)}
+          notes={literatureNotes}
+          readers={readers}
+          expanded={expanded}
+          toggle={toggle}
+          gestures={gestures}
+        />
+      ),
+    };
+  };
   return (
-    <div
-      ref={rows.box}
-      className="zt:min-h-0 zt:flex-1 zt:overflow-auto zt:px-1 zt:pb-11 zt:[overflow-anchor:none] zt:not-in-[.zt-query-note]:scroll-gutter zt:in-[.zt-query-note]:pb-2"
-      data-query-layout="papers"
-      style={placeholderRow(rows.learned.get("row") ?? ESTIMATES.row)}
-    >
-      <ul
-        ref={rows.list}
-        className="zt:m-0 zt:list-none zt:p-0"
-        onFocus={rows.onFocus}
-      >
-        {rows.entries.map(({ index, before }) => {
-          const entry = entries[index]!;
-          return (
-            <Fragment key={entry.key}>
-              {before > 0 && <ListSpacer height={before} ghost={GHOST} />}
-              {entry.kind === "heading" ? (
-                // The heading drops its own top margin as the first child
-                // here; the entry keeps it after a row.
-                <li
-                  ref={rows.measure}
-                  data-index={index}
-                  className={cn(index > 0 && "zt:pt-2")}
-                >
-                  <RecordGroupHeading group={entry.group} />
-                </li>
-              ) : (
-                <PaperRow
-                  index={index}
-                  measure={rows.measure}
-                  item={{
-                    kind: "item",
-                    key: entry.record.row.indexedKey,
-                    values: entry.record.row.values,
-                  }}
-                  reason={view.reason(entry.record.row)}
-                  notes={literatureNotes}
-                  readers={readers}
-                  expanded={expanded}
-                  toggle={toggle}
-                  gestures={gestures}
-                />
-              )}
-            </Fragment>
-          );
-        })}
-        {rows.after > 0 && <ListSpacer height={rows.after} ghost={GHOST} />}
-      </ul>
-    </div>
+    <ItemsWindow
+      view={view}
+      entries={windowEntries}
+      estimates={ESTIMATES}
+      box={{
+        className:
+          "zt:px-1 zt:pb-11 zt:not-in-[.zt-query-note]:scroll-gutter zt:in-[.zt-query-note]:pb-2",
+        "data-query-layout": "papers",
+      }}
+      flow={{
+        kind: "list",
+        as: "ul",
+        props: { className: "zt:m-0 zt:list-none zt:p-0" },
+        ghost: GHOST,
+      }}
+      draw={draw}
+    />
   );
 }
 
@@ -285,9 +276,8 @@ interface Expansion {
   readonly readers: TargetOpenGesture;
 }
 
+/** What a Papers row's `li` holds: the row, and the rows it expands into. */
 function PaperRow({
-  index,
-  measure,
   item,
   notes,
   readers,
@@ -296,9 +286,6 @@ function PaperRow({
   reason,
   gestures,
 }: Expansion & {
-  /** The row's place among the list's entries. */
-  index: number;
-  measure: (el: Element | null) => void;
   item: TableRecord;
   notes: LiteratureNotes;
   /** Why the row is in the list, last on its second line. */
@@ -316,12 +303,7 @@ function PaperRow({
   const kind = mainAttachmentKind(values);
   const typeIcon = itemTypeIcon(text(values.itemType) || null);
   return (
-    <li
-      ref={measure}
-      data-index={index}
-      className="zt:border-b-(length:--border-width) zt:border-border"
-      data-query-papers-row={item.key}
-    >
+    <>
       {/* A row the host lets take focus is a group named by its title: an
           `aria-label` would show a tooltip. */}
       <div
@@ -407,7 +389,7 @@ function PaperRow({
           {note !== null && <LiteratureNoteRow notes={notes} item={item} />}
         </ul>
       )}
-    </li>
+    </>
   );
 }
 

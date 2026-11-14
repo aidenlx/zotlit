@@ -2,13 +2,7 @@
 
 import { Menu } from "obsidian";
 import { useEffect, useLayoutEffect, useRef } from "react";
-import type {
-  CSSProperties,
-  DragEvent,
-  MouseEvent,
-  PointerEvent,
-  RefObject,
-} from "react";
+import type { CSSProperties, DragEvent, MouseEvent, PointerEvent } from "react";
 
 import { Icon } from "@/components/obsidian/icon";
 import { useObsidianApp } from "@/lib/app-context";
@@ -221,7 +215,7 @@ export function TableHeader({
   properties: ViewProperties;
   dataset: QueryFileDataset;
   /** The box the table scrolls in, which holds the drop line. */
-  scroller: RefObject<HTMLElement | null>;
+  scroller: HTMLElement | null;
   classes: HeaderClasses;
   /** The widths the researcher set, by property path. */
   sizes: ColumnSizes | undefined;
@@ -253,7 +247,7 @@ export function TableHeader({
   const moveColumn = (event: DragEvent<HTMLElement>, path: string) => {
     const th = event.currentTarget;
     const row = th.parentElement!;
-    const box = scroller.current;
+    const box = scroller;
     const table = th.closest("table");
     if (!box || !table) return;
     const controller = begin();
@@ -446,7 +440,7 @@ export function TableHeader({
   const head = useRef<HTMLTableSectionElement>(null);
   useLayoutEffect(() => {
     const thead = head.current;
-    const box = scroller.current;
+    const box = scroller;
     if (!thead || !box) return;
     const show = () =>
       box.style.setProperty(HEADER_HEIGHT, `${thead.offsetHeight}px`);
