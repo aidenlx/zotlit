@@ -2,7 +2,7 @@
 // properties in the view's order, as the List layout of Bases draws a note.
 // Its options are those of Bases 1.14.4: `markers`, `indentProperties` and
 // `separator`.
-import { Fragment, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 
 import { useUniqueId } from "@zotlit/ui";
 
@@ -15,21 +15,16 @@ import { cn } from "@/lib/utils";
 import { ItemsWindow } from "./items-window";
 import type { DrawnEntry, WindowEntry } from "./items-window";
 import type { QueryLayout } from "./layouts";
-import { readListMetrics, sameMetrics, useRowHeights } from "./list-heights";
-import type { ListMetrics, RowText } from "./list-heights";
+import { drawListRow, useListRowHeights } from "./list-row";
 import { useQueryViewState } from "./model";
 import type { QueryFileView } from "./query-file";
 import {
   HEADING_ESTIMATE,
-  RecordCell,
   RecordGroupHeading,
   groupEntries,
-  holdsError,
   useRecordGroups,
 } from "./record-rows";
-import type { RecordCells } from "./record-rows";
 import type { QueryView } from "./view";
-import type { PropertyEntry } from "./view-properties";
 import { LIST_GHOST } from "./virtual-spacers";
 
 export const LIST_LAYOUT: QueryLayout = {
@@ -148,40 +143,6 @@ export function ListLayoutFields({
 const ESTIMATES = { heading: HEADING_ESTIMATE, row: 28 };
 
 /**
- * The cells a row shows, by their place: an empty property takes no place
- * on the line, but an Item with no note to read a vault property from shows
- * that it has none.
- */
-function shownCells({ cells, vault }: RecordCells): number[] {
-  return cells.flatMap((text, cell) =>
-    text === "" && vault[cell]?.note !== false ? [] : [cell],
-  );
-}
-
-/**
- * The text a row shows, for its height before it is drawn; `null` where a
- * cell shows more than its text: a vault property, or an Error Value's icon.
- */
-function rowText(
-  record: RecordCells,
-  properties: readonly PropertyEntry[],
-  { indentProperties, separator }: ListLayoutOptions,
-): RowText | null {
-  const texts: string[] = [];
-  for (const cell of shownCells(record)) {
-    if (
-      record.vault[cell] ||
-      holdsError(record.row.values[properties[cell]!.path])
-    )
-      return null;
-    texts.push(record.cells[cell]!);
-  }
-  if (!indentProperties) return { first: texts.join(separator), rest: [] };
-  const [first = "", ...rest] = texts;
-  return { first, rest };
-}
-
-/**
  * The rows of the shown view under their group headings, each wrapping to
  * the lines its text takes. The groups share one list: numbers count each
  * group's rows from one.
@@ -195,21 +156,10 @@ export function ListLayout({ view }: { view: QueryView }) {
   // A row's height before it is drawn, from its text, at the font and width
   // its drawn rows show.
   const [box, setBox] = useState<HTMLElement | null>(null);
-  const [metrics, setMetrics] = useState<ListMetrics | null>(null);
-  const texts = useMemo(
-    () =>
-      entries.map((entry) =>
-        entry.kind === "heading"
-          ? null
-          : rowText(entry.record, properties, {
-              markers,
-              indentProperties,
-              separator,
-            }),
-      ),
-    [entries, properties, markers, indentProperties, separator],
-  );
-  const heights = useRowHeights(texts, metrics, box?.doc ?? null);
+  const { heights, metrics, read } = useListRowHeights(box, entries, {
+    properties,
+    options,
+  });
 
   const windowEntries = useMemo(
     () =>
@@ -226,11 +176,6 @@ export function ListLayout({ view }: { view: QueryView }) {
       }),
     [entries, heights],
   );
-  /** Read the drawn rows after each draw of the window. */
-  const drew = () => {
-    const read = box && readListMetrics(box);
-    if (read && !sameMetrics(read, metrics)) setMetrics(read);
-  };
   const draw = (index: number): DrawnEntry => {
     const entry = entries[index]!;
     if (entry.kind === "heading")
@@ -246,50 +191,7 @@ export function ListLayout({ view }: { view: QueryView }) {
         },
         children: <RecordGroupHeading group={entry.group} />,
       };
-    const { record, at } = entry;
-    const { row } = record;
-    const filled = shownCells(record).map((cell) => (
-      <RecordCell
-        key={properties[cell]!.path}
-        record={record}
-        properties={properties}
-        at={cell}
-      />
-    ));
-    const [first = "", ...rest] = filled;
-    return {
-      props: {
-        value: markers === "number" ? at + 1 : undefined,
-        className: "zt:py-(--list-spacing)",
-        "data-query-row": row.indexedKey,
-      },
-      children: indentProperties ? (
-        <>
-          <span>{first}</span>
-          {rest.length > 0 && (
-            <span
-              className="zt:block zt:pl-(--list-indent) zt:text-muted-foreground"
-              data-query-row-lines=""
-            >
-              {rest.map((content, line) => (
-                <span key={line} className="zt:block">
-                  {content}
-                </span>
-              ))}
-            </span>
-          )}
-        </>
-      ) : (
-        filled.map((content, part) => (
-          <Fragment key={part}>
-            {part > 0 && (
-              <span className="zt:text-muted-foreground">{separator}</span>
-            )}
-            {content}
-          </Fragment>
-        ))
-      ),
-    };
+    return drawListRow(entry.record, entry.at, { properties, options });
   };
   return (
     <ItemsWindow
@@ -326,7 +228,8 @@ export function ListLayout({ view }: { view: QueryView }) {
         ghost: LIST_GHOST,
       }}
       draw={draw}
-      drew={drew}
+      // Read the drawn rows after each draw of the window.
+      drew={read}
     />
   );
 }

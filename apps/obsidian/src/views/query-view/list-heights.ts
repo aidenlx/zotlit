@@ -65,34 +65,6 @@ export function sameMetrics(a: ListMetrics | null, b: ListMetrics | null) {
   );
 }
 
-/**
- * The metrics of the rows of `list`, read from a drawn row; `null` while it
- * draws none, or its line height is not a length.
- */
-export function readListMetrics(list: HTMLElement): ListMetrics | null {
-  const row = list.querySelector<HTMLElement>("li[data-query-row]");
-  if (!row) return null;
-  const style = row.win.getComputedStyle(row);
-  const lineHeight = Number.parseFloat(style.lineHeight);
-  if (!Number.isFinite(lineHeight)) return null;
-  const lines = list.querySelector<HTMLElement>("[data-query-row-lines]");
-  const indent = lines
-    ? Number.parseFloat(lines.win.getComputedStyle(lines).paddingInlineStart)
-    : 0;
-  return {
-    font: `${style.fontStyle} ${style.fontWeight} ${style.fontSize} ${style.fontFamily}`,
-    lineHeight,
-    width:
-      row.clientWidth -
-      Number.parseFloat(style.paddingLeft) -
-      Number.parseFloat(style.paddingRight),
-    indent,
-    padding:
-      Number.parseFloat(style.paddingTop) +
-      Number.parseFloat(style.paddingBottom),
-  };
-}
-
 /** The rows a task prepares before it lets the window draw. */
 const PREPARE_BATCH = 250;
 
