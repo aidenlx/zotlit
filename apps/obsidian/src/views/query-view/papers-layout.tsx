@@ -186,13 +186,20 @@ const ESTIMATES = { heading: HEADING_ESTIMATE, row: 46, line: 32 };
  * The outline of a row not yet drawn, where a row draws its parts: past the
  * room of the expand button, the type's icon on the title's line, a bar for
  * the title and a shorter one for the second line, and the line under the
- * row. The places are those of a row at Obsidian's interface font.
+ * row. The places follow the sizes the row's parts take: its padding, the
+ * expand button's, the icon's, and the lines of its two text sizes.
  */
 const GHOST = cn(
   "zt:bg-repeat-y zt:[--zt-ghost:var(--background-modifier-hover)]",
-  "zt:bg-[image:linear-gradient(to_bottom,transparent_6px,var(--zt-ghost)_0_22px,transparent_0),linear-gradient(to_bottom,transparent_10px,var(--zt-ghost)_0_19px,transparent_0),linear-gradient(to_bottom,transparent_27px,var(--zt-ghost)_0_35px,transparent_0),linear-gradient(to_bottom,transparent_calc(100%-var(--border-width)),var(--background-modifier-border)_0)]",
-  "zt:bg-size-[16px_var(--zt-virtual-row),min(55%,24rem)_var(--zt-virtual-row),min(35%,16rem)_var(--zt-virtual-row),100%_var(--zt-virtual-row)]",
-  "zt:bg-position-[36px_0,58px_0,58px_0,0_0]",
+  // The row's padding above its title, and the line of the title and of the
+  // second line.
+  "zt:[--zt-ghost-meta:calc(var(--font-ui-smaller)*var(--line-height-tight))] zt:[--zt-ghost-pad:var(--size-2-3)] zt:[--zt-ghost-title:calc(var(--font-ui-small)*var(--line-height-tight))]",
+  // The left of the icon, past the row's padding and the expand button with
+  // a gap after each; and of the text, past the icon and its gap.
+  "zt:[--zt-ghost-icon:calc(var(--size-4-1)+var(--icon-xs)+3*var(--size-2-3))] zt:[--zt-ghost-text:calc(var(--zt-ghost-icon)+var(--icon-s)+var(--size-2-3))]",
+  "zt:bg-[image:linear-gradient(to_bottom,transparent_calc(var(--zt-ghost-pad)+(var(--zt-ghost-title)-var(--icon-s))/2),var(--zt-ghost)_0_calc(var(--zt-ghost-pad)+(var(--zt-ghost-title)+var(--icon-s))/2),transparent_0),linear-gradient(to_bottom,transparent_calc(var(--zt-ghost-pad)+var(--zt-ghost-title)/2-0.35*var(--font-ui-small)),var(--zt-ghost)_0_calc(var(--zt-ghost-pad)+var(--zt-ghost-title)/2+0.35*var(--font-ui-small)),transparent_0),linear-gradient(to_bottom,transparent_calc(var(--zt-ghost-pad)+var(--zt-ghost-title)+var(--zt-ghost-meta)/2-0.35*var(--font-ui-smaller)),var(--zt-ghost)_0_calc(var(--zt-ghost-pad)+var(--zt-ghost-title)+var(--zt-ghost-meta)/2+0.35*var(--font-ui-smaller)),transparent_0),linear-gradient(to_bottom,transparent_calc(100%-var(--border-width)),var(--background-modifier-border)_0)]",
+  "zt:bg-size-[var(--icon-s)_var(--zt-virtual-row),min(55%,24rem)_var(--zt-virtual-row),min(35%,16rem)_var(--zt-virtual-row),100%_var(--zt-virtual-row)]",
+  "zt:bg-position-[var(--zt-ghost-icon)_0,var(--zt-ghost-text)_0,var(--zt-ghost-text)_0,0_0]",
 );
 
 /** The rows of the shown view as a reading list, under their group headings. */

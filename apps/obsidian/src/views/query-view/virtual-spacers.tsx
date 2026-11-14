@@ -27,11 +27,12 @@ export const LIST_GHOST =
   "zt:bg-[image:linear-gradient(to_bottom,transparent_calc(50%-0.3em),var(--background-modifier-hover)_0_calc(50%+0.3em),transparent_0)] zt:bg-size-[min(60%,24rem)_var(--zt-virtual-row,2.5em)] zt:bg-position-[calc(var(--list-indent)+var(--size-4-3))_0] zt:bg-repeat-y";
 
 /**
- * The outline of a Table row: the line under it, and a bar at the first
- * property cell's padding, past the expand buttons' column.
+ * The outline of a Table row: the line under it, and a bar where the first
+ * property cell's text starts, past the expand buttons' column: a chevron
+ * button after the column's padding, and the cell's padding.
  */
 export const TABLE_GHOST =
-  "zt:bg-[image:linear-gradient(to_bottom,transparent_calc(50%-0.3em),var(--background-modifier-hover)_0_calc(50%+0.3em),transparent_0),linear-gradient(to_bottom,transparent_calc(100%-var(--border-width)),var(--table-border-color)_0)] zt:bg-size-[min(40%,12rem)_var(--zt-virtual-row,2.5em),100%_var(--zt-virtual-row,2.5em)] zt:bg-position-[calc(30px+var(--size-4-2))_var(--zt-table-header-height,0px),0_var(--zt-table-header-height,0px)] zt:bg-repeat-y";
+  "zt:bg-[image:linear-gradient(to_bottom,transparent_calc(50%-0.3em),var(--background-modifier-hover)_0_calc(50%+0.3em),transparent_0),linear-gradient(to_bottom,transparent_calc(100%-var(--border-width)),var(--table-border-color)_0)] zt:bg-size-[min(40%,12rem)_var(--zt-virtual-row,2.5em),100%_var(--zt-virtual-row,2.5em)] zt:bg-position-[calc(2*var(--size-4-1)+var(--icon-xs)+2*var(--size-2-3))_var(--zt-table-header-height,0px),0_var(--zt-table-header-height,0px)] zt:bg-repeat-y";
 
 /** The room of the entries a long list leaves out. */
 export function ListSpacer({ height }: { height: number }) {

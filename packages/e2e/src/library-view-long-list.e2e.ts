@@ -387,6 +387,283 @@ describe.skipIf(!reachable)("Library View long lists", () => {
     expect(drawn.row).toMatch(/^rgb\(/);
   }, 120_000);
 
+  /** A theme's larger interface: its small text and icons a size up. */
+  const LARGER_SIZES = {
+    "--font-ui-small": "16px",
+    "--font-ui-smaller": "14px",
+    "--icon-s": "20px",
+    "--icon-xs": "20px",
+  };
+
+  it.each(
+    (["papers", "table"] as const).flatMap((layout) =>
+      (["Obsidian's", "a larger theme's"] as const).map(
+        (sizes) => [layout, sizes] as const,
+      ),
+    ),
+  )(
+    "draws a long %s list's row outlines where its rows draw their parts, at %s sizes",
+    async (layout, sizes) => {
+      await using cleanup = new AsyncDisposableStack();
+      if (sizes === "a larger theme's") {
+        await obRun(
+          vaultId,
+          (_, { vars }) => {
+            for (const [name, value] of Object.entries(vars))
+              document.body.style.setProperty(name, value);
+          },
+          { vars: LARGER_SIZES },
+        );
+        cleanup.defer(() =>
+          obRun(
+            vaultId,
+            (_, { names }) => {
+              for (const name of names)
+                document.body.style.removeProperty(name);
+            },
+            { names: Object.keys(LARGER_SIZES) },
+          ),
+        );
+      }
+      closeLibrary(cleanup);
+      await openLibrary(layout);
+      const parts = await obRunUntil(
+        vaultId,
+        async ({ app }, { box, layout }) => {
+          const remote =
+            require("@electron/remote") as typeof import("@electron/remote");
+          const view = app.workspace.getLeavesOfType("zotlit-library")[0]!
+            .view as LibraryView;
+          const list = view.contentEl.querySelector<HTMLElement>(box);
+          if (!list) return null;
+          list.scrollTop = 0;
+          const style = getComputedStyle(list);
+          const row = Number.parseFloat(
+            style.getPropertyValue("--zt-virtual-row"),
+          );
+          const bounds = list.getBoundingClientRect();
+          // The outlines repeat from the top of the box's content, under a
+          // Table's header.
+          const origin =
+            bounds.top +
+            list.clientTop +
+            Number.parseFloat(style.paddingTop) +
+            (Number.parseFloat(
+              list.style.getPropertyValue("--zt-table-header-height"),
+            ) || 0);
+          const entries = [
+            ...list.querySelectorAll<HTMLElement>("[data-index]"),
+          ];
+          // A two-line row, as tall as the outline's row, at an outline's top.
+          const entry = entries.find((el) => {
+            const r = el.getBoundingClientRect();
+            const off = (((r.top - origin) % row) + row) % row;
+            return (
+              Math.abs(r.height - row) < 0.5 &&
+              (off < 0.5 || off > row - 0.5) &&
+              r.bottom < bounds.bottom &&
+              (layout === "table" ||
+                el.querySelector("[data-query-papers-meta]") !== null)
+            );
+          });
+          if (!entry) return null;
+          const rect = (el: Element) => {
+            const r = el.getBoundingClientRect();
+            return {
+              left: r.left,
+              top: r.top,
+              right: r.right,
+              bottom: r.bottom,
+            };
+          };
+          const at = rect(entry);
+          const frame = () =>
+            new Promise((resolve) => requestAnimationFrame(resolve));
+          // The outlines show where the rows let them through.
+          for (const el of entries) el.style.visibility = "hidden";
+          const contents = remote.getCurrentWebContents();
+          const zoom = contents.getZoomFactor();
+          const image = await (async () => {
+            try {
+              await frame();
+              await frame();
+              return await contents.capturePage({
+                x: Math.round(bounds.left * zoom),
+                y: Math.round(at.top * zoom),
+                width: Math.round((bounds.right - bounds.left) * zoom),
+                // The line under the row too, at its bottom edge.
+                height: Math.round((at.bottom - at.top + 2) * zoom),
+              });
+            } finally {
+              for (const el of entries) el.style.visibility = "";
+            }
+          })();
+          const size = image.getSize();
+          const bmp = image.toBitmap();
+          const k = Math.sqrt(bmp.length / 4 / (size.width * size.height));
+          const W = Math.round(size.width * k);
+          const H = Math.round(size.height * k);
+          /** Device pixels a CSS pixel takes. */
+          const scale = W / (bounds.right - bounds.left);
+          const lum = (x: number, y: number) => {
+            const i = (y * W + x) * 4;
+            return (bmp[i]! + bmp[i + 1]! * 2 + bmp[i + 2]!) >> 2;
+          };
+          const hist = new Uint32Array(256);
+          for (let y = 0; y < H; y++)
+            for (let x = 0; x < W; x++) hist[lum(x, y)]!++;
+          let bg = 0;
+          for (let i = 1; i < 256; i++) if (hist[i]! > hist[bg]!) bg = i;
+          /** The bounds of the outline's ink inside a part of the row, in CSS px. */
+          const ink = ({
+            left,
+            right,
+            top,
+            bottom,
+          }: {
+            left: number;
+            right: number;
+            top: number;
+            bottom: number;
+          }) => {
+            const x0 = Math.max(0, Math.round((left - bounds.left) * scale));
+            const x1 = Math.min(W, Math.round((right - bounds.left) * scale));
+            const y0 = Math.max(0, Math.round((top - at.top) * scale));
+            const y1 = Math.min(H, Math.round((bottom - at.top) * scale));
+            let found = null as null | {
+              left: number;
+              top: number;
+              right: number;
+              bottom: number;
+            };
+            for (let y = y0; y < y1; y++)
+              for (let x = x0; x < x1; x++) {
+                if (Math.abs(lum(x, y) - bg) < 8) continue;
+                found ??= { left: x, top: y, right: x + 1, bottom: y + 1 };
+                found.left = Math.min(found.left, x);
+                found.top = Math.min(found.top, y);
+                found.right = Math.max(found.right, x + 1);
+                found.bottom = Math.max(found.bottom, y + 1);
+              }
+            return (
+              found && {
+                left: found.left / scale + bounds.left,
+                top: found.top / scale + at.top,
+                right: found.right / scale + bounds.left,
+                bottom: found.bottom / scale + at.top,
+              }
+            );
+          };
+          const middle = (r: { top: number; bottom: number }) =>
+            (r.top + r.bottom) / 2;
+          // The line under the row, at the box's right, where no bar reaches.
+          const end = bounds.left + list.clientLeft + list.clientWidth;
+          const line = ink({
+            left: end - 40,
+            right: end - 20,
+            top: at.bottom - 6,
+            bottom: at.bottom,
+          });
+          const border = Number.parseFloat(
+            getComputedStyle(entry).borderBottomWidth,
+          );
+          const under = line && {
+            outline: { top: line.top },
+            row: { top: at.bottom - border },
+          };
+          if (layout === "table") {
+            const gutter = rect(list.querySelector("thead th")!);
+            const cell = entry.querySelector("td:nth-child(2)")!;
+            const padding = Number.parseFloat(
+              getComputedStyle(cell).paddingLeft,
+            );
+            const bar = ink({
+              left: gutter.right - 2,
+              right: gutter.right + 60,
+              top: at.top + 2,
+              bottom: at.bottom - 3,
+            });
+            return {
+              row,
+              gutter: gutter.right,
+              parts: {
+                bar: bar && {
+                  outline: { left: bar.left, middle: middle(bar) },
+                  row: { left: rect(cell).left + padding, middle: middle(at) },
+                },
+                line: under,
+              },
+            };
+          }
+          const icon = entry.querySelector("[data-query-papers-icon]")!;
+          const shape = rect(icon.querySelector("svg") ?? icon);
+          const title = rect(entry.querySelector("[data-query-papers-title]")!);
+          const meta = rect(entry.querySelector("[data-query-papers-meta]")!);
+          const iconInk = ink({
+            left: shape.left - 3,
+            right: shape.right + 2,
+            top: at.top + 2,
+            bottom: at.bottom - 3,
+          });
+          const titleInk = ink({
+            left: title.left - 3,
+            right: title.left + 40,
+            top: at.top + 2,
+            bottom: title.bottom,
+          });
+          const metaInk = ink({
+            left: meta.left - 3,
+            right: meta.left + 40,
+            top: meta.top,
+            bottom: at.bottom - 3,
+          });
+          return {
+            row,
+            gutter: null,
+            parts: {
+              icon: iconInk && { outline: iconInk, row: shape },
+              title: titleInk && {
+                outline: { left: titleInk.left, middle: middle(titleInk) },
+                row: { left: title.left, middle: middle(title) },
+              },
+              meta: metaInk && {
+                outline: { left: metaInk.left, middle: middle(metaInk) },
+                row: { left: meta.left, middle: middle(meta) },
+              },
+              line: under,
+            },
+          };
+        },
+        { box: BOX, layout },
+        {
+          what: `a ${layout} row at an outline's top, and its outline`,
+          ready: (parts) => parts !== null,
+        },
+      );
+      console.log(`outlines ${layout} ${sizes}: ${JSON.stringify(parts)}`);
+      // Each part of the outline stands within a pixel of the row's.
+      type Pair = {
+        outline: Record<string, number>;
+        row: Record<string, number>;
+      } | null;
+      const near = Object.fromEntries(
+        Object.entries<Pair | undefined>(parts!.parts).map(([part, pair]) => [
+          part,
+          pair != null &&
+            Object.entries(pair.outline).every(
+              ([key, value]) => Math.abs(value - pair.row[key]!) <= 1,
+            ),
+        ]),
+      );
+      expect(near).toEqual(
+        layout === "table"
+          ? { bar: true, line: true }
+          : { icon: true, title: true, meta: true, line: true },
+      );
+    },
+    120_000,
+  );
+
   it("brings a far paper into view from Show in Library, and ↓ steps on from it after the Papers list scrolled away", async () => {
     await using cleanup = new AsyncDisposableStack();
     closeLibrary(cleanup);
