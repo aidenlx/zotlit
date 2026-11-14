@@ -1763,6 +1763,123 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     expect((await readFile(pdfPath)).subarray(0, 5).toString()).toBe("%PDF-");
   }, 120000);
 
+  it.each(["preview", "source"] as const)(
+    "moves the text under a short Query Block in %s at most once, and only down, as the note first opens",
+    async (mode) => {
+      // A note of its own for each mode: the session remembers the height a
+      // view drew at, and this case is about a view the note never drew.
+      const notePath = `query-files/Short block first open ${mode}.md`;
+      const layout = await obRun(
+        run.vaultId,
+        async ({ app }) => {
+          return JSON.stringify(app.workspace.getLayout());
+        },
+        undefined,
+      );
+      await using cleanup = new AsyncDisposableStack();
+      cleanup.defer(async () => {
+        await obRun(
+          run.vaultId,
+          async ({ app }, { layout, notePath }) => {
+            await app.workspace.changeLayout(JSON.parse(layout));
+            const file = app.vault.getFileByPath(notePath)!;
+            if (file) await app.vault.delete(file);
+          },
+          { layout, notePath },
+        );
+      });
+      const note = [
+        "# Short block",
+        "",
+        "```zotquery",
+        "views:",
+        "  - type: papers",
+        "    name: Three papers",
+        "    from: items",
+        "    limit: 3",
+        "```",
+        "",
+        "The end.",
+        "",
+      ].join("\n");
+      /**
+       * The place of the text under the block in the note, on each frame
+       * from the moment the note opens until its rows have drawn: `null`
+       * while the text is not on the page.
+       */
+      const { tops, rows } = await obRun(
+        run.vaultId,
+        async ({ app }, { notePath, note, mode }) => {
+          const file = await app.vault.create(notePath, note);
+          const leaf = app.workspace.getLeaf("tab");
+          const frame = () =>
+            new Promise((resolve) => requestAnimationFrame(resolve));
+          const scroller =
+            mode === "preview" ? ".markdown-preview-view" : ".cm-scroller";
+          const below = () => {
+            const box =
+              leaf.view.containerEl.querySelector<HTMLElement>(scroller);
+            const text = [
+              ...(box?.querySelectorAll<HTMLElement>("p, .cm-line") ?? []),
+            ].find((el) => el.textContent.trim() === "The end.");
+            if (!box || !text) return null;
+            return (
+              text.getBoundingClientRect().top -
+              box.getBoundingClientRect().top +
+              box.scrollTop
+            );
+          };
+          const host = () =>
+            leaf.view.containerEl.querySelector<
+              HTMLElement & {
+                zotlitQueryView?: { state: { getState(): { phase: string } } };
+              }
+            >(`${scroller} .zt-query-note`);
+          const tops: (number | null)[] = [];
+          let sampling = true;
+          const sampled = (async () => {
+            while (sampling) {
+              tops.push(below());
+              await frame();
+            }
+          })();
+          await leaf.openFile(file, { state: { mode } });
+          app.workspace.setActiveLeaf(leaf, { focus: true });
+          // Until the rows have drawn and the view let its room go, then a
+          // little longer.
+          const deadline = performance.now() + 20000;
+          while (
+            performance.now() < deadline &&
+            !(
+              host()?.zotlitQueryView?.state.getState().phase === "ready" &&
+              !host()!.hasAttribute("data-query-waiting")
+            )
+          )
+            await frame();
+          for (let i = 0; i < 30; i++) await frame();
+          sampling = false;
+          await sampled;
+          return {
+            tops,
+            rows: host()?.querySelectorAll("[data-query-papers-row]").length,
+          };
+        },
+        { notePath, note, mode },
+        { timeoutMs: 60000 },
+      );
+      expect(rows).toBe(3);
+      const placed = tops.filter((top): top is number => top !== null);
+      // The places the text stood at, in order, one entry per move.
+      const moves = placed.filter(
+        (top, i) => i === 0 || Math.abs(top - placed[i - 1]!) > 0.5,
+      );
+      // At most one move, and down: each place lower than the one before.
+      expect(moves.length, JSON.stringify(moves)).toBeLessThanOrEqual(2);
+      expect(moves).toEqual(moves.toSorted((a, b) => a - b));
+    },
+    90000,
+  );
+
   it("filters a Query File tab from its Filter popover, and the file text and the cards follow", async () => {
     const layout = await obRun(
       run.vaultId,

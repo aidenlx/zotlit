@@ -1561,9 +1561,13 @@ function rankedLayout(
 /** The rows, drawn by the shown view's Layout. */
 function LayoutBody({ view }: { view: QueryView }) {
   const type = useQueryViewState(view, (s) =>
-    s.view ? layoutOf(s.view)?.type : undefined,
+    s.view ? layoutOf(s.view)?.type : null,
   );
   switch (type) {
+    // No view to draw, as before the host gives the view its text: the
+    // body takes no room that the rows then give back.
+    case null:
+      return null;
     case "list":
       return <ListLayout view={view} />;
     case "cards":

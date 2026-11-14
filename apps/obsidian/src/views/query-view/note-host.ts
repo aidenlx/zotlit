@@ -80,7 +80,7 @@ export class NoteQueryHost extends Component {
       start: this.#start.promise,
     });
     // The view stands at the height it last drew at until its rows come, or
-    // at the most room they take, so the note keeps its height as its views
+    // at the least room they take, so the note keeps its height as its views
     // load (see `note-host.css`).
     el.dataset.queryWaiting = "";
     this.#key = JSON.stringify([sourcePath(), view]);
@@ -175,7 +175,7 @@ export class NoteQueryHost extends Component {
     if (height !== undefined) drawnHeights.set(this.#key, height);
   }
 
-  /** Stand at `height` until the rows come; the cap for `undefined`. */
+  /** Stand at `height` until the rows come; the least room for `undefined`. */
   #reserve(height: number | undefined): void {
     if (height !== undefined)
       this.#el.style.setProperty("--zt-query-note-reserve", `${height}px`);
