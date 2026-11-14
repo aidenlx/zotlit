@@ -5,10 +5,11 @@
 // restyles a screenful of rows on a resize or a sidebar toggle, not the
 // whole list.
 //
-// The list scrolls in its own box in a tab, and with the note in a note. A
-// layout's own box turns off the browser's scroll anchoring: the spacers
-// and the rows they stand for differ by a pixel, and an anchor that follows
-// that pixel moves the content under a scroll bar dragged by the pointer.
+// The list scrolls in the layout's own box, in a tab and in a note alike: a
+// note caps the view's height (`note-host.css`). The box turns off the
+// browser's scroll anchoring: the spacers and the rows they stand for
+// differ by a pixel, and an anchor that follows that pixel moves the
+// content under a scroll bar dragged by the pointer.
 // The selected row, the first row and the row that holds the focus stay
 // mounted wherever they are, so the host's keys and the Tab stop find them.
 import { useVirtualizer } from "@tanstack/react-virtual";
@@ -100,26 +101,6 @@ export function learn(
   return heights;
 }
 
-/**
- * The element that scrolls the list: the nearest ancestor of a note's view
- * that scrolls its content up and down, in a note, else the layout's own
- * box. An ancestor that only scrolls sideways, as a callout's body does, is
- * as high as its content and passes.
- */
-function scrollerOf(list: HTMLElement, own: HTMLElement): HTMLElement {
-  const note = list.closest(".zt-query-note");
-  if (!note) return own;
-  for (let el = note.parentElement; el; el = el.parentElement) {
-    const { overflowY } = el.win.getComputedStyle(el);
-    if (
-      (overflowY === "auto" || overflowY === "scroll") &&
-      el.scrollHeight > el.clientHeight
-    )
-      return el;
-  }
-  return own;
-}
-
 /** The distance from the scroller's content top to the list's top. */
 function marginOf(scroller: HTMLElement, list: HTMLElement): number {
   return Math.round(
@@ -131,7 +112,7 @@ function marginOf(scroller: HTMLElement, list: HTMLElement): number {
 
 /**
  * Mount the `count` entries of a layout near the screen only.
- * @param own The layout's own scroll box.
+ * @param own The layout's own box, which scrolls the list.
  * @param estimate The height of the entry at an index before it is measured,
  *   until the list has measured entries of its kind.
  * @param kindOf The kind of the entry at an index, whose measured height an
@@ -174,20 +155,7 @@ export function useVirtualRows({
   const samples = useRef(new Map<string, Map<VirtualItem["key"], number>>());
   // Until its box mounts, the list draws the window's worth at its top.
   const enabled = !all && count > VIRTUAL_MIN_ENTRIES;
-  const [scroller, setScroller] = useState<HTMLElement | null>(null);
-  // A note's view can mount before Reading view attaches its section: the
-  // note's scroller is found once the list stands under it.
-  // oxlint-disable-next-line react-hooks/exhaustive-deps -- looks again after each draw until it finds it
-  useLayoutEffect(() => {
-    if (!list || !own) return;
-    if (
-      scroller !== null &&
-      (scroller !== own || !list.closest(".zt-query-note"))
-    )
-      return;
-    const found = scrollerOf(list, own);
-    if (found !== scroller) setScroller(found);
-  });
+  const scroller = own;
   // A view moved into or out of a pop-out keeps its elements; the scroller
   // goes for one draw, so the virtualizer observes it from its new window.
   // The new window can draw a row at another height: the rows are measured
@@ -271,9 +239,9 @@ export function useVirtualRows({
     initialRect: { width: 0, height: (own?.win ?? activeWindow).innerHeight },
   });
 
-  // The list moves in the scroller as the content above it changes: a
-  // note's text, a Table's header. Read its place as the list mounts, and
-  // again as the scroller scrolls or changes size.
+  // The list moves in the scroller as the content above it changes, such as
+  // a Table's header. Read its place as the list mounts, and again as the
+  // scroller scrolls or changes size.
   useLayoutEffect(() => {
     if (!enabled || !scroller || !list) return;
     const read = () => {

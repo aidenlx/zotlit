@@ -2,7 +2,13 @@
 // properties in the view's order, as the List layout of Bases draws a note.
 // Its options are those of Bases 1.14.4: `markers`, `indentProperties` and
 // `separator`.
-import { Fragment, useMemo } from "react";
+import {
+  Fragment,
+  useCallback,
+  useLayoutEffect,
+  useMemo,
+  useState,
+} from "react";
 
 import { useUniqueId } from "@zotlit/ui";
 
@@ -15,6 +21,8 @@ import { cn } from "@/lib/utils";
 import { useItemsWindow } from "./items-window";
 import type { WindowEntry } from "./items-window";
 import type { QueryLayout } from "./layouts";
+import { readListMetrics, sameMetrics, useRowHeights } from "./list-heights";
+import type { ListMetrics, RowText } from "./list-heights";
 import { useQueryViewState } from "./model";
 import type { QueryFileView } from "./query-file";
 import {
@@ -22,9 +30,12 @@ import {
   RecordCell,
   RecordGroupHeading,
   groupEntries,
+  holdsError,
   useRecordGroups,
 } from "./record-rows";
+import type { RecordCells } from "./record-rows";
 import type { QueryView } from "./view";
+import type { PropertyEntry } from "./view-properties";
 import { ListSpacer } from "./virtual-spacers";
 
 export const LIST_LAYOUT: QueryLayout = {
@@ -143,34 +154,110 @@ export function ListLayoutFields({
 const ESTIMATES = { heading: HEADING_ESTIMATE, row: 28 };
 
 /**
- * The rows of the shown view, one line each, under their group headings.
- * The groups share one list: numbers count each group's rows from one.
+ * The cells a row shows, by their place: an empty property takes no place
+ * on the line, but an Item with no note to read a vault property from shows
+ * that it has none.
+ */
+function shownCells({ cells, vault }: RecordCells): number[] {
+  return cells.flatMap((text, cell) =>
+    text === "" && vault[cell]?.note !== false ? [] : [cell],
+  );
+}
+
+/**
+ * The text a row shows, for its height before it is drawn; `null` where a
+ * cell shows more than its text: a vault property, or an Error Value's icon.
+ */
+function rowText(
+  record: RecordCells,
+  properties: readonly PropertyEntry[],
+  { indentProperties, separator }: ListLayoutOptions,
+): RowText | null {
+  const texts: string[] = [];
+  for (const cell of shownCells(record)) {
+    if (
+      record.vault[cell] ||
+      holdsError(record.row.values[properties[cell]!.path])
+    )
+      return null;
+    texts.push(record.cells[cell]!);
+  }
+  if (!indentProperties) return { first: texts.join(separator), rest: [] };
+  const [first = "", ...rest] = texts;
+  return { first, rest };
+}
+
+/**
+ * The rows of the shown view under their group headings, each wrapping to
+ * the lines its text takes. The groups share one list: numbers count each
+ * group's rows from one.
  */
 export function ListLayout({ view }: { view: QueryView }) {
   const { properties, groups } = useRecordGroups(view);
   const options = listLayoutOptions(useQueryViewState(view, (s) => s.view));
+  const { markers, indentProperties, separator } = options;
   const entries = useMemo(() => groupEntries(groups), [groups]);
+
+  // A row's height before it is drawn, from its text, at the font and width
+  // its drawn rows show.
+  const [list, setList] = useState<HTMLElement | null>(null);
+  const [metrics, setMetrics] = useState<ListMetrics | null>(null);
+  // oxlint-disable-next-line react-hooks/exhaustive-deps -- reads the drawn rows after each draw
+  useLayoutEffect(() => {
+    const read = list && readListMetrics(list);
+    if (read && !sameMetrics(read, metrics)) setMetrics(read);
+  });
+  const texts = useMemo(
+    () =>
+      entries.map((entry) =>
+        entry.kind === "heading"
+          ? null
+          : rowText(entry.record, properties, {
+              markers,
+              indentProperties,
+              separator,
+            }),
+      ),
+    [entries, properties, markers, indentProperties, separator],
+  );
+  const heights = useRowHeights(texts, metrics, list?.doc ?? null);
+
   const rows = useItemsWindow(
     view,
     useMemo(
       () =>
-        entries.map((entry): WindowEntry =>
-          entry.kind === "heading"
-            ? { key: entry.key, kind: "heading", item: null }
-            : {
-                key: entry.key,
-                kind: "row",
-                item: entry.record.row.indexedKey,
-              },
-        ),
-      [entries],
+        entries.map((entry, index): WindowEntry => {
+          if (entry.kind === "heading")
+            return { key: entry.key, kind: "heading", item: null };
+          const height = heights?.[index] ?? null;
+          return {
+            key: entry.key,
+            kind: "row",
+            item: entry.record.row.indexedKey,
+            ...(height !== null && { height }),
+          };
+        }),
+      [entries, heights],
     ),
     {
       estimates: ESTIMATES,
       fallback: ESTIMATES.row,
-      // A row's lines follow the options and the properties it shows.
-      shape: JSON.stringify([options, properties.map(({ path }) => path)]),
+      // A row's lines follow the options, the properties it shows, and the
+      // width and font it wraps at.
+      shape: JSON.stringify([
+        options,
+        properties.map(({ path }) => path),
+        metrics && [Math.round(metrics.width), metrics.font],
+      ]),
     },
+  );
+  const { list: windowList } = rows;
+  const listRef = useCallback(
+    (el: HTMLElement | null) => {
+      windowList(el);
+      setList(el);
+    },
+    [windowList],
   );
   // Numbers count the rows of a list; bullets and none mark no order.
   const List = options.markers === "number" ? "ol" : "ul";
@@ -180,10 +267,11 @@ export function ListLayout({ view }: { view: QueryView }) {
       className="zt:min-h-0 zt:flex-1 zt:overflow-auto zt:px-3 zt:pt-2 zt:pb-11 zt:[overflow-anchor:none] zt:in-[.zt-query-note]:pb-2"
       data-query-layout="list"
     >
+      {/* A word too long for the line breaks, as `list-heights.ts` lays it out. */}
       <List
-        ref={rows.list}
+        ref={listRef}
         className={cn(
-          "zt:my-0 zt:py-1 zt:text-(length:--font-smaller) zt:marker:text-(--list-marker-color)",
+          "zt:my-0 zt:py-1 zt:text-(length:--font-smaller) zt:wrap-break-word zt:marker:text-(--list-marker-color)",
           options.markers === "bullet" && "zt:list-disc zt:pl-(--list-indent)",
           options.markers === "number" &&
             "zt:list-decimal zt:pl-(--list-indent)",
@@ -214,21 +302,15 @@ export function ListLayout({ view }: { view: QueryView }) {
               </Fragment>
             );
           const { record, at } = entry;
-          const { row, cells, vault } = record;
-          // An empty property takes no place on the line; an Item with
-          // no note to read a vault property from shows that it has none.
-          const filled = cells.flatMap((text, cell) =>
-            text === "" && vault[cell]?.note !== false
-              ? []
-              : [
-                  <RecordCell
-                    key={properties[cell]!.path}
-                    record={record}
-                    properties={properties}
-                    at={cell}
-                  />,
-                ],
-          );
+          const { row } = record;
+          const filled = shownCells(record).map((cell) => (
+            <RecordCell
+              key={properties[cell]!.path}
+              record={record}
+              properties={properties}
+              at={cell}
+            />
+          ));
           const [first = "", ...rest] = filled;
           return (
             <Fragment key={entry.key}>
@@ -244,7 +326,10 @@ export function ListLayout({ view }: { view: QueryView }) {
                   <>
                     <span>{first}</span>
                     {rest.length > 0 && (
-                      <span className="zt:block zt:pl-(--list-indent) zt:text-muted-foreground">
+                      <span
+                        className="zt:block zt:pl-(--list-indent) zt:text-muted-foreground"
+                        data-query-row-lines=""
+                      >
                         {rest.map((content, line) => (
                           <span key={line} className="zt:block">
                             {content}

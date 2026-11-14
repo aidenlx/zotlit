@@ -36,6 +36,12 @@ export interface WindowEntry {
    * Attachments: its kind learns no height from it.
    */
   readonly own?: boolean;
+  /**
+   * The entry's height before it is drawn, where the layout knows it, as
+   * the List does from a row's text: the entry takes it in place of its
+   * kind's, and its kind learns no height from it.
+   */
+  readonly height?: number;
 }
 
 /** What a layout draws through its window. */
@@ -98,13 +104,16 @@ export function useItemsWindow(
     count: entries.length,
     own,
     estimate: useCallback(
-      (index: number) => estimates[entries[index]!.kind] ?? fallback,
+      (index: number) => {
+        const entry = entries[index]!;
+        return entry.height ?? estimates[entry.kind] ?? fallback;
+      },
       [entries, estimates, fallback],
     ),
     kindOf: useCallback(
       (index: number) => {
         const entry = entries[index]!;
-        return entry.own ? null : entry.kind;
+        return entry.own || entry.height !== undefined ? null : entry.kind;
       },
       [entries],
     ),

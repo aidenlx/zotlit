@@ -1632,8 +1632,12 @@ function QueryViewBody({ view }: { view: QueryView }) {
   const toolbarName = useUniqueId();
   return (
     // A host's column can give the body its height, `grow` where the host
-    // is a flex column, as the Library View's list is.
-    <div className="zt:flex zt:h-full zt:grow zt:flex-col zt:in-[.print]:h-auto">
+    // is a flex column, as the Library View's list is. In a note the body
+    // stands no taller than `--zt-query-note-max-height`, the height
+    // Obsidian gives a Kanban Base, and the rows scroll in the layout: a
+    // long list neither stretches the note nor draws as the note scrolls.
+    // Export to PDF prints every row.
+    <div className="zt:flex zt:h-full zt:min-h-0 zt:grow zt:flex-col zt:in-[.print]:h-auto zt:not-in-[.print]:in-[.zt-query-note]:max-h-[var(--zt-query-note-max-height,500px)]">
       {/* The toolbar is a size container: on a narrow pane its buttons show
           icons only, and it stays one row. In a Query File tab it runs to
           the pane's edges, as the Bases header does (see file-view.css).

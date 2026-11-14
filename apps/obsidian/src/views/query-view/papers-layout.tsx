@@ -335,9 +335,11 @@ function PaperRow({
           />
         </FirstLine>
         <div className="zt:min-w-0 zt:flex-1">
+          {/* An Item with no title keeps the title's line, so the row's
+              height follows its second line alone. */}
           <div
             id={titleId}
-            className="zt:truncate zt:text-sm zt:font-(--font-medium) zt:text-foreground"
+            className="zt:min-h-lh zt:truncate zt:text-sm zt:font-(--font-medium) zt:text-foreground"
             data-query-papers-title=""
           >
             {text(values.title)}

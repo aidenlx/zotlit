@@ -426,6 +426,10 @@ describe.skipIf(!reachable)("Library View long lists", () => {
     await revealThenStep();
   }, 180_000);
 
+  /** The box that scrolls an embed's rows, in each Items layout. */
+  const EMBED_BOX =
+    '[data-query-layout="papers"], [data-query-layout="list"], div:has(> [data-query-table])';
+
   /** The rows of each layout, as the page marks them. */
   const ROWS = {
     papers: "[data-query-papers-row]",
@@ -434,7 +438,7 @@ describe.skipIf(!reachable)("Library View long lists", () => {
   } as const;
 
   it.each(["papers", "table", "list"] as const)(
-    "mounts the %s rows of a long embed near the screen as the note scrolls, and Export to PDF prints every row",
+    "caps a long %s embed's height, mounts the rows near the screen as the embed scrolls, and Export to PDF prints every row",
     async (layout) => {
       const queryPath = `Long ${layout}.zotquery`;
       const notePath = `Long ${layout}.md`;
@@ -486,22 +490,32 @@ describe.skipIf(!reachable)("Library View long lists", () => {
       const view = await revealQueryView(vaultId, notePath, {
         embed: queryPath,
       });
-      // The note scrolls 5,000 px into the embed; the rows there mount.
-      await obRun(
+      // The embed stands no taller than its cap, and scrolls its own rows
+      // 5,000 px down; the rows there mount.
+      const capped = await obRunUntil(
         vaultId,
-        async ({ page }, { view }) => {
+        async ({ page }, { view, box }) => {
           const el = await page.revealQueryView(view);
-          const scroller = el.closest<HTMLElement>(".markdown-preview-view")!;
-          scroller.scrollTop +=
-            el.getBoundingClientRect().top -
-            scroller.getBoundingClientRect().top +
-            5000;
+          const list = el.querySelector<HTMLElement>(box);
+          if (!list) return null;
+          list.scrollTop = 5000;
+          return {
+            height: el.getBoundingClientRect().height,
+            scrolls: list.scrollHeight > list.clientHeight,
+            scrolled: list.scrollTop,
+          };
         },
-        { view },
+        { view, box: EMBED_BOX },
+        {
+          what: "the embed scrolled 5,000 px down its own box",
+          ready: (state) => state !== null && state.scrolled === 5000,
+        },
       );
+      expect(capped!.height).toBeLessThanOrEqual(501);
+      expect(capped!.scrolls).toBe(true);
       const scrolled = await obRunUntil(
         vaultId,
-        ({ app }, { notePath, rowSelector }) => {
+        ({ app }, { notePath, rowSelector, box }) => {
           const leaf = app.workspace
             .getLeavesOfType("markdown")
             .find((l) => (l.view as MarkdownView).file?.path === notePath)!;
@@ -512,10 +526,13 @@ describe.skipIf(!reachable)("Library View long lists", () => {
           )!;
           const host =
             scroller.querySelector<QueryViewElement>(".zt-query-view");
-          const bounds = scroller.getBoundingClientRect();
+          const bounds = host
+            ?.querySelector<HTMLElement>(box)
+            ?.getBoundingClientRect();
           const rows = [
             ...(host?.querySelectorAll<HTMLElement>(rowSelector) ?? []),
           ];
+          if (!bounds) return { listed: 0, mounted: 0, shown: 0 };
           return {
             listed:
               host?.zotlitQueryView?.state.getState().results?.rows.length ?? 0,
@@ -528,7 +545,7 @@ describe.skipIf(!reachable)("Library View long lists", () => {
             }).length,
           };
         },
-        { notePath, rowSelector: ROWS[layout] },
+        { notePath, rowSelector: ROWS[layout], box: EMBED_BOX },
         {
           ready: ({ shown }) => shown > 0,
           what: `${layout} rows in view 5,000 px into the embed`,
@@ -539,7 +556,7 @@ describe.skipIf(!reachable)("Library View long lists", () => {
       // Obsidian's own Export to PDF, as the Query View print case drives it.
       const printed = await obRun(
         vaultId,
-        async ({ app }, { notePath, pdfPath, rowSelector }) => {
+        async ({ app }, { notePath, pdfPath, rowSelector, box }) => {
           const leaf = app.workspace
             .getLeavesOfType("markdown")
             .find((l) => (l.view as MarkdownView).file?.path === notePath)!;
@@ -562,10 +579,15 @@ describe.skipIf(!reachable)("Library View long lists", () => {
           const modal = capture.modal!;
           modal.close();
           let rows = -1;
+          let clipped = true;
           const print = modal.print.bind(modal);
           modal.print = async (el, component, includeName) => {
             const out = await print(el, component, includeName);
             rows = el.querySelectorAll(rowSelector).length;
+            // The print lifts the cap: no box scrolls its rows out of the page.
+            clipped = [...el.querySelectorAll<HTMLElement>(box)].some(
+              (list) => list.scrollHeight > list.clientHeight + 1,
+            );
             return out;
           };
           await modal.printToPdf({
@@ -578,13 +600,13 @@ describe.skipIf(!reachable)("Library View long lists", () => {
             scale: 1,
             open: false,
           });
-          return rows;
+          return { rows, clipped };
         },
-        { notePath, pdfPath, rowSelector: ROWS[layout] },
+        { notePath, pdfPath, rowSelector: ROWS[layout], box: EMBED_BOX },
         { timeoutMs: 180_000 },
       );
       expect(scrolled.listed).toBeGreaterThan(LISTED);
-      expect(printed).toBe(scrolled.listed);
+      expect(printed).toEqual({ rows: scrolled.listed, clipped: false });
     },
     240_000,
   );
@@ -625,17 +647,21 @@ describe.skipIf(!reachable)("Library View long lists", () => {
     );
   }
 
-  it("keeps the List's height as the scroll bar is dragged after Indent properties makes its rows taller", async () => {
+  it("keeps the List's height as the scroll bar is dragged while its rows wrap, and after Indent properties makes them taller", async () => {
     const path = "Long indent.zotquery";
+    // A paper in three repeats its title, so the rows wrap to different
+    // numbers of lines, as a real library's titles do.
     const view = (indent: boolean) =>
       [
+        "formulas:",
+        '  long: \'if(date.year % 3 == 0, title + " " + title + " " + title, title)\'',
         "views:",
         "  - type: list",
         "    name: All",
         "    from: items",
         '    filters: library == "personal"',
         "    order:",
-        "      - title",
+        "      - formula.long",
         "      - date",
         "      - itemType",
         ...(indent ? ["    indentProperties: true"] : []),
@@ -674,48 +700,62 @@ describe.skipIf(!reachable)("Library View long lists", () => {
           what: `the List drawn with Indent properties ${indent ? "on" : "off"}`,
         },
       );
-    /** Drag the List's scroll bar from top to end, a step each frame. */
-    const drag = () =>
+    /**
+     * Drag the List's scroll bar from top to end, a step each frame; at
+     * `width`, where the rows wrap to more lines, the longer ones to more.
+     */
+    const drag = (width?: number) =>
       obRun(
         vaultId,
-        async ({ app }, { path }) => {
+        async ({ app }, { path, width }) => {
           const leaf = app.workspace
             .getLeavesOfType("zotlit-query-file")
             .find((l) => (l.view as MarkdownView).file?.path === path)!;
           const list = leaf.view.containerEl.querySelector<HTMLElement>(
             '[data-query-layout="list"]',
           )!;
-          list.scrollTop = 0;
-          for (let still = 0, last = -1, tries = 0; still < 5; tries++) {
-            if (tries > 120) throw new Error("The List's height never held");
-            await new Promise((resolve) => requestAnimationFrame(resolve));
-            still = list.scrollHeight === last ? still + 1 : 0;
-            last = list.scrollHeight;
-          }
-          const start = list.scrollHeight;
-          const heights = new Set<number>();
-          let mounted = 0;
-          const end = list.scrollHeight - list.clientHeight;
-          for (let at = 0; at <= end; at += 200) {
-            list.scrollTop = at;
-            await new Promise((resolve) => requestAnimationFrame(resolve));
-            heights.add(list.scrollHeight);
-            mounted = Math.max(
+          const style = { width: list.style.width, flex: list.style.flex };
+          if (width !== undefined)
+            Object.assign(list.style, { width: `${width}px`, flex: "none" });
+          try {
+            list.scrollTop = 0;
+            for (let still = 0, last = -1, tries = 0; still < 5; tries++) {
+              if (tries > 120) throw new Error("The List's height never held");
+              await new Promise((resolve) => requestAnimationFrame(resolve));
+              still = list.scrollHeight === last ? still + 1 : 0;
+              last = list.scrollHeight;
+            }
+            const start = list.scrollHeight;
+            const heights = new Set<number>();
+            let mounted = 0;
+            const end = list.scrollHeight - list.clientHeight;
+            for (let at = 0; at <= end; at += 200) {
+              list.scrollTop = at;
+              await new Promise((resolve) => requestAnimationFrame(resolve));
+              heights.add(list.scrollHeight);
+              mounted = Math.max(
+                mounted,
+                list.querySelectorAll("li[data-query-row]").length,
+              );
+            }
+            return {
+              start,
               mounted,
-              list.querySelectorAll("li[data-query-row]").length,
-            );
+              heightMoved: Math.max(...heights) - Math.min(...heights),
+            };
+          } finally {
+            Object.assign(list.style, style);
           }
-          return {
-            start,
-            mounted,
-            heightMoved: Math.max(...heights) - Math.min(...heights),
-          };
         },
-        { path },
+        { path, width },
         { timeoutMs: 120_000 },
       );
     await drawn(false);
     const inline = await drag();
+    // Narrow, a row wraps to as many lines as its text takes there.
+    const wrapped = await drag(180);
+    expect(wrapped.start).toBeGreaterThan(inline.start * 1.5);
+    expect(wrapped.heightMoved).toBeLessThan(50);
     await obRun(
       vaultId,
       async ({ app }, { path, text }) => {

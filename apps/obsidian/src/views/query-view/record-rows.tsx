@@ -235,7 +235,7 @@ export function RecordCell({
 }
 
 /** Whether `value` is an Error Value, or a list that holds one at any depth. */
-function holdsError(value: QueryViewValue | undefined): boolean {
+export function holdsError(value: QueryViewValue | undefined): boolean {
   return (
     errorCell(value) !== null ||
     (Array.isArray(value) && value.some((entry) => holdsError(entry)))
