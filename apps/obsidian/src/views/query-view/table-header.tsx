@@ -19,6 +19,7 @@ import {
   resizedWidth,
   withColumnWidth,
 } from "./table-columns";
+import { ExpanderSpace } from "./table-layout";
 import { useVaultVersion } from "./vault-cell";
 import "./table-header.css";
 import type { QueryView } from "./view";
@@ -434,7 +435,12 @@ export function TableHeader({
   const { gutter, cell, first, later, filler } = classes;
   return (
     <tr className="zt:text-start">
-      <th className={gutter} />
+      {/* The expand-button column takes its width here, from a button's
+          room, whatever rows a long table mounts: with only its spacers
+          mounted, the columns stay where they are. */}
+      <th className={gutter}>
+        <ExpanderSpace />
+      </th>
       {columns.map((property, at) => {
         const width = sizes?.[property.path];
         const icon = propertyIcon(dataset, property, (name) =>

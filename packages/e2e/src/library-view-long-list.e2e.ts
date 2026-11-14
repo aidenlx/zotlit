@@ -1458,4 +1458,122 @@ describe.skipIf(!reachable)("Library View long lists", () => {
     },
     120_000,
   );
+
+  it.each(["tab", ...NOTE_MODES] as const)(
+    "keeps each header cell of a long grouped Table in place in a %s as the scroll bar is dragged, whatever rows are mounted",
+    async (place) => {
+      const queryPath = `Grouped table ${place}.zotquery`;
+      const notePath = `Grouped table ${place}.md`;
+      await using cleanup = new AsyncDisposableStack();
+      await createFiles(cleanup, {
+        [queryPath]: [
+          "views:",
+          "  - type: table",
+          "    name: All",
+          "    from: items",
+          '    filters: library == "personal"',
+          "    groupBy:",
+          "      property: itemType",
+          "      direction: ASC",
+          "",
+        ].join("\n"),
+        [notePath]: ["# Grouped table", "", `![[${queryPath}]]`, ""].join("\n"),
+      });
+      await obRun(
+        vaultId,
+        async ({ app }, { queryPath, notePath, place }) => {
+          const leaf = app.workspace.getLeaf("tab");
+          if (place === "tab")
+            await leaf.openFile(app.vault.getFileByPath(queryPath)!);
+          else
+            await leaf.openFile(app.vault.getFileByPath(notePath)!, {
+              state: { mode: place },
+            });
+          app.workspace.setActiveLeaf(leaf, { focus: true });
+        },
+        { queryPath, notePath, place },
+      );
+      if (place !== "tab")
+        await revealQueryView(vaultId, notePath, { embed: queryPath });
+      /** The Table's box, in the tab or in the mode's own embed. */
+      const geometry = await obRunUntil(
+        vaultId,
+        async ({ app }, { queryPath, notePath, root }) => {
+          const leaf = app.workspace
+            .getLeavesOfType(root === null ? "zotlit-query-file" : "markdown")
+            .find(
+              (l) =>
+                (l.view as MarkdownView).file?.path ===
+                (root === null ? queryPath : notePath),
+            );
+          const scope =
+            root === null
+              ? leaf?.view.containerEl
+              : leaf?.view.containerEl.querySelector(root);
+          const box = scope?.querySelector<HTMLElement>(".zt-table-scroller");
+          if (!box?.querySelector("thead th[data-query-column]")) return null;
+          const frame = () =>
+            new Promise((resolve) => requestAnimationFrame(resolve));
+          /** Each header cell's left edge and width, from the box's left. */
+          const cells = () => {
+            const left = box.getBoundingClientRect().left;
+            return [...box.querySelectorAll("thead tr > th")]
+              .map((th) => {
+                const r = th.getBoundingClientRect();
+                return `${Math.round(r.left - left)}+${Math.round(r.width)}`;
+              })
+              .join(" ");
+          };
+          const seen = new Set<string>();
+          // A sample on each scroll event too, before the rows for the new
+          // place are drawn.
+          const sample = () => seen.add(cells());
+          /**
+           * The header as it stands with no row mounted, only the spacers,
+           * as in a frame of a fast drag: the rows leave the layout a moment.
+           */
+          const bare = () => {
+            const rows = [
+              ...box.querySelectorAll<HTMLElement>("tbody[data-index]"),
+            ];
+            for (const row of rows) row.style.display = "none";
+            sample();
+            for (const row of rows) row.style.display = "";
+          };
+          box.addEventListener("scroll", sample);
+          try {
+            box.scrollTop = 0;
+            await frame();
+            const end = box.scrollHeight - box.clientHeight;
+            // A drag that moves a screen and more each frame, then one that
+            // moves a step.
+            for (const step of [box.clientHeight * 3, 200])
+              for (let at = 0; at <= end; at += step) {
+                box.scrollTop = at;
+                sample();
+                await frame();
+                sample();
+                if (step > 200) bare();
+              }
+          } finally {
+            box.removeEventListener("scroll", sample);
+          }
+          return { cells: [...seen], end: box.scrollTop };
+        },
+        {
+          queryPath,
+          notePath,
+          root: place === "tab" ? null : MODE_ROOT[place],
+        },
+        {
+          what: `the grouped Table in a ${place} dragged to its end`,
+          ready: (result) => result !== null,
+        },
+      );
+      // One set of header cells in every frame of the drag, and with only
+      // the spacers in the table.
+      expect(geometry).toMatchObject({ cells: [expect.any(String)] });
+    },
+    120_000,
+  );
 });
