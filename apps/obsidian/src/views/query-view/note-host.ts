@@ -120,11 +120,14 @@ export class NoteQueryHost extends Component {
 
   /**
    * Settles once the view shows its first rows, as Export to PDF waits for
-   * it to print them. Never rejects.
+   * it to print them; outside a print, at once for a view that waits to
+   * come near the screen. Never rejects.
    */
   async shown(): Promise<void> {
     // Export to PDF prints every view of the note, near the screen or not.
     if (this.#el.closest(".print")) this.#release();
+    // Elsewhere a view that waits to come near the screen shows nothing yet.
+    if (this.#query.held) return;
     await this.#query.shownIn(this.#el);
   }
 

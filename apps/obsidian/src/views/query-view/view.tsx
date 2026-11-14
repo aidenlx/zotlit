@@ -526,7 +526,12 @@ export class QueryView extends Component implements HistorySurface {
    * Whether the view waits to run, as an embed far from the screen does
    * ({@link hold}), and whether a run waits for {@link release}.
    */
-  #held: { waiting: boolean } | null = null;
+  #held: { asked: boolean } | null = null;
+  /**
+   * What {@link settled} gives while a held view has not run: it settles
+   * with the first refresh after the {@link release}.
+   */
+  #unrun: PromiseWithResolvers<void> | null = null;
   #subscriptions: DisposableStack | null = null;
   /** Whether the view draws into an element; until then no card waits to show. */
   #rendered = false;
@@ -1011,17 +1016,20 @@ export class QueryView extends Component implements HistorySurface {
   /**
    * Run nothing until {@link release}: the view stands where no one sees
    * it yet. A run asked for meanwhile waits, and the last one starts on the
-   * release.
+   * release; {@link settled} waits for the first run after it.
    */
   hold(): void {
-    this.#held ??= { waiting: false };
+    this.#held ??= { asked: false };
+    if (this.#unrun) return;
+    this.#unrun = Promise.withResolvers<void>();
+    this.#settled = this.#unrun.promise;
   }
 
   /** Run the query a {@link hold} kept waiting, and run as asked from now on. */
   release(): void {
     const held = this.#held;
     this.#held = null;
-    if (held?.waiting) this.refresh();
+    if (held?.asked) this.refresh();
   }
 
   /** Whether the view waits for {@link release} to run. */
@@ -1031,6 +1039,24 @@ export class QueryView extends Component implements HistorySurface {
 
   /** @param fromList whether a list change asked for the run. */
   #refresh(fromList: boolean): void {
+    if (this.#held) {
+      this.#held.asked = true;
+      return;
+    }
+    const unrun = this.#unrun;
+    this.#unrun = null;
+    try {
+      this.#run(fromList);
+    } finally {
+      // A held view settles with the first refresh after its release.
+      if (unrun) {
+        if (this.#settled === unrun.promise) this.#settled = Promise.resolve();
+        unrun.resolve(this.#settled);
+      }
+    }
+  }
+
+  #run(fromList: boolean): void {
     this.#finishRun?.();
     this.#finishRun = null;
     this.registry.set(this.#runCommand, Atom.Reset);
@@ -1043,10 +1069,6 @@ export class QueryView extends Component implements HistorySurface {
         results: null,
         failure: null,
       });
-      return;
-    }
-    if (this.#held) {
-      this.#held.waiting = true;
       return;
     }
     const plan = this.#planner.plan(file, view);

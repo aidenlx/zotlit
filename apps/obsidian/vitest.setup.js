@@ -196,15 +196,14 @@ if (globalThis.document && !globalThis.document.fonts)
 // calls back. Every element it observes stands on screen.
 if (globalThis.window) {
   class OnScreen {
-    readonly #callback;
     #observing = true;
     constructor(callback) {
-      this.#callback = callback;
+      this.callback = callback;
     }
     observe(target) {
       queueMicrotask(() => {
         if (this.#observing)
-          this.#callback([{ target, isIntersecting: true }], this);
+          this.callback([{ target, isIntersecting: true }], this);
       });
     }
     unobserve() {}
