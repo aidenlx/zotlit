@@ -67,7 +67,6 @@ export class QueryFileEmbed extends Component implements EmbedComponent {
         save: (text) => processLiveText(this.#app, this.#file, () => text),
         openFile: (event) => this.#open(event),
       },
-      reserve: true,
     });
     this.#host.selectView(viewName);
   }

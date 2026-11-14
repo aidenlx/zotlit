@@ -65,8 +65,8 @@
   overflow-wrap: break-word;
 }
 
-/* A Query File embed whose rows have not come yet stands at the most room
-   they take, so the note keeps its height as its embeds load. */
+/* A view whose rows have not come yet, an embed or a Query Block, stands at
+   the most room they take, so the note keeps its height as its views load. */
 .zt-query-note[data-query-waiting] {
   min-height: var(--zt-query-note-max-height, 500px);
 }

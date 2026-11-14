@@ -896,28 +896,37 @@ describe.skipIf(!reachable)("Library View long lists", () => {
     expect(indented.heightMoved).toBeLessThan(50);
   }, 180_000);
 
-  it.each(NOTE_MODES)(
-    "runs a long embed in %s only once it shows: not in the hidden mode nor in a folded callout, which holds its room and runs as it unfolds",
-    async (mode) => {
+  it.each(
+    (["embed", "Query Block"] as const).flatMap((kind) =>
+      NOTE_MODES.map((mode) => [kind, mode] as const),
+    ),
+  )(
+    "runs a long %s in %s only once it shows: not in the hidden mode nor in a folded callout, which holds its room and runs as it unfolds",
+    async (kind, mode) => {
       const queryPath = "Long fold.zotquery";
       const notePath = "Long fold.md";
+      const file = [
+        "views:",
+        "  - type: papers",
+        "    name: All",
+        "    from: items",
+        '    filters: library == "personal"',
+      ];
+      /** The view's lines in the note: the embed's link, or the block. */
+      const view =
+        kind === "embed"
+          ? [`![[${queryPath}]]`]
+          : ["```zotquery", ...file, "```"];
       await using cleanup = new AsyncDisposableStack();
       await createFiles(cleanup, {
-        [queryPath]: [
-          "views:",
-          "  - type: papers",
-          "    name: All",
-          "    from: items",
-          '    filters: library == "personal"',
-          "",
-        ].join("\n"),
+        [queryPath]: [...file, ""].join("\n"),
         [notePath]: [
           "# Folded",
           "",
-          `![[${queryPath}]]`,
+          ...view,
           "",
           "> [!note]- Long list",
-          `> ![[${queryPath}]]`,
+          ...view.map((line) => `> ${line}`),
           "",
           "The end.",
           "",
@@ -962,6 +971,8 @@ describe.skipIf(!reachable)("Library View long lists", () => {
                 phase:
                   host.zotlitQueryView?.state.getState().phase ?? "waiting",
                 waiting: host.hasAttribute("data-query-waiting"),
+                reserve: getComputedStyle(host).minHeight,
+                height: host.getBoundingClientRect().height,
                 folded: host.closest(".callout.is-collapsed") !== null,
                 listed:
                   host.zotlitQueryView?.state.getState().results?.rows.length ??
@@ -993,28 +1004,38 @@ describe.skipIf(!reachable)("Library View long lists", () => {
       type Embed = {
         phase: string;
         waiting: boolean;
+        reserve: string;
+        height: number;
         folded: boolean;
         listed: number;
         mounted: number;
         shown: number;
       };
-      const loaded = await state("the first embed's rows", ({ shown }) => {
+      const loaded = await state(`the first ${kind}'s rows`, ({ shown }) => {
         const [first] = shown;
         return first!.shown > 0;
       });
       const [top, folded] = loaded.shown;
       expect(top!.listed).toBeGreaterThan(LISTED);
-      // The folded embed runs nothing, and holds the room its rows take at
+      // The view with rows stands no taller than the cap it reserves.
+      expect(top).toMatchObject({ waiting: false, reserve: "0px" });
+      expect(top!.height).toBeLessThanOrEqual(501);
+      // The folded view runs nothing, and holds the room its rows take at
       // most for when it unfolds.
       expect(folded).toMatchObject({
         folded: true,
         phase: "waiting",
         waiting: true,
+        reserve: "500px",
         listed: 0,
       });
-      // Nor does the mode the tab hides run its embeds.
+      // Nor does the mode the tab hides run its views.
       for (const hidden of loaded.hidden)
-        expect(hidden).toMatchObject({ phase: "waiting", listed: 0 });
+        expect(hidden).toMatchObject({
+          phase: "waiting",
+          waiting: true,
+          listed: 0,
+        });
       await obRun(
         vaultId,
         ({ app }, { notePath, root }) => {
@@ -1031,14 +1052,19 @@ describe.skipIf(!reachable)("Library View long lists", () => {
         { notePath, root: MODE_ROOT[mode] },
       );
       const open = await state(
-        "the folded embed's rows in view once the callout unfolds",
+        `the folded ${kind}'s rows in view once the callout unfolds`,
         ({ shown }) => {
           const [, unfolded] = shown;
           return !unfolded!.folded && unfolded!.shown > 0;
         },
       );
       const [, unfolded] = open.shown;
-      expect(unfolded).toMatchObject({ phase: "ready", waiting: false });
+      expect(unfolded).toMatchObject({
+        phase: "ready",
+        waiting: false,
+        reserve: "0px",
+      });
+      expect(unfolded!.height).toBeLessThanOrEqual(501);
       expect(unfolded!.listed).toBeGreaterThan(LISTED);
       expect(unfolded!.mounted).toBeLessThan(80);
     },

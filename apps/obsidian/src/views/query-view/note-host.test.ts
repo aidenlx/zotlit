@@ -311,6 +311,8 @@ describe.each<HostKind>(["embed", "block"])("a %s", (kind) => {
     expect(run).not.toHaveBeenCalled();
     expect(view.state.getState().phase).toBe("waiting");
     expect(settled).toBe(false);
+    // It holds the room its rows take for when they come.
+    expect(el.hasAttribute("data-query-waiting")).toBe(true);
 
     await act(async () => {
       screen.come(el);
@@ -319,6 +321,7 @@ describe.each<HostKind>(["embed", "block"])("a %s", (kind) => {
     expect(run).toHaveBeenCalledTimes(1);
     expect(run.mock.calls[0]![0].context).toEqual({ item: "SMITHJ25" });
     expect(view.state.getState().phase).toBe("ready");
+    expect(el.hasAttribute("data-query-waiting")).toBe(false);
   });
 
   it("settles with its first rows when it comes near the screen before it reads its text", async () => {

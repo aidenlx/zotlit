@@ -36,19 +36,12 @@ export class NoteQueryHost extends Component {
       el,
       sourcePath,
       storage,
-      reserve = false,
     }: {
       /** The element the view draws into. */
       el: HTMLElement;
       /** The note that holds the view. */
       sourcePath: () => string;
       storage: NoteStorage;
-      /**
-       * Whether the view stands at the most room its rows take until they
-       * come, as a Query File embed does: the note keeps its height as its
-       * views load.
-       */
-      reserve?: boolean;
     },
   ) {
     super();
@@ -69,7 +62,9 @@ export class NoteQueryHost extends Component {
       // The view runs once it comes near the screen (see `onload`).
       start: this.#start.promise,
     });
-    if (reserve) el.dataset.queryWaiting = "";
+    // The view stands at the most room its rows take until they come, so
+    // the note keeps its height as its views load (see `note-host.css`).
+    el.dataset.queryWaiting = "";
     // e2e-only: packages/e2e reaches the view of every host from its element.
     // A dev-build port, absent from a production build.
     if (__DEV__) Object.assign(el, { zotlitQueryView: this.#query });
