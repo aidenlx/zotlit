@@ -12,6 +12,20 @@ import type {
  * clears it.
  * @returns `undefined` for a list left empty, so the view writes no `sort`.
  */
+/**
+ * The direction a click on a column's header sorts it next, as Bases steps
+ * it: a column it does not sort by goes A → Z, then Z → A, then no sort.
+ * @returns `null` where the click clears the column's sort.
+ */
+export function toggledSortDirection(
+  sort: readonly QueryFileSort[],
+  property: string,
+): QueryFileDirection | null {
+  const current = sort.find((entry) => entry.property === property);
+  if (!current) return "ASC";
+  return current.direction === "ASC" ? "DESC" : null;
+}
+
 export function headerSort(
   sort: readonly QueryFileSort[],
   property: string,

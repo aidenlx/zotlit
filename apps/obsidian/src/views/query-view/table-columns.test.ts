@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 
-import { dropGap, gapMove, headerSort, resizedWidth } from "./table-columns";
+import {
+  dropGap,
+  gapMove,
+  headerSort,
+  resizedWidth,
+  toggledSortDirection,
+} from "./table-columns";
 
 describe("headerSort", () => {
   const SORT = [
@@ -17,6 +23,12 @@ describe("headerSort", () => {
       { property: "itemType", direction: "ASC" },
       ...SORT,
     ]);
+  });
+
+  it("steps a column's sort as a click on its header does in Bases: none, A → Z, Z → A, none", () => {
+    expect(toggledSortDirection(SORT, "itemType")).toBe("ASC");
+    expect(toggledSortDirection(SORT, "title")).toBe("DESC");
+    expect(toggledSortDirection(SORT, "date")).toBeNull();
   });
 
   it("clears the column's sort alone, and leaves no empty sort", () => {

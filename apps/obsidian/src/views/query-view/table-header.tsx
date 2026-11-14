@@ -26,6 +26,7 @@ import {
   dropGap,
   gapMove,
   headerSort,
+  toggledSortDirection,
   resizedWidth,
   withColumnWidth,
 } from "./table-columns";
@@ -274,10 +275,19 @@ export function TableHeader({
   // A vault column's icon follows the values its notes hold.
   const { literatureNotes } = view.tableDeps;
   useVaultVersion(literatureNotes);
-  // The column menu sorts by what the Sort control offers, and offers no
-  // sort while the rows follow the host's rank, as Sort stands off then.
+  // A column sorts by what the Sort control offers, and not at all while
+  // the rows follow the host's rank, as Sort stands off then.
   const vaultNames = useVaultPropertyNames(literatureNotes);
   const ranked = useQueryViewState(view, (s) => s.results?.ranked ?? false);
+  /** The view's sort, which marks each column it sorts by. */
+  const sort = useQueryViewState(view, (s) => s.view?.sort);
+  /** Whether ZotLit Query sorts the view now by the column of `path`. */
+  const sortable = (path: string): boolean =>
+    !ranked &&
+    viewSortOptions(view.state.getState().view?.from, vaultNames, {
+      labelOf: (named) => named,
+      typeOf: (name) => literatureNotes.propertyType(name),
+    }).some((option) => option.path === path);
   /** The column's "Edit property" page, which its menu opens. */
   const editor = useRef<ColumnPropertyHandle>(null);
   /** The drag on now; the Table that closes ends it. */
@@ -476,14 +486,7 @@ export function TableHeader({
       rtl,
       sized: sizes?.[path] !== undefined,
       can: view.can,
-      // ZotLit Query sorts by what the Sort control offers, and offers no
-      // sort while the rows follow the host's rank.
-      sortable:
-        !ranked &&
-        viewSortOptions(dataset, vaultNames, {
-          labelOf: (named) => named,
-          typeOf: (name) => literatureNotes.propertyType(name),
-        }).some((option) => option.path === path),
+      sortable: sortable(path),
       sort: shown?.sort ?? [],
       groupBy: shown?.groupBy,
       grouping,
@@ -556,6 +559,22 @@ export function TableHeader({
     menu.setParentElement(th).showAtMouseEvent(event.nativeEvent);
   };
 
+  /**
+   * A click on a column's header steps its sort, as in Bases: A → Z, then
+   * Z → A, then no sort, the column's sort first among the view's. A press
+   * that ends a resize, or on the edge, takes the click away first.
+   */
+  const toggleSort = (event: MouseEvent<HTMLElement>, path: string) => {
+    if (event.defaultPrevented || event.button !== 0) return;
+    event.preventDefault();
+    const now = view.state.getState().view;
+    if (!now || !sortable(path)) return;
+    const current = now.sort ?? [];
+    view.document.editView({
+      sort: headerSort(current, path, toggledSortDirection(current, path)),
+    });
+  };
+
   const { gutter, cell, first, later, filler } = classes;
   return (
     <tr className="zt:text-start">
@@ -578,6 +597,9 @@ export function TableHeader({
         const icon = propertyIcon(dataset, property, (name) =>
           literatureNotes.propertyType(name),
         );
+        const sorted = sort?.find((entry) => entry.property === property.path);
+        // The sort mask fades a long label before the sort mark.
+        const label = cn(LABEL, sorted && SORTED_LABEL);
         return (
           <th
             key={property.path}
@@ -592,21 +614,36 @@ export function TableHeader({
             data-sized={sizedMark(sizes, property.path)}
             data-query-column={property.path}
             data-query-formula-issue={property.issue ?? undefined}
+            // A screen reader hears the sort the rows follow first.
+            aria-sort={
+              sort?.[0]?.property === property.path
+                ? sort[0].direction === "ASC"
+                  ? "ascending"
+                  : "descending"
+                : undefined
+            }
             draggable={editable || undefined}
             onDragStart={
               editable ? (event) => moveColumn(event, property.path) : undefined
             }
-            // A click on the desktop is the start of a move and opens
-            // nothing; on mobile, where no right click comes, a tap opens
-            // the menu, as in Bases.
-            {...(editable && {
-              [Platform.isMobile ? "onClick" : "onContextMenu"]: (
-                event: MouseEvent<HTMLElement>,
-              ) => columnMenu(event, property.path),
-            })}
+            // On the desktop a click steps the column's sort and a right
+            // click opens its menu; on mobile, where no right click comes,
+            // a tap opens the menu, as in Bases.
+            {...(editable &&
+              (Platform.isMobile
+                ? {
+                    onClick: (event: MouseEvent<HTMLElement>) =>
+                      columnMenu(event, property.path),
+                  }
+                : {
+                    onClick: (event: MouseEvent<HTMLElement>) =>
+                      toggleSort(event, property.path),
+                    onContextMenu: (event: MouseEvent<HTMLElement>) =>
+                      columnMenu(event, property.path),
+                  }))}
           >
             {property.issue === null ? (
-              <span className={LABEL}>
+              <span className={label}>
                 <Icon
                   name={icon}
                   data-query-icon={icon}
@@ -623,15 +660,35 @@ export function TableHeader({
                     className="zt:hidden zt:shrink-0 zt:group-hover/column:flex"
                   />
                 )}
-                <span className="zt:truncate">{property.label}</span>
+                <span className={cn("zt:truncate", sorted && SORTED_NAME)}>
+                  {property.label}
+                </span>
               </span>
             ) : (
               <span
-                className={cn(LABEL, "zt:text-(--text-error)")}
+                className={cn(label, "zt:text-(--text-error)")}
                 {...tooltipAttrs(property.issue)}
               >
                 <Icon name="alert-triangle" size="xs" className="zt:shrink-0" />
-                <span className="zt:truncate">{property.label}</span>
+                <span className={cn("zt:truncate", sorted && SORTED_NAME)}>
+                  {property.label}
+                </span>
+              </span>
+            )}
+            {sorted && (
+              <span
+                aria-hidden="true"
+                className={SORT_MARK}
+                data-query-column-sort={sorted.direction}
+              >
+                <Icon
+                  name={
+                    sorted.direction === "ASC"
+                      ? "lucide-chevron-up"
+                      : "lucide-chevron-down"
+                  }
+                  size="xs"
+                />
               </span>
             )}
             {resizable && (
@@ -668,6 +725,23 @@ export function TableHeader({
     </tr>
   );
 }
+
+/**
+ * The label of a column the view sorts by, as Bases draws it: Obsidian's
+ * sort mask fades its end, in either direction, before the sort mark.
+ */
+const SORTED_LABEL = "zt:[mask-image:var(--bases-table-header-sort-mask)]";
+
+/** The name in a sorted column's label, which leaves the sort mark its room. */
+const SORTED_NAME = "zt:pe-(--size-4-4)";
+
+/**
+ * The sort mark of a column the view sorts by, as Bases draws it: a chevron
+ * at the cell's end, up for A → Z, down for Z → A, on every sort column. A
+ * press goes through it to the cell.
+ */
+const SORT_MARK =
+  "zt:pointer-events-none zt:absolute zt:-top-px zt:end-0 zt:flex zt:h-full zt:items-center zt:pt-(--size-2-1) zt:pe-(--size-2-3) zt:text-muted-foreground";
 
 /**
  * A header cell whose column moves: it grabs, its label brightens on hover,

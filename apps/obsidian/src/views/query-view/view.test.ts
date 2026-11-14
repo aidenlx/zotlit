@@ -2243,8 +2243,8 @@ it("opens the header menu on a right click only, with what has nothing to do dis
   const open = (path: string, type?: "click" | "contextmenu") =>
     headerMenu(el, path, type);
 
-  // A click is the start of a move, and opens nothing.
-  expect(open("title", "click")).toEqual({});
+  // A click sorts by the column, and opens no menu.
+  expect(open("vault.literatureNote", "click")).toEqual({});
 
   // The first column at its auto width: it can only move right. Its menu
   // is the Bases column menu, with the moves a drag makes spelled out.
@@ -2294,6 +2294,69 @@ it("opens the header menu on a right click only, with what has nothing to do dis
     await view.flush();
   });
   expect(saved.at(-1)).not.toContain("columnSize");
+});
+
+it("steps a column's sort with a click on its header, as Bases does, and marks the sorted columns", async () => {
+  const { view, el, settle, saved } = await mount([
+    result([itemRow("ITEMAAAA", "Ten simple rules")]),
+    result([itemRow("ITEMAAAA", "Ten simple rules")]),
+    result([itemRow("ITEMAAAA", "Ten simple rules")]),
+    result([itemRow("ITEMAAAA", "Ten simple rules")]),
+  ]);
+  await act(() =>
+    view.setText(`${TABLE_FILE}    sort:
+      - property: date
+        direction: DESC
+`),
+  );
+  await settle();
+  const header = (path: string) =>
+    el.querySelector<HTMLElement>(`th[data-query-column="${path}"]`)!;
+  const mark = (path: string) =>
+    header(path)
+      .querySelector("[data-query-column-sort]")
+      ?.getAttribute("data-query-column-sort") ?? null;
+  const click = async (path: string) => {
+    Menu.instances.length = 0;
+    await act(async () => {
+      header(path).dispatchEvent(
+        new MouseEvent("click", { bubbles: true, cancelable: true, button: 0 }),
+      );
+      await view.flush();
+    });
+    // A click opens no menu.
+    expect(Menu.instances).toHaveLength(0);
+    await settle();
+  };
+  expect(mark("date")).toBe("DESC");
+  expect(mark("title")).toBeNull();
+
+  // None, then A → Z, first among the sorts.
+  await click("title");
+  expect(saved.at(-1)).toContain(
+    "    sort:\n      - property: title\n        direction: ASC\n      - property: date\n        direction: DESC\n",
+  );
+  expect(mark("title")).toBe("ASC");
+  // Every sort column wears its mark; the first sort alone names its order.
+  expect(mark("date")).toBe("DESC");
+  expect(header("title").getAttribute("aria-sort")).toBe("ascending");
+  expect(header("date").hasAttribute("aria-sort")).toBe(false);
+  // A → Z, then Z → A.
+  await click("title");
+  expect(saved.at(-1)).toContain(
+    "      - property: title\n        direction: DESC\n      - property: date\n",
+  );
+  expect(mark("title")).toBe("DESC");
+  // Z → A, then no sort by the column; the others stay.
+  await click("title");
+  expect(saved.at(-1)).not.toContain("property: title");
+  expect(saved.at(-1)).toContain("      - property: date\n");
+  expect(mark("title")).toBeNull();
+
+  // ZotLit Query sorts by no Literature Note: its click does nothing.
+  const writes = saved.length;
+  await click("vault.literatureNote");
+  expect(saved).toHaveLength(writes);
 });
 
 it("opens the header menu on a tap on mobile, where a column moves by its menu", async () => {
