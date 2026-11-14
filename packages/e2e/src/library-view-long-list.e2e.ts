@@ -1514,15 +1514,21 @@ describe.skipIf(!reachable)("Library View long lists", () => {
           if (!box?.querySelector("thead th[data-query-column]")) return null;
           const frame = () =>
             new Promise((resolve) => requestAnimationFrame(resolve));
-          /** Each header cell's left edge and width, from the box's left. */
+          /**
+           * The header's top, which stays at the box's top as the rows
+           * scroll, and each header cell's left edge and width, from the
+           * box's edges.
+           */
           const cells = () => {
-            const left = box.getBoundingClientRect().left;
-            return [...box.querySelectorAll("thead tr > th")]
-              .map((th) => {
+            const bounds = box.getBoundingClientRect();
+            const head = box.querySelector("thead th")!.getBoundingClientRect();
+            return [
+              `top ${Math.round(head.top - bounds.top)}`,
+              ...[...box.querySelectorAll("thead tr > th")].map((th) => {
                 const r = th.getBoundingClientRect();
-                return `${Math.round(r.left - left)}+${Math.round(r.width)}`;
-              })
-              .join(" ");
+                return `${Math.round(r.left - bounds.left)}+${Math.round(r.width)}`;
+              }),
+            ].join(" ");
           };
           const seen = new Set<string>();
           // A sample on each scroll event too, before the rows for the new
