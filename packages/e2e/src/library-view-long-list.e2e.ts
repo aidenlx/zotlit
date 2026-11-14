@@ -517,12 +517,25 @@ describe.skipIf(!reachable)("Library View long lists", () => {
     list: "[data-query-row]",
   } as const;
 
-  it.each(["papers", "table", "list"] as const)(
-    "caps a long %s embed's height, mounts the rows near the screen as the embed scrolls, and Export to PDF prints every row",
-    async (layout) => {
+  /** A note's two modes: Reading view and the Live Preview editor. */
+  const NOTE_MODES = ["preview", "source"] as const;
+
+  /** The element that holds a note's shown embeds in each mode. */
+  const MODE_ROOT = {
+    preview: ".markdown-preview-view",
+    source: ".markdown-source-view",
+  } as const;
+
+  it.each(
+    (["papers", "table", "list"] as const).flatMap((layout) =>
+      NOTE_MODES.map((mode) => [layout, mode] as const),
+    ),
+  )(
+    "caps a long %s embed's height in %s, holds its length as it scrolls, mounts the rows near the screen, and Export to PDF prints every row",
+    async (layout, mode) => {
       const queryPath = `Long ${layout}.zotquery`;
       const notePath = `Long ${layout}.md`;
-      const pdfPath = join(fixture.root, `long-${layout}.pdf`);
+      const pdfPath = join(fixture.root, `long-${layout}-${mode}.pdf`);
       await using cleanup = new AsyncDisposableStack();
       cleanup.defer(() =>
         obRun(
@@ -541,7 +554,7 @@ describe.skipIf(!reachable)("Library View long lists", () => {
       );
       await obRun(
         vaultId,
-        async ({ app }, { layout, queryPath, notePath }) => {
+        async ({ app }, { layout, queryPath, notePath, mode }) => {
           await app.vault.create(
             queryPath,
             [
@@ -561,15 +574,42 @@ describe.skipIf(!reachable)("Library View long lists", () => {
           );
           const leaf = app.workspace.getLeaf("tab");
           await leaf.openFile(app.vault.getFileByPath(notePath)!, {
-            state: { mode: "preview" },
+            state: { mode },
           });
           app.workspace.setActiveLeaf(leaf, { focus: true });
         },
-        { layout, queryPath, notePath },
+        { layout, queryPath, notePath, mode },
       );
       const view = await revealQueryView(vaultId, notePath, {
         embed: queryPath,
       });
+      // The embed's length holds as it scrolls a screen each frame, where a
+      // row that draws at another height than it took would move it, and a
+      // scroll bar drag with it.
+      const lengths = await obRun(
+        vaultId,
+        async ({ page }, { view, box }) => {
+          const el = await page.revealQueryView(view);
+          const list = el.querySelector<HTMLElement>(box)!;
+          list.scrollTop = 0;
+          await new Promise((resolve) => setTimeout(resolve, 300));
+          const seen = new Set<number>();
+          for (let step = 0; step < 60; step++) {
+            list.scrollTop += list.clientHeight;
+            await new Promise((resolve) => requestAnimationFrame(resolve));
+            seen.add(list.scrollHeight);
+          }
+          list.scrollTop = 0;
+          return [...seen];
+        },
+        { view, box: EMBED_BOX },
+        { timeoutMs: 60_000 },
+      );
+      // The List's length does not move at all: it stands at the height its
+      // window lays out. The others may move by a measured row or two.
+      expect(Math.max(...lengths) - Math.min(...lengths)).toBeLessThanOrEqual(
+        layout === "list" ? 0 : 49,
+      );
       // The embed stands no taller than its cap, and scrolls its own rows
       // 5,000 px down; the rows there mount.
       const capped = await obRunUntil(
@@ -595,15 +635,14 @@ describe.skipIf(!reachable)("Library View long lists", () => {
       expect(capped!.scrolls).toBe(true);
       const scrolled = await obRunUntil(
         vaultId,
-        ({ app }, { notePath, rowSelector, box }) => {
+        ({ app }, { notePath, rowSelector, box, root }) => {
           const leaf = app.workspace
             .getLeavesOfType("markdown")
             .find((l) => (l.view as MarkdownView).file?.path === notePath)!;
-          // Reading view's own embed: the tab keeps Live Preview's, hidden,
+          // The mode's own embed: the tab keeps the other mode's, hidden,
           // beside it.
-          const scroller = leaf.view.containerEl.querySelector<HTMLElement>(
-            ".markdown-preview-view",
-          )!;
+          const scroller =
+            leaf.view.containerEl.querySelector<HTMLElement>(root)!;
           const host =
             scroller.querySelector<QueryViewElement>(".zt-query-view");
           const bounds = host
@@ -625,7 +664,12 @@ describe.skipIf(!reachable)("Library View long lists", () => {
             }).length,
           };
         },
-        { notePath, rowSelector: ROWS[layout], box: EMBED_BOX },
+        {
+          notePath,
+          rowSelector: ROWS[layout],
+          box: EMBED_BOX,
+          root: MODE_ROOT[mode],
+        },
         {
           ready: ({ shown }) => shown > 0,
           what: `${layout} rows in view 5,000 px into the embed`,
@@ -852,201 +896,219 @@ describe.skipIf(!reachable)("Library View long lists", () => {
     expect(indented.heightMoved).toBeLessThan(50);
   }, 180_000);
 
-  it("runs a long embed only once it shows: not behind Reading view nor in a folded callout, which holds its room and runs as it unfolds", async () => {
-    const queryPath = "Long fold.zotquery";
-    const notePath = "Long fold.md";
-    await using cleanup = new AsyncDisposableStack();
-    await createFiles(cleanup, {
-      [queryPath]: [
-        "views:",
-        "  - type: papers",
-        "    name: All",
-        "    from: items",
-        '    filters: library == "personal"',
-        "",
-      ].join("\n"),
-      [notePath]: [
-        "# Folded",
-        "",
-        `![[${queryPath}]]`,
-        "",
-        "> [!note]- Long list",
-        `> ![[${queryPath}]]`,
-        "",
-        "The end.",
-        "",
-      ].join("\n"),
-    });
-    await obRun(
-      vaultId,
-      async ({ app }, { notePath }) => {
-        const leaf = app.workspace.getLeaf("tab");
-        await leaf.openFile(app.vault.getFileByPath(notePath)!, {
-          state: { mode: "preview" },
-        });
-        app.workspace.setActiveLeaf(leaf, { focus: true });
-      },
-      { notePath },
-    );
-    /**
-     * The embeds Reading view shows, and those of the editor it hides: for
-     * each, whether it waits to run and holds its room, its listed, mounted
-     * and shown rows.
-     */
-    const state = (
-      what: string,
-      ready: (s: { shown: Embed[]; hidden: Embed[] }) => boolean,
-    ) =>
-      obRunUntil(
+  it.each(NOTE_MODES)(
+    "runs a long embed in %s only once it shows: not in the hidden mode nor in a folded callout, which holds its room and runs as it unfolds",
+    async (mode) => {
+      const queryPath = "Long fold.zotquery";
+      const notePath = "Long fold.md";
+      await using cleanup = new AsyncDisposableStack();
+      await createFiles(cleanup, {
+        [queryPath]: [
+          "views:",
+          "  - type: papers",
+          "    name: All",
+          "    from: items",
+          '    filters: library == "personal"',
+          "",
+        ].join("\n"),
+        [notePath]: [
+          "# Folded",
+          "",
+          `![[${queryPath}]]`,
+          "",
+          "> [!note]- Long list",
+          `> ![[${queryPath}]]`,
+          "",
+          "The end.",
+          "",
+        ].join("\n"),
+      });
+      await obRun(
         vaultId,
-        ({ app }, { notePath }) => {
+        async ({ app }, { notePath, mode }) => {
+          const leaf = app.workspace.getLeaf("tab");
+          await leaf.openFile(app.vault.getFileByPath(notePath)!, {
+            state: { mode },
+          });
+          app.workspace.setActiveLeaf(leaf, { focus: true });
+        },
+        { notePath, mode },
+      );
+      /**
+       * The embeds the mode shows, and those of the other mode it hides: for
+       * each, whether it waits to run and holds its room, its listed, mounted
+       * and shown rows.
+       */
+      const state = (
+        what: string,
+        ready: (s: { shown: Embed[]; hidden: Embed[] }) => boolean,
+      ) =>
+        obRunUntil(
+          vaultId,
+          ({ app }, { notePath, root }) => {
+            const leaf = app.workspace
+              .getLeavesOfType("markdown")
+              .find((l) => (l.view as MarkdownView).file?.path === notePath)!;
+            const scroller =
+              leaf.view.containerEl.querySelector<HTMLElement>(root)!;
+            const bounds = scroller.getBoundingClientRect();
+            const read = (host: QueryViewElement) => {
+              const rows = [
+                ...host.querySelectorAll<HTMLElement>(
+                  "[data-query-papers-row]",
+                ),
+              ];
+              return {
+                held: host.zotlitQueryView?.held ?? true,
+                waiting: host.hasAttribute("data-query-waiting"),
+                folded: host.closest(".callout.is-collapsed") !== null,
+                listed:
+                  host.zotlitQueryView?.state.getState().results?.rows.length ??
+                  0,
+                mounted: rows.length,
+                shown: rows.filter((row) => {
+                  const rowBounds = row.getBoundingClientRect();
+                  return (
+                    rowBounds.height > 0 &&
+                    rowBounds.bottom > bounds.top &&
+                    rowBounds.top < bounds.bottom
+                  );
+                }).length,
+              };
+            };
+            const hosts = [
+              ...leaf.view.containerEl.querySelectorAll<QueryViewElement>(
+                ".zt-query-note",
+              ),
+            ];
+            return {
+              shown: hosts.filter((h) => scroller.contains(h)).map(read),
+              hidden: hosts.filter((h) => !scroller.contains(h)).map(read),
+            };
+          },
+          { notePath, root: MODE_ROOT[mode] },
+          { what, ready: (s) => s.shown.length === 2 && ready(s) },
+        );
+      type Embed = {
+        held: boolean;
+        waiting: boolean;
+        folded: boolean;
+        listed: number;
+        mounted: number;
+        shown: number;
+      };
+      const loaded = await state("the first embed's rows", ({ shown }) => {
+        const [first] = shown;
+        return first!.shown > 0;
+      });
+      const [top, folded] = loaded.shown;
+      expect(top!.listed).toBeGreaterThan(LISTED);
+      // The folded embed runs nothing, and holds the room its rows take at
+      // most for when it unfolds.
+      expect(folded).toMatchObject({
+        folded: true,
+        held: true,
+        waiting: true,
+        listed: 0,
+      });
+      // Nor does the mode the tab hides run its embeds.
+      for (const hidden of loaded.hidden)
+        expect(hidden).toMatchObject({ held: true, listed: 0 });
+      await obRun(
+        vaultId,
+        ({ app }, { notePath, root }) => {
           const leaf = app.workspace
             .getLeavesOfType("markdown")
             .find((l) => (l.view as MarkdownView).file?.path === notePath)!;
-          const scroller = leaf.view.containerEl.querySelector<HTMLElement>(
-            ".markdown-preview-view",
+          const callout = leaf.view.containerEl.querySelector<HTMLElement>(
+            `${root} .callout`,
           )!;
-          const bounds = scroller.getBoundingClientRect();
-          const read = (host: QueryViewElement) => {
-            const rows = [
-              ...host.querySelectorAll<HTMLElement>("[data-query-papers-row]"),
-            ];
-            return {
-              held: host.zotlitQueryView?.held ?? true,
-              waiting: host.hasAttribute("data-query-waiting"),
-              folded: host.closest(".callout.is-collapsed") !== null,
-              listed:
-                host.zotlitQueryView?.state.getState().results?.rows.length ??
-                0,
-              mounted: rows.length,
-              shown: rows.filter((row) => {
-                const rowBounds = row.getBoundingClientRect();
-                return (
-                  rowBounds.height > 0 &&
-                  rowBounds.bottom > bounds.top &&
-                  rowBounds.top < bounds.bottom
-                );
-              }).length,
-            };
-          };
-          const hosts = [
-            ...leaf.view.containerEl.querySelectorAll<QueryViewElement>(
-              ".zt-query-note",
-            ),
-          ];
+          // The fold button, which Live Preview and Reading view both draw.
+          callout.querySelector<HTMLElement>(".callout-fold")!.click();
+          callout.scrollIntoView({ block: "start" });
+        },
+        { notePath, root: MODE_ROOT[mode] },
+      );
+      const open = await state(
+        "the folded embed's rows in view once the callout unfolds",
+        ({ shown }) => {
+          const [, unfolded] = shown;
+          return !unfolded!.folded && unfolded!.shown > 0;
+        },
+      );
+      const [, unfolded] = open.shown;
+      expect(unfolded).toMatchObject({ held: false, waiting: false });
+      expect(unfolded!.listed).toBeGreaterThan(LISTED);
+      expect(unfolded!.mounted).toBeLessThan(80);
+    },
+    180_000,
+  );
+
+  it.each(NOTE_MODES)(
+    "hides the rows a Table embed in a callout in %s scrolls under its header, in the callout's tint",
+    async (mode) => {
+      const queryPath = "Long callout table.zotquery";
+      const notePath = "Long callout table.md";
+      await using cleanup = new AsyncDisposableStack();
+      await createFiles(cleanup, {
+        [queryPath]: [
+          "views:",
+          "  - type: table",
+          "    name: All",
+          "    from: items",
+          '    filters: library == "personal"',
+          "",
+        ].join("\n"),
+        // A heading first: Live Preview shows the line the cursor stands on,
+        // the note's first, as text.
+        [notePath]: [
+          "# Callout",
+          "",
+          "> [!note] A table",
+          `> ![[${queryPath}]]`,
+          "",
+        ].join("\n"),
+      });
+      await obRun(
+        vaultId,
+        async ({ app }, { notePath, mode }) => {
+          const leaf = app.workspace.getLeaf("tab");
+          await leaf.openFile(app.vault.getFileByPath(notePath)!, {
+            state: { mode },
+          });
+          app.workspace.setActiveLeaf(leaf, { focus: true });
+        },
+        { notePath, mode },
+      );
+      const header = await obRunUntil(
+        vaultId,
+        ({ app }, { notePath, root }) => {
+          const leaf = app.workspace
+            .getLeavesOfType("markdown")
+            .find((l) => (l.view as MarkdownView).file?.path === notePath)!;
+          const table = leaf.view.containerEl.querySelector<HTMLTableElement>(
+            `${root} .callout [data-query-table]`,
+          );
+          const cell = table?.tHead?.rows[0]?.cells[1];
+          if (!table || !cell || !table.tBodies.length) return null;
+          table.parentElement!.scrollTop = 600;
+          const style = getComputedStyle(cell);
           return {
-            shown: hosts.filter((h) => scroller.contains(h)).map(read),
-            hidden: hosts.filter((h) => !scroller.contains(h)).map(read),
+            scrolled: table.parentElement!.scrollTop,
+            color: style.backgroundColor,
+            tint: style.backgroundImage,
           };
         },
-        { notePath },
-        { what, ready: (s) => s.shown.length === 2 && ready(s) },
+        { notePath, root: MODE_ROOT[mode] },
+        {
+          what: "the callout's Table scrolled under its header",
+          ready: (h) => h !== null && h.scrolled > 0,
+        },
       );
-    type Embed = {
-      held: boolean;
-      waiting: boolean;
-      folded: boolean;
-      listed: number;
-      mounted: number;
-      shown: number;
-    };
-    const loaded = await state("the first embed's rows", ({ shown }) => {
-      const [first] = shown;
-      return first!.shown > 0;
-    });
-    const [top, folded] = loaded.shown;
-    expect(top!.listed).toBeGreaterThan(LISTED);
-    // The folded embed runs nothing, and holds the room its rows take at
-    // most for when it unfolds.
-    expect(folded).toMatchObject({
-      folded: true,
-      held: true,
-      waiting: true,
-      listed: 0,
-    });
-    // Nor does the editor that Reading view hides run its embeds.
-    for (const hidden of loaded.hidden)
-      expect(hidden).toMatchObject({ held: true, listed: 0 });
-    await obRun(
-      vaultId,
-      ({ app }, { notePath }) => {
-        const leaf = app.workspace
-          .getLeavesOfType("markdown")
-          .find((l) => (l.view as MarkdownView).file?.path === notePath)!;
-        const callout = leaf.view.containerEl.querySelector<HTMLElement>(
-          ".markdown-preview-view .callout",
-        )!;
-        callout.querySelector<HTMLElement>(".callout-title")!.click();
-        callout.scrollIntoView({ block: "start" });
-      },
-      { notePath },
-    );
-    const open = await state(
-      "the folded embed's rows in view once the callout unfolds",
-      ({ shown }) => {
-        const [, unfolded] = shown;
-        return !unfolded!.folded && unfolded!.shown > 0;
-      },
-    );
-    const [, unfolded] = open.shown;
-    expect(unfolded).toMatchObject({ held: false, waiting: false });
-    expect(unfolded!.listed).toBeGreaterThan(LISTED);
-    expect(unfolded!.mounted).toBeLessThan(80);
-  }, 180_000);
-
-  it("hides the rows a Table embed in a callout scrolls under its header, in the callout's tint", async () => {
-    const queryPath = "Long callout table.zotquery";
-    const notePath = "Long callout table.md";
-    await using cleanup = new AsyncDisposableStack();
-    await createFiles(cleanup, {
-      [queryPath]: [
-        "views:",
-        "  - type: table",
-        "    name: All",
-        "    from: items",
-        '    filters: library == "personal"',
-        "",
-      ].join("\n"),
-      [notePath]: ["> [!note] A table", `> ![[${queryPath}]]`, ""].join("\n"),
-    });
-    await obRun(
-      vaultId,
-      async ({ app }, { notePath }) => {
-        const leaf = app.workspace.getLeaf("tab");
-        await leaf.openFile(app.vault.getFileByPath(notePath)!, {
-          state: { mode: "preview" },
-        });
-        app.workspace.setActiveLeaf(leaf, { focus: true });
-      },
-      { notePath },
-    );
-    const header = await obRunUntil(
-      vaultId,
-      ({ app }, { notePath }) => {
-        const leaf = app.workspace
-          .getLeavesOfType("markdown")
-          .find((l) => (l.view as MarkdownView).file?.path === notePath)!;
-        const table = leaf.view.containerEl.querySelector<HTMLTableElement>(
-          ".markdown-preview-view .callout [data-query-table]",
-        );
-        const cell = table?.tHead?.rows[0]?.cells[1];
-        if (!table || !cell || !table.tBodies.length) return null;
-        table.parentElement!.scrollTop = 600;
-        const style = getComputedStyle(cell);
-        return {
-          scrolled: table.parentElement!.scrollTop,
-          color: style.backgroundColor,
-          tint: style.backgroundImage,
-        };
-      },
-      { notePath },
-      {
-        what: "the callout's Table scrolled under its header",
-        ready: (h) => h !== null && h.scrolled > 0,
-      },
-    );
-    // An opaque colour has no alpha part, `rgb(...)`; the tint lies over it.
-    expect(header!.color).toMatch(/^rgb\(/);
-    expect(header!.tint).toContain("linear-gradient");
-  }, 120_000);
+      // An opaque colour has no alpha part, `rgb(...)`; the tint lies over it.
+      expect(header!.color).toMatch(/^rgb\(/);
+      expect(header!.tint).toContain("linear-gradient");
+    },
+    120_000,
+  );
 });
