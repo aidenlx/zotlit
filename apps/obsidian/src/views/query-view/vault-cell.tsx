@@ -6,8 +6,9 @@
 // as a Bases cell does, by the property's type: one line of text, a link, a
 // number at the end, a checkbox, a date in the locale's form, or a row of
 // items or tags, clipped at the cell's edge; an edit opens over the cell and
-// grows down over the rows below, or up over the rows above at the end of
-// its box, so no row moves and the box keeps its length. A key the note's
+// grows down over the rows below, or up over the rows above where its box
+// shows more room above the cell, so no row moves and the box keeps its
+// length. A key the note's
 // Profile replaces on each update stays read-only. On a row with no note,
 // the commit of an edit creates the note first; opening the editor creates
 // nothing.
@@ -366,7 +367,7 @@ function neighbour(
  * by a click or by Enter or Space, where the note's Profile does not
  * replace the key; a click toggles a checkbox. The editor opens over the
  * cell in the Bases edit ring and grows down over the rows below, or up
- * over the rows above where the box shows no more below, so no row moves.
+ * over the rows above where the box shows more room above, so no row moves.
  * Enter, Tab or focus leaving the editor writes it, creating the
  * note where the Item has none; Escape drops it. After Enter or Escape
  * focus returns to the cell; Tab and Shift+Tab move it to the next or the
@@ -389,11 +390,11 @@ export function VaultEditCell(props: VaultCellProps) {
   const labelId = useUniqueId();
   const editing = draft !== null;
   const editor = useRef<HTMLDivElement>(null);
-  // The editor grows down from the cell, or up over the rows above where it
-  // would pass the end of what its box shows (a long Table clips it there)
-  // and the box shows more room above the cell, under its header, than
-  // below. The side holds while the edit lasts, so text that grows the
-  // editor does not move it.
+  // The editor grows down from the cell, or up over the rows above where the
+  // box shows more room above the cell, under its header, than below it (a
+  // long Table clips the editor at the box's end). The side holds while the
+  // edit lasts, so text that grows the editor does not move it, and the
+  // larger room takes the text a reader adds.
   const [up, setUp] = useState(false);
   useLayoutEffect(() => {
     const el = editor.current;
@@ -417,7 +418,7 @@ export function VaultEditCell(props: VaultCellProps) {
     const rect = at.getBoundingClientRect();
     const below = end - rect.top;
     const above = rect.bottom - start;
-    setUp(el.getBoundingClientRect().height - below > 0.5 && above > below);
+    setUp(above > below);
   }, [editing]);
   useLayoutEffect(() => {
     const how = after.current;

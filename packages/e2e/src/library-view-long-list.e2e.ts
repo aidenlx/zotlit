@@ -1666,6 +1666,7 @@ describe.skipIf(!reachable)("Library View long lists", () => {
         "    order:",
         "      - title",
         "      - vault.note",
+        "      - vault.summary",
         "",
       ].join("\n"),
     });
@@ -1756,6 +1757,16 @@ describe.skipIf(!reachable)("Library View long lists", () => {
       await openEditorAt(vaultId, { key: last!, name: "note", place: "end" }),
       true,
     );
+    // An empty cell on the last row opens one line tall and opens up too, so
+    // the text the reader types wraps over the rows above, inside the block.
+    const typed = await openEditorAt(vaultId, {
+      key: last!,
+      name: "summary",
+      place: "end",
+      lines: 3,
+    });
+    expectEditorSide(typed, true);
+    expect(typed.caret, "the caret shown at the end of the text").toBe(true);
   }, 180_000);
 
   /** Each Layout in each place it shows: the Library View has no List. */

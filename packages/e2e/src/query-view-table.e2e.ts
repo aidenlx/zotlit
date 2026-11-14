@@ -1651,6 +1651,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
             "    order:",
             "      - title",
             "      - vault.note",
+            "      - vault.summary",
             "",
           ].join("\n"),
         );
@@ -1713,6 +1714,16 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       }),
       true,
     );
+    // An empty cell on the last row opens one line tall and opens up too, so
+    // the text the reader types wraps over the rows above, inside the box.
+    const typed = await openEditorAt(run.vaultId, {
+      key: last,
+      name: "summary",
+      place: "end",
+      lines: 3,
+    });
+    expectEditorSide(typed, true);
+    expect(typed.caret, "the caret shown at the end of the text").toBe(true);
   }, 120_000);
 
   // A List or Cards view of Items gathers its rows by a grouping whose

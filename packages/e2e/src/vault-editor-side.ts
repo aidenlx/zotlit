@@ -1,7 +1,7 @@
 // The side a vault cell's editor opens to in a Query File tab's Table: down
-// over the rows below, or up over the rows above where its box shows no
-// more below. Either way it shows whole in the box, and the open moves no
-// row and leaves the box's length as it was.
+// over the rows below, or up over the rows above where its box shows more
+// room above the cell. Either way it shows whole in the box, and the open
+// moves no row and leaves the box's length as it was.
 import { expect } from "vitest";
 
 import { obRun, obRunUntil } from "./obsidian-cli.ts";
@@ -26,21 +26,29 @@ export interface EditorSide {
   inside: boolean;
   /** The editor itself is under the pointer at its top and bottom edges. */
   edges: boolean[];
+  /** The caret stands at the end of the text, and the field shows it. */
+  caret: boolean;
 }
 
 /**
  * Opens the editor of the vault cell `name` on the row of `key` in the
  * Table of the first Query File tab, with a trusted click, reads where it
  * stands, then drops it with Escape. `place` scrolls the box first: `end`
- * to its end, `top` so the row stands under the header.
+ * to its end, `top` so the row stands under the header. With `lines`, the
+ * reader first types words into the text until it wraps to that many lines.
  */
 export async function openEditorAt(
   vaultId: string,
-  { key, name, place }: { key: string; name: string; place: "top" | "end" },
+  {
+    key,
+    name,
+    place,
+    lines,
+  }: { key: string; name: string; place: "top" | "end"; lines?: number },
 ): Promise<EditorSide> {
   const side = await obRun(
     vaultId,
-    async ({ app, page }, { key, name, place }) => {
+    async ({ app, page }, { key, name, place, lines }) => {
       const el = (
         app.workspace.getLeavesOfType("zotlit-query-file")[0]!
           .view as import("obsidian").ItemView
@@ -92,6 +100,32 @@ export async function openEditorAt(
       }
       for (let frame = 0; frame < 3; frame++)
         await new Promise((resolve) => requestAnimationFrame(resolve));
+      const field = box.doc.activeElement as HTMLTextAreaElement;
+      if (lines !== undefined) {
+        const contents = (
+          box.win as Window & {
+            electronWindow: { webContents: import("electron").WebContents };
+          }
+        ).electronWindow.webContents;
+        // The lines the text takes, its padding aside.
+        const wrapped = () => {
+          const style = getComputedStyle(field);
+          return Math.round(
+            (field.scrollHeight -
+              Number.parseFloat(style.paddingTop) -
+              Number.parseFloat(style.paddingBottom)) /
+              Number.parseFloat(style.lineHeight),
+          );
+        };
+        for (let words = 0; words < 200 && wrapped() < lines; words++) {
+          await contents.insertText(words === 0 ? "word" : " word");
+          await new Promise((resolve) => requestAnimationFrame(resolve));
+        }
+        if (wrapped() < lines)
+          throw new Error(`The text wraps to ${wrapped()} lines alone`);
+        for (let frame = 0; frame < 3; frame++)
+          await new Promise((resolve) => requestAnimationFrame(resolve));
+      }
       const after = state();
       const editor = cell.querySelector<HTMLElement>(
         "[data-query-vault-editor]",
@@ -118,6 +152,9 @@ export async function openEditorAt(
         edges: [rect.top + 2, rect.bottom - 2].map((y) =>
           editor.contains(box.doc.elementFromPoint(x, y)),
         ),
+        caret:
+          field.selectionEnd === field.value.length &&
+          field.scrollTop + field.clientHeight >= field.scrollHeight - 0.5,
       };
       // The first Escape can close the suggestions of the text alone.
       for (let tries = 0; tries < 3 && editor.isConnected; tries++) {
@@ -126,7 +163,7 @@ export async function openEditorAt(
       }
       return side;
     },
-    { key, name, place },
+    { key, name, place, lines },
   );
   await obRunUntil(
     vaultId,
