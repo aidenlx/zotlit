@@ -17,12 +17,7 @@ import {
   useState,
   useSyncExternalStore,
 } from "react";
-import type {
-  CSSProperties,
-  HTMLAttributes,
-  LiHTMLAttributes,
-  ReactNode,
-} from "react";
+import type { HTMLAttributes, LiHTMLAttributes, ReactNode } from "react";
 
 import { observeResize } from "@/lib/observe-resize";
 import { cn } from "@/lib/utils";
@@ -86,12 +81,6 @@ interface ListFlow {
   readonly props?: Attributes<HTMLAttributes<HTMLElement>>;
   /** The outline of one row, which a spacer repeats for each row it stands for. */
   readonly ghost: string;
-  /**
-   * The list stands at the height its window lays out: a row that draws at
-   * another height than it took then moves the rows under it, not the
-   * list's length under a scroll bar drag.
-   */
-  readonly holdsLength?: boolean;
 }
 
 /** A table with one `tbody` for each entry, as the Table layout draws. */
@@ -113,6 +102,9 @@ interface MountedRows extends VirtualRows {
 
 /** The classes of every layout's box, which scrolls its list. */
 const BOX = "zt:min-h-0 zt:flex-1 zt:overflow-auto zt:[overflow-anchor:none]";
+
+/** The height of a long list, `--zt-virtual-size`, held whatever its rows draw. */
+const HOLD = "zt:box-content zt:h-(--zt-virtual-size) zt:overflow-y-clip";
 
 /**
  * The list of `view`'s Items Layout over `entries`, mounted near the screen
@@ -204,23 +196,18 @@ export function ItemsWindow({
     );
   });
   const end = after > 0 && spacer(after);
+  // A long list stands at the height its window lays out, its header's with
+  // it: a row that draws at another height than it took then moves the rows
+  // under it, not the list's length under a scroll bar drag.
+  const hold = size !== null && HOLD;
   let list: ReactNode;
   if (flow.kind === "list") {
     const List = flow.as;
-    const holds = flow.holdsLength === true && size !== null;
     list = (
       <List
         ref={listRef}
         {...flow.props}
-        className={cn(
-          flow.props?.className,
-          holds && "zt:box-content zt:h-(--zt-virtual-size) zt:overflow-y-clip",
-        )}
-        style={
-          holds
-            ? ({ "--zt-virtual-size": `${size}px` } as CSSProperties)
-            : undefined
-        }
+        className={cn(flow.props?.className, hold)}
         onFocus={onFocus}
       >
         {rows}
@@ -229,13 +216,17 @@ export function ItemsWindow({
     );
   } else
     list = (
-      <table {...flow.props} onFocus={onFocus}>
-        {flow.head && <thead ref={setHead}>{flow.head}</thead>}
-        {/* The rows start here, under the header. */}
-        <tbody ref={listRef} />
-        {rows}
-        {end}
-      </table>
+      // A table stands at the height of its rows at least: it holds its
+      // height in a block that clips it.
+      <div className={cn(hold)}>
+        <table {...flow.props} onFocus={onFocus}>
+          {flow.head && <thead ref={setHead}>{flow.head}</thead>}
+          {/* The rows start here, under the header. */}
+          <tbody ref={listRef} />
+          {rows}
+          {end}
+        </table>
+      </div>
     );
   return (
     <div
@@ -246,6 +237,9 @@ export function ItemsWindow({
         ...placeholderRow(learned.get("row") ?? estimates.row),
         ...(flow.kind === "table" && {
           "--zt-table-header-height": `${header}px`,
+        }),
+        ...(size !== null && {
+          "--zt-virtual-size": `${flow.kind === "table" ? header + size : size}px`,
         }),
       }}
     >

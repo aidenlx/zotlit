@@ -130,7 +130,7 @@ describe.skipIf(!reachable)("Library View long lists", () => {
   }
 
   /** The scroll box of a Library View list. */
-  const BOX = '[data-query-layout="papers"], div:has(> [data-query-table])';
+  const BOX = '[data-query-layout="papers"], .zt-table-scroller';
 
   /** Close the Library View once the case ends, as it found none open. */
   function closeLibrary(cleanup: AsyncDisposableStack) {
@@ -320,9 +320,9 @@ describe.skipIf(!reachable)("Library View long lists", () => {
     expect(listed).toBeGreaterThan(LISTED);
     const drag = await dragToEnd("[data-query-papers-row]");
     expect(drag.mounted).toBeLessThan(80);
-    // Rows measured on the way take the height their kind measured: the
-    // scroll bar stays under the pointer.
-    expect(drag.heightMoved).toBeLessThan(50);
+    // The list stands at the height its window lays out, whatever the rows
+    // measured on the way draw: the scroll bar stays under the pointer.
+    expect(drag.heightMoved).toBe(0);
     expect(drag.off).toBe(0);
     const keys = await listedKeys();
     await obRunUntil(
@@ -394,7 +394,7 @@ describe.skipIf(!reachable)("Library View long lists", () => {
     await openLibrary("table");
     const drag = await dragToEnd('tr[data-query-table-row="item"]');
     expect(drag.mounted).toBeLessThan(80);
-    expect(drag.heightMoved).toBeLessThan(50);
+    expect(drag.heightMoved).toBe(0);
     expect(drag.off).toBe(0);
     // A column the researcher has not sized holds its default width, wherever
     // the list scrolls: the first, where a title reads, wider than the rest.
@@ -501,14 +501,14 @@ describe.skipIf(!reachable)("Library View long lists", () => {
     );
     const drag = await dragToEnd("[data-query-papers-row]");
     expect(drag.mounted).toBeLessThan(80);
-    expect(drag.heightMoved).toBeLessThan(50);
+    expect(drag.heightMoved).toBe(0);
     expect(drag.off).toBe(0);
     await revealThenStep();
   }, 180_000);
 
   /** The box that scrolls an embed's rows, in each Items layout. */
   const EMBED_BOX =
-    '[data-query-layout="papers"], [data-query-layout="list"], div:has(> [data-query-table])';
+    '[data-query-layout="papers"], [data-query-layout="list"], .zt-table-scroller';
 
   /** The rows of each layout, as the page marks them. */
   const ROWS = {
@@ -605,11 +605,9 @@ describe.skipIf(!reachable)("Library View long lists", () => {
         { view, box: EMBED_BOX },
         { timeoutMs: 60_000 },
       );
-      // The List's length does not move at all: it stands at the height its
-      // window lays out. The others may move by a measured row or two.
-      expect(Math.max(...lengths) - Math.min(...lengths)).toBeLessThanOrEqual(
-        layout === "list" ? 0 : 49,
-      );
+      // The length does not move at all: the list stands at the height its
+      // window lays out.
+      expect(Math.max(...lengths) - Math.min(...lengths)).toBe(0);
       // The embed stands no taller than its cap, and scrolls its own rows
       // 5,000 px down; the rows there mount.
       const capped = await obRunUntil(
@@ -879,7 +877,7 @@ describe.skipIf(!reachable)("Library View long lists", () => {
     // Narrow, a row wraps to as many lines as its text takes there.
     const wrapped = await drag(180);
     expect(wrapped.start).toBeGreaterThan(inline.start * 1.5);
-    expect(wrapped.heightMoved).toBeLessThan(50);
+    expect(wrapped.heightMoved).toBe(0);
     await obRun(
       vaultId,
       async ({ app }, { path, text }) => {
@@ -893,7 +891,7 @@ describe.skipIf(!reachable)("Library View long lists", () => {
     expect(indented.mounted).toBeLessThan(80);
     // The rows take more lines, and the list learns their new height.
     expect(indented.start).toBeGreaterThan(inline.start * 1.3);
-    expect(indented.heightMoved).toBeLessThan(50);
+    expect(indented.heightMoved).toBe(0);
   }, 180_000);
 
   it.each(
@@ -1275,10 +1273,11 @@ describe.skipIf(!reachable)("Library View long lists", () => {
           );
           const cell = table?.tHead?.rows[0]?.cells[1];
           if (!table || !cell || !table.tBodies.length) return null;
-          table.parentElement!.scrollTop = 600;
+          table.closest<HTMLElement>(".zt-table-scroller")!.scrollTop = 600;
           const style = getComputedStyle(cell);
           return {
-            scrolled: table.parentElement!.scrollTop,
+            scrolled:
+              table.closest<HTMLElement>(".zt-table-scroller")!.scrollTop,
             color: style.backgroundColor,
             tint: style.backgroundImage,
           };

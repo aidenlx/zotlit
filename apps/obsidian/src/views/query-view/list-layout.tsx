@@ -324,7 +324,6 @@ export function ListLayout({ view }: { view: QueryView }) {
           "data-query-markers": markers,
         },
         ghost: LIST_GHOST,
-        holdsLength: true,
       }}
       draw={draw}
       drew={drew}
