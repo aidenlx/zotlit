@@ -378,16 +378,18 @@ describe.skipIf(!reachable)("Library View long lists", () => {
             .map((th) => Math.round(th.getBoundingClientRect().width))
             .join(" ");
         const { width, flex } = list.style;
-        list.style.flex = "none";
-        list.style.width = `${list.scrollWidth + 600}px`;
-        await new Promise((resolve) => requestAnimationFrame(resolve));
-        const table = list.querySelector("table")!;
-        const shown = {
-          widths: widths(),
-          fills: Math.abs(table.offsetWidth - list.clientWidth) <= 1,
-        };
-        Object.assign(list.style, { width, flex });
-        return shown;
+        try {
+          list.style.flex = "none";
+          list.style.width = `${list.scrollWidth + 600}px`;
+          await new Promise((resolve) => requestAnimationFrame(resolve));
+          const table = list.querySelector("table")!;
+          return {
+            widths: widths(),
+            fills: Math.abs(table.offsetWidth - list.clientWidth) <= 1,
+          };
+        } finally {
+          Object.assign(list.style, { width, flex });
+        }
       },
       { box: BOX },
     );

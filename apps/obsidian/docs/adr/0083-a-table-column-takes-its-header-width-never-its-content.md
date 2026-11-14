@@ -14,7 +14,8 @@ A long Table mounts only the rows near the screen (PR #2023). A column that size
 - One rule for every Table, short ones included. A Table of 100 entries or fewer, which keeps every row, looks the same as a long one.
 - Text that fit in an unsized column before can now end in an ellipsis; a wide value no longer widens its column. The researcher drags the column's edge to show more, and the width saves as before (`columnSize`).
 - A saved width never holds a default: `columnSize` keeps only the widths the researcher set, and Reset column width removes one. The header's `data-sized` mark still says which widths were set; no style reads it.
-- A theme that changes `--bases-table-column-max-width` changes the defaults with it, as it changes Bases' own columns.
+- A theme that changes `--bases-table-column-max-width` changes the defaults with it, as it changes Bases' own columns. The defaults read it as a number of pixels without a unit, the form Obsidian sets; a value written with a unit leaves the default columns without a width.
+- A vault cell's editor opens at its column's width, so a long value edits in a narrower box than when the column grew to fit it.
 
 ## Considered options
 

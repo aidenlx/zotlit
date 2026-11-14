@@ -2120,9 +2120,11 @@ function tableText(el: HTMLElement): string[][] {
         : [...node.childNodes].map(shown).join("");
   // The empty filler column after the last holds no text.
   return [...el.querySelectorAll("[data-query-table] tr")].map((tr) =>
-    [...tr.querySelectorAll(":scope > :is(th, td):not([aria-hidden])")].map(
-      (cell) => shown(cell).trim(),
-    ),
+    [
+      ...tr.querySelectorAll(
+        ":scope > :is(th, td):not([data-query-table-filler])",
+      ),
+    ].map((cell) => shown(cell).trim()),
   );
 }
 

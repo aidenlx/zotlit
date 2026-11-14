@@ -971,7 +971,11 @@ function ItemRow({
             </td>
           );
         })}
-        <td aria-hidden="true" className={cn(CELL, FILLER)} />
+        <td
+          aria-hidden="true"
+          className={cn(CELL, FILLER)}
+          data-query-table-filler=""
+        />
       </tr>
       <ChildRows
         parent={record}

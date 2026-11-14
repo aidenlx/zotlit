@@ -537,7 +537,11 @@ export function TableHeader({
           );
         })}
         {/* The filler names no column, so it is no header cell. */}
-        <td aria-hidden="true" className={cn(cell, filler)} />
+        <td
+          aria-hidden="true"
+          className={cn(cell, filler)}
+          data-query-table-filler=""
+        />
       </tr>
     </thead>
   );
