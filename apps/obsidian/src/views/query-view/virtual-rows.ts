@@ -105,6 +105,11 @@ export interface VirtualRows {
   readonly onFocus: (event: { target: EventTarget }) => void;
   /** The height each kind of entry measures on screen, once learned. */
   readonly learned: ReadonlyMap<string, number>;
+  /**
+   * The list's height as the virtualizer lays out its entries, which a
+   * scroll leaves as it is; `null` where the list mounts every entry.
+   */
+  readonly size: number | null;
 }
 
 /**
@@ -239,6 +244,13 @@ export function useVirtualRows({
   );
   /** The last scroll offset, and the step the scroll took to it. */
   const scrolling = useRef({ offset: 0, step: 0 });
+  /** Whether a scroll drew entries it has not measured yet. */
+  const deferred = useRef(false);
+  /**
+   * Whether the scroll on now brings an entry into view: it lands by the
+   * heights it measures as it goes, so it measures them.
+   */
+  const revealing = useRef(false);
   /** The virtualizer, which the range extractor reads the scroll from. */
   const instance = useRef<{
     measurementsCache: readonly { start: number; end: number }[];
@@ -288,8 +300,17 @@ export function useVirtualRows({
     onChange: (v) => {
       const offset = v.scrollOffset ?? 0;
       const last = scrolling.current;
-      if (!v.isScrolling) scrolling.current = { offset, step: 0 };
-      else if (offset !== last.offset)
+      if (!v.isScrolling) {
+        scrolling.current = { offset, step: 0 };
+        revealing.current = false;
+        // The entries drawn while the scroll went on take their heights now.
+        if (deferred.current) {
+          deferred.current = false;
+          queueMicrotask(() => {
+            for (const el of v.elementsCache.values()) v.measureElement(el);
+          });
+        }
+      } else if (offset !== last.offset)
         scrolling.current = { offset, step: Math.abs(offset - last.offset) };
     },
     scrollMargin: margin,
@@ -308,14 +329,21 @@ export function useVirtualRows({
     // rows above one adds up, and a row scrolled into view stops short.
     // A row with no box, as in a folded callout, keeps the height it had.
     measureElement: (el, entry, instance) => {
+      const index = instance.indexFromElement(el);
+      const kept =
+        instance.itemSizeCache.get(instance.options.getItemKey(index)) ??
+        instance.options.estimateSize(index);
+      // While a scroll goes on, an entry keeps the height it was given: a
+      // new one changes the list's length, and the browser then drops part
+      // of a scroll bar drag, so the bar falls behind the pointer. The
+      // entries on screen are measured once the scroll stops.
+      if (instance.isScrolling && !revealing.current) {
+        deferred.current = true;
+        return kept;
+      }
       const size =
         entry?.borderBoxSize[0]?.blockSize ?? el.getBoundingClientRect().height;
-      if (size > 0) return size;
-      const index = instance.indexFromElement(el);
-      return (
-        instance.itemSizeCache.get(instance.options.getItemKey(index)) ??
-        instance.options.estimateSize(index)
-      );
+      return size > 0 ? size : kept;
     },
     // The first draw, before the scroller is measured, fills a window.
     initialRect: { width: 0, height: (own?.win ?? activeWindow).innerHeight },
@@ -398,10 +426,16 @@ export function useVirtualRows({
   const scrollTo = useCallback(
     (index: number) => {
       if (!enabled) return false;
+      revealing.current = true;
       virtualizer.scrollToIndex(index, { align: "auto" });
+      // An entry already in view takes no scroll; the next one is the
+      // reader's own.
+      (own?.win ?? activeWindow).requestAnimationFrame(() => {
+        if (!virtualizer.isScrolling) revealing.current = false;
+      });
       return true;
     },
-    [enabled, virtualizer],
+    [enabled, virtualizer, own],
   );
 
   if (!enabled) {
@@ -417,6 +451,7 @@ export function useVirtualRows({
       scrollTo,
       onFocus,
       learned,
+      size: null,
     };
   }
   const { entries, after } = flow(
@@ -432,6 +467,7 @@ export function useVirtualRows({
     scrollTo,
     onFocus,
     learned,
+    size: virtualizer.getTotalSize(),
   };
 }
 

@@ -9,6 +9,7 @@ import {
   useMemo,
   useState,
 } from "react";
+import type { CSSProperties } from "react";
 
 import { useUniqueId } from "@zotlit/ui";
 
@@ -268,7 +269,10 @@ export function ListLayout({ view }: { view: QueryView }) {
       data-query-layout="list"
       style={placeholderRow(rows.learned.get("row") ?? ESTIMATES.row)}
     >
-      {/* A word too long for the line breaks, as `list-heights.ts` lays it out. */}
+      {/* A word too long for the line breaks, as `list-heights.ts` lays it out.
+          A long list stands at the height its window lays out: a row that
+          draws taller than its predicted height then moves the rows under
+          it, not the list's length under a scroll bar drag. */}
       <List
         ref={listRef}
         className={cn(
@@ -277,7 +281,14 @@ export function ListLayout({ view }: { view: QueryView }) {
           options.markers === "number" &&
             "zt:list-decimal zt:pl-(--list-indent)",
           options.markers === "none" && "zt:list-none zt:pl-0",
+          rows.size !== null &&
+            "zt:box-content zt:h-(--zt-virtual-size) zt:overflow-y-clip",
         )}
+        style={
+          rows.size === null
+            ? undefined
+            : ({ "--zt-virtual-size": `${rows.size}px` } as CSSProperties)
+        }
         data-query-markers={options.markers}
         onFocus={rows.onFocus}
       >
