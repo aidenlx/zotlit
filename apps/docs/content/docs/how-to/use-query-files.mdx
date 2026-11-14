@@ -289,7 +289,21 @@ You can adjust table columns directly in the view:
 - Drag a column header left or right to change column order.
 - Drag the boundary between two headers to resize a column width.
 - Double-click the boundary between two headers to return the column to its automatic width.
-- Select or right-click any column header to open its menu. The menu offers <UiLabel name={m.query_view_table_move_column_left()} />, <UiLabel name={m.query_view_table_move_column_right()} />, and <UiLabel name={m.query_view_table_reset_column_width()} />.
+- Right-click any column header to open its menu (on mobile, tap the header). The menu offers <UiLabel name={m.query_view_table_move_column_left()} />, <UiLabel name={m.query_view_table_move_column_right()} />, and <UiLabel name={m.query_view_table_reset_column_width()} />.
+
+The same menu also works on the column's property, as in an Obsidian base:
+
+- <UiLabel name={m.query_view_table_hide_column()} /> removes the column from
+  the view.
+- <UiLabel name={m.query_view_table_group_by()} /> groups the rows by the
+  column, for a property the view can group by.
+- <UiLabel name={m.query_view_table_sort_az()} /> and
+  <UiLabel name={m.query_view_table_sort_za()} /> make the column the first sort
+  of the view and keep its other sorts.
+  <UiLabel name={m.query_view_table_clear_sort()} /> removes the column's sort.
+- <UiLabel name={m.query_view_table_edit_property()} /> (
+  <UiLabel name={m.query_view_table_edit_formula()} /> for a formula) opens the
+  property's display name, and a formula's expression, beside the header.
 
 Resized column widths save automatically in the query file.
 

@@ -102,6 +102,8 @@ interface ChooserState {
   firstQuery: RefObject<string>;
   /** The open session's `openPage`, while a session stands. */
   sessionPage: RefObject<((page: string) => void) | null>;
+  /** Whether the popup holds pages alone, with no rows under them. */
+  pagesOnly: boolean;
 }
 
 const ChooserContext = createContext<ChooserState | null>(null);
@@ -144,6 +146,8 @@ interface ChooserSessionState {
   activeValue: () => string | null;
   /** The page on screen in place of the rows, or `null` on the rows. */
   page: string | null;
+  /** How many pages stand over the rows, the one on screen among them. */
+  depth: number;
   /** Opens a page over the one on screen. */
   openPage: (page: string) => void;
   /** Steps back to the page under this one, or to the rows. */
@@ -289,10 +293,22 @@ export interface ChooserProps {
   value: readonly string[];
   /** Called with the whole selection a tick leaves behind. */
   onValueChange: (next: string[]) => void;
+  /**
+   * The popup holds pages alone, opened from outside it with
+   * {@link useChooserOpenPage}, such as a Table column's "Edit property":
+   * its first page has no back button, and a step back from it closes the
+   * popup, since no rows stand under it.
+   */
+  pagesOnly?: boolean;
   children: ReactNode;
 }
 
-export function Chooser({ value, onValueChange, children }: ChooserProps) {
+export function Chooser({
+  value,
+  onValueChange,
+  pagesOnly = false,
+  children,
+}: ChooserProps) {
   const [open, setOpen] = useState(false);
   const popupId = useUniqueId();
   const listRef = useRef<HTMLDivElement | null>(null);
@@ -320,8 +336,9 @@ export function Chooser({ value, onValueChange, children }: ChooserProps) {
       firstPage,
       firstQuery,
       sessionPage,
+      pagesOnly,
     }),
-    [value, onValueChange, open, popupId, close],
+    [value, onValueChange, open, popupId, close, pagesOnly],
   );
 
   return <ChooserContext value={state}>{children}</ChooserContext>;
@@ -345,6 +362,7 @@ function ChooserSession({ children }: { children: ReactNode }) {
     firstPage,
     firstQuery,
     sessionPage,
+    pagesOnly,
   } = useChooser();
   const [query, setQueryState] = useState(() => {
     const first = firstQuery.current;
@@ -359,6 +377,11 @@ function ChooserSession({ children }: { children: ReactNode }) {
     return first === null ? [] : [first];
   });
   const page = pages.at(-1) ?? null;
+  const depth = pages.length;
+  // A popup of pages alone has no rows to step back to: it closes instead.
+  useLayoutEffect(() => {
+    if (pagesOnly && depth === 0) close();
+  }, [pagesOnly, depth, close]);
 
   // A page leaves the DOM with no blur event, so a field that saves on blur
   // saves again as its page unmounts.
@@ -577,6 +600,7 @@ function ChooserSession({ children }: { children: ReactNode }) {
       scope,
       activeValue,
       page,
+      depth,
       openPage,
       back,
       replacePage,
@@ -590,6 +614,7 @@ function ChooserSession({ children }: { children: ReactNode }) {
       scope,
       activeValue,
       page,
+      depth,
       openPage,
       back,
       replacePage,
@@ -695,6 +720,11 @@ export interface ChooserPopupProps extends Omit<
 > {
   /** Opens and shuts the popup, for a caller outside the Chooser's parts. */
   handle?: Ref<PinnedPopoverHandle>;
+  /**
+   * What the popup hangs beside, in place of the {@link Trigger}, such as
+   * the Table header cell a pages-only popup opened from.
+   */
+  anchor?: RefObject<HTMLElement | null>;
 }
 
 /**
@@ -705,7 +735,13 @@ export interface ChooserPopupProps extends Omit<
  * Formula page's, reaches past its edge; its rows and its pages scroll in
  * boxes of their own.
  */
-function Popup({ className, handle, children, ...rest }: ChooserPopupProps) {
+function Popup({
+  className,
+  handle,
+  anchor,
+  children,
+  ...rest
+}: ChooserPopupProps) {
   const { popupId, popupRef, triggerRef, handleRef, setOpen, open, listRef } =
     useChooser();
   useImperativeHandle(
@@ -742,7 +778,7 @@ function Popup({ className, handle, children, ...rest }: ChooserPopupProps) {
   return (
     <PinnedPopover
       ref={popupRef}
-      anchor={triggerRef}
+      anchor={anchor ?? triggerRef}
       handle={handleRef}
       onOpenChange={setOpen}
       id={popupId}
@@ -1357,6 +1393,10 @@ function PageGone() {
 export const chooserIconButton =
   "zt-chooser-icon zt:flex zt:shrink-0 zt:cursor-(--cursor) zt:items-center zt:justify-center zt:rounded-(--clickable-icon-radius) zt:[corner-shape:var(--corner-shape)] zt:px-(--size-2-3) zt:py-(--size-2-2) zt:text-(--icon-color) zt:hover:bg-(--background-modifier-hover) zt:hover:text-(--icon-color-hover) zt:focus-visible:shadow-[0_0_0_var(--input-border-width-focus)_var(--background-modifier-border-focus)] zt:focus-visible:outline-none zt:[&_svg]:opacity-(--icon-opacity) zt:hover:[&_svg]:opacity-(--icon-opacity-hover)";
 
+/** A page's title row, as the back button carries it or as it stands alone. */
+const PAGE_TITLE =
+  "zt:flex zt:min-w-0 zt:flex-1 zt:items-center zt:gap-(--size-4-1) zt:rounded-(--radius-s) zt:p-(--size-2-2) zt:text-(length:--font-ui-small) zt:[font-weight:var(--font-medium)] zt:text-foreground";
+
 export interface ChooserPageHeaderProps {
   /** The page's title, such as "Configure view". */
   title: string;
@@ -1373,7 +1413,9 @@ export interface ChooserPageHeaderProps {
  * carries the page's title, the page's actions, and a button that closes the
  * popup. The back button is a menu row rather than a button, so it stays a
  * bare `<button>` drawn by its utilities, as the trigger is: the `Button`
- * wrapper would bring the button box this row takes back off.
+ * wrapper would bring the button box this row takes back off. The first page
+ * of a pages-only popup has nothing to step back to, so its title stands
+ * alone, where the back button would carry it.
  */
 function PageHeader({
   title,
@@ -1381,27 +1423,36 @@ function PageHeader({
   closeLabel,
   actions,
 }: ChooserPageHeaderProps) {
-  const { close } = useChooser();
-  const { back } = useChooserSession();
+  const { close, pagesOnly } = useChooser();
+  const { back, depth } = useChooserSession();
   return (
     <div
       data-chooser-page-header=""
       className="zt:flex zt:shrink-0 zt:items-center zt:gap-(--size-4-1) zt:p-(--size-4-1)"
     >
-      <button
-        type="button"
-        className="zt-chooser-page-back zt:flex zt:min-w-0 zt:flex-1 zt:cursor-(--cursor) zt:items-center zt:gap-(--size-4-1) zt:rounded-(--radius-s) zt:p-(--size-2-2) zt:text-(length:--font-ui-small) zt:[font-weight:var(--font-medium)] zt:text-foreground zt:hover:bg-(--background-modifier-hover)"
-        data-chooser-page-back=""
-        {...tooltipAttrs(backLabel)}
-        onClick={back}
-      >
-        <Icon
-          name="chevron-left"
-          size="s"
-          className="zt:shrink-0 zt:text-muted-foreground"
-        />
-        <span className="zt:truncate">{title}</span>
-      </button>
+      {pagesOnly && depth <= 1 ? (
+        <span className={PAGE_TITLE} data-chooser-page-title="">
+          <span className="zt:truncate">{title}</span>
+        </span>
+      ) : (
+        <button
+          type="button"
+          className={cn(
+            PAGE_TITLE,
+            "zt-chooser-page-back zt:cursor-(--cursor) zt:hover:bg-(--background-modifier-hover)",
+          )}
+          data-chooser-page-back=""
+          {...tooltipAttrs(backLabel)}
+          onClick={back}
+        >
+          <Icon
+            name="chevron-left"
+            size="s"
+            className="zt:shrink-0 zt:text-muted-foreground"
+          />
+          <span className="zt:truncate">{title}</span>
+        </button>
+      )}
       {actions}
       <button
         type="button"

@@ -1,6 +1,29 @@
 import { describe, expect, it } from "vitest";
 
-import { dropGap, gapMove, resizedWidth } from "./table-columns";
+import { dropGap, gapMove, headerSort, resizedWidth } from "./table-columns";
+
+describe("headerSort", () => {
+  const SORT = [
+    { property: "date", direction: "DESC" },
+    { property: "title", direction: "ASC" },
+  ] as const;
+
+  it("puts the column's sort first and keeps the others, as Bases does", () => {
+    expect(headerSort(SORT, "title", "DESC")).toEqual([
+      { property: "title", direction: "DESC" },
+      { property: "date", direction: "DESC" },
+    ]);
+    expect(headerSort(SORT, "itemType", "ASC")).toEqual([
+      { property: "itemType", direction: "ASC" },
+      ...SORT,
+    ]);
+  });
+
+  it("clears the column's sort alone, and leaves no empty sort", () => {
+    expect(headerSort(SORT, "date", null)).toEqual([SORT[1]]);
+    expect(headerSort([SORT[0]], "date", null)).toBeUndefined();
+  });
+});
 
 describe("dropGap", () => {
   // Three columns of 100px; the dragged column is the middle one.

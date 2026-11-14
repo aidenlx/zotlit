@@ -1,5 +1,25 @@
 // The arithmetic of the Table layout's column moves and column widths, as Bases does them.
-import type { ColumnSizes } from "./query-file";
+import type {
+  ColumnSizes,
+  QueryFileDirection,
+  QueryFileSort,
+} from "./query-file";
+
+/**
+ * The sort a Table column's header menu leaves, as Bases sorts from it: the
+ * column's own sort leaves the list, and a `direction` puts it back first,
+ * ahead of the view's other sorts; `null` only clears it. A list left empty
+ * is `undefined`, so the view writes no `sort` key.
+ */
+export function headerSort(
+  sort: readonly QueryFileSort[],
+  property: string,
+  direction: QueryFileDirection | null,
+): QueryFileSort[] | undefined {
+  const rest = sort.filter((entry) => entry.property !== property);
+  const next = direction === null ? rest : [{ property, direction }, ...rest];
+  return next.length > 0 ? next : undefined;
+}
 
 /**
  * The gap a dragged column drops into: `0` before the first column,
