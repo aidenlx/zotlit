@@ -272,6 +272,26 @@ describe.each<HostKind>(["embed", "block"])("a %s", (kind) => {
     expect(run.mock.calls.at(-1)![0].context).toBeUndefined();
   });
 
+  it("settles with its first rows when it comes near the screen before it reads its text", async () => {
+    const { show, run } = await setup(kind);
+    const answer = Promise.withResolvers<QueryViewOutcome>();
+    run.mockReturnValueOnce(answer.promise);
+    void delay(50).then(() => answer.resolve(EMPTY));
+    let shown: Promise<Held> | undefined;
+    let phase: string | undefined;
+    await act(async () => {
+      shown = show("notes/Lab.md", document.body);
+      // The view, as it loads: on screen, and the embed's text still to come.
+      const el = document.body.lastElementChild as HTMLElement;
+      const view = (el as HTMLElement & { zotlitQueryView: QueryView })
+        .zotlitQueryView;
+      await view.settled;
+      phase = view.state.getState().phase;
+      await shown;
+    });
+    expect(phase).toBe("ready");
+  });
+
   it("settles once the first rows show, as Export to PDF waits for it", async () => {
     const { show, run } = await setup(kind);
     const answer = Promise.withResolvers<QueryViewOutcome>();

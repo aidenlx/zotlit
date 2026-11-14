@@ -174,6 +174,14 @@ export interface QueryViewHost {
   /** Open the Query File; the toolbar shows a link button when the host gives it. */
   openFile?: (event: MouseEvent) => void;
   /**
+   * What the view waits for before it runs, as a note's view waits to come
+   * near the screen. Until it settles the view's phase is `waiting`: a run
+   * asked for meanwhile waits, and the last one starts as it settles;
+   * {@link QueryView.settled} waits for that run. Absent: the view runs as
+   * asked.
+   */
+  start?: Promise<void>;
+  /**
    * What the host gives the Annotations Layout beside the Scope and the
    * source path: the sidebar's own gestures and its list frame.
    */
@@ -354,7 +362,8 @@ export interface QueryViewState {
   view: QueryFileView | null;
   /** What keeps the view from running, for the file and for the view. */
   problems: readonly string[];
-  phase: "idle" | "loading" | "ready" | "failed";
+  /** `waiting`: the view waits for its host's {@link QueryViewHost.start}. */
+  phase: "waiting" | "idle" | "loading" | "ready" | "failed";
   /**
    * The rows of the last run that gave rows, with what that run says about
    * them; `null` while no rows are on screen. A failed run keeps them whole
@@ -523,15 +532,15 @@ export class QueryView extends Component implements HistorySurface {
   #shownBinding: string | null = null;
   #settled: Promise<void> = Promise.resolve();
   /**
-   * Whether the view waits to run, as an embed far from the screen does
-   * ({@link hold}), and whether a run waits for {@link release}.
+   * The wait for the host's {@link QueryViewHost.start}: whether it settled,
+   * whether a run waits for it, and what {@link settled} gives until the
+   * first run after it; `null` once that run starts.
    */
-  #held: { asked: boolean } | null = null;
-  /**
-   * What {@link settled} gives while a held view has not run: it settles
-   * with the first refresh after the {@link release}.
-   */
-  #unrun: PromiseWithResolvers<void> | null = null;
+  #waiting: {
+    open: boolean;
+    asked: boolean;
+    first: PromiseWithResolvers<void>;
+  } | null = null;
   #subscriptions: DisposableStack | null = null;
   /** Whether the view draws into an element; until then no card waits to show. */
   #rendered = false;
@@ -575,6 +584,7 @@ export class QueryView extends Component implements HistorySurface {
       host: () => this.vaultHost(),
       notes: deps.literatureNotes,
     });
+    if (host.start) this.#wait(host.start);
   }
 
   /**
@@ -1014,44 +1024,42 @@ export class QueryView extends Component implements HistorySurface {
   }
 
   /**
-   * Run nothing until {@link release}: the view stands where no one sees
-   * it yet. A run asked for meanwhile waits, and the last one starts on the
-   * release; {@link settled} waits for the first run after it.
+   * Run nothing until `start` settles (see {@link QueryViewHost.start}); the
+   * last run asked for meanwhile starts then. {@link settled} waits for the
+   * first run after it, also where the host gives the view its text later.
    */
-  hold(): void {
-    this.#held ??= { asked: false };
-    if (this.#unrun) return;
-    this.#unrun = Promise.withResolvers<void>();
-    this.#settled = this.#unrun.promise;
-  }
-
-  /** Run the query a {@link hold} kept waiting, and run as asked from now on. */
-  release(): void {
-    const held = this.#held;
-    this.#held = null;
-    if (held?.asked) this.refresh();
-  }
-
-  /** Whether the view waits for {@link release} to run. */
-  get held(): boolean {
-    return this.#held !== null;
+  #wait(start: Promise<void>): void {
+    const waiting = {
+      open: false,
+      asked: false,
+      first: Promise.withResolvers<void>(),
+    };
+    this.#waiting = waiting;
+    this.#settled = waiting.first.promise;
+    this.state.setState({ phase: "waiting" });
+    void start.then(() => {
+      waiting.open = true;
+      if (waiting.asked) this.refresh();
+      else this.state.setState({ phase: "idle" });
+    });
   }
 
   /** @param fromList whether a list change asked for the run. */
   #refresh(fromList: boolean): void {
-    if (this.#held) {
-      this.#held.asked = true;
+    const waiting = this.#waiting;
+    if (waiting && !waiting.open) {
+      waiting.asked = true;
       return;
     }
-    const unrun = this.#unrun;
-    this.#unrun = null;
+    this.#waiting = null;
     try {
       this.#run(fromList);
     } finally {
-      // A held view settles with the first refresh after its release.
-      if (unrun) {
-        if (this.#settled === unrun.promise) this.#settled = Promise.resolve();
-        unrun.resolve(this.#settled);
+      // The first run after the start settles what `settled` gave meanwhile.
+      if (waiting) {
+        const { first } = waiting;
+        if (this.#settled === first.promise) this.#settled = Promise.resolve();
+        first.resolve(this.#settled);
       }
     }
   }

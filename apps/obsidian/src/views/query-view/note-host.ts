@@ -27,6 +27,8 @@ export class NoteQueryHost extends Component {
   /** The Item key `this` reads, as the note's Properties give it. */
   #item: string | null;
   readonly #binding: ReturnType<typeof makeNoteBindingAtom>;
+  /** What lets the view run: it comes near the screen, or a print shows it. */
+  readonly #start = Promise.withResolvers<void>();
 
   constructor(
     deps: QueryViewDeps,
@@ -64,9 +66,9 @@ export class NoteQueryHost extends Component {
       sourcePath,
       context: () => (this.#item === null ? undefined : { item: this.#item }),
       contextSource: "note",
+      // The view runs once it comes near the screen (see `onload`).
+      start: this.#start.promise,
     });
-    // The view runs once it comes near the screen (see `onload`).
-    this.#query.hold();
     if (reserve) el.dataset.queryWaiting = "";
     // e2e-only: packages/e2e reaches the view of every host from its element.
     // A dev-build port, absent from a production build.
@@ -80,7 +82,7 @@ export class NoteQueryHost extends Component {
     // it stands within a screen of what the note shows, so the ones on
     // screen come first. One the note hides, as a folded callout or the
     // editor behind Reading view does, runs once it shows.
-    this.register(whenNear(this.#el, () => this.#release()));
+    this.register(whenNear(this.#el, () => this.#start.resolve()));
     this.register(
       this.#query.state.subscribe((state) => {
         const settled =
@@ -125,15 +127,10 @@ export class NoteQueryHost extends Component {
    */
   async shown(): Promise<void> {
     // Export to PDF prints every view of the note, near the screen or not.
-    if (this.#el.closest(".print")) this.#release();
+    if (this.#el.closest(".print")) this.#start.resolve();
     // Elsewhere a view that waits to come near the screen shows nothing yet.
-    if (this.#query.held) return;
+    else if (this.#query.state.getState().phase === "waiting") return;
     await this.#query.shownIn(this.#el);
-  }
-
-  /** Run the view, which waited to come near the screen. */
-  #release(): void {
-    if (this.#query.held) this.#query.release();
   }
 
   #readItem(): string | null {

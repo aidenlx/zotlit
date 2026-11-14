@@ -959,7 +959,8 @@ describe.skipIf(!reachable)("Library View long lists", () => {
                 ),
               ];
               return {
-                held: host.zotlitQueryView?.held ?? true,
+                phase:
+                  host.zotlitQueryView?.state.getState().phase ?? "waiting",
                 waiting: host.hasAttribute("data-query-waiting"),
                 folded: host.closest(".callout.is-collapsed") !== null,
                 listed:
@@ -990,7 +991,7 @@ describe.skipIf(!reachable)("Library View long lists", () => {
           { what, ready: (s) => s.shown.length === 2 && ready(s) },
         );
       type Embed = {
-        held: boolean;
+        phase: string;
         waiting: boolean;
         folded: boolean;
         listed: number;
@@ -1007,13 +1008,13 @@ describe.skipIf(!reachable)("Library View long lists", () => {
       // most for when it unfolds.
       expect(folded).toMatchObject({
         folded: true,
-        held: true,
+        phase: "waiting",
         waiting: true,
         listed: 0,
       });
       // Nor does the mode the tab hides run its embeds.
       for (const hidden of loaded.hidden)
-        expect(hidden).toMatchObject({ held: true, listed: 0 });
+        expect(hidden).toMatchObject({ phase: "waiting", listed: 0 });
       await obRun(
         vaultId,
         ({ app }, { notePath, root }) => {
@@ -1037,7 +1038,7 @@ describe.skipIf(!reachable)("Library View long lists", () => {
         },
       );
       const [, unfolded] = open.shown;
-      expect(unfolded).toMatchObject({ held: false, waiting: false });
+      expect(unfolded).toMatchObject({ phase: "ready", waiting: false });
       expect(unfolded!.listed).toBeGreaterThan(LISTED);
       expect(unfolded!.mounted).toBeLessThan(80);
     },
