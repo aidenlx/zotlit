@@ -36,6 +36,14 @@ export interface PreparedRow {
   readonly rest: readonly PreparedText[];
 }
 
+/** The text of a row as the canvas measures it in `font`. */
+export function prepareRow(text: RowText, font: string): PreparedRow {
+  return {
+    first: prepare(text.first, font),
+    rest: text.rest.map((line) => prepare(line, font)),
+  };
+}
+
 /**
  * The height of a row: its padding, its first line's text, and each
  * property line's text at the indented width. A text takes a line at least,
@@ -107,12 +115,7 @@ export function useRowHeights(
         if (at > 0) await yieldToMain();
         if (stopped) return;
         for (const text of texts.slice(at, at + PREPARE_BATCH))
-          rows.push(
-            text && {
-              first: prepare(text.first, font),
-              rest: text.rest.map((line) => prepare(line, font)),
-            },
-          );
+          rows.push(text && prepareRow(text, font));
       }
       if (!stopped) setPrepared({ texts, font, fonts, rows });
     })();
