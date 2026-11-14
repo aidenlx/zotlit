@@ -22,6 +22,7 @@ import { revealQueryView } from "./note-query-view.ts";
 import { cli, obRun, obRunUntil } from "./obsidian-cli.ts";
 import type { QueryViewElement } from "./page-helpers.ts";
 import type { QueryPrintModal } from "./page-query-types.ts";
+import { expectEditorSide, openEditorAt } from "./vault-editor-side.ts";
 import {
   clearVault,
   e2eVaultDir,
@@ -1582,4 +1583,117 @@ describe.skipIf(!reachable)("Library View long lists", () => {
     },
     120_000,
   );
+
+  // A long Table holds its length in a block that clips it: a vault cell's
+  // editor on its last row opens up, over the rows above, and shows whole,
+  // as it opens down from a row in the middle.
+  it("opens a vault cell's editor up from a long Table's last row and down from a middle row, inside the box, with no row moved", async () => {
+    const path = "Long vault cells.zotquery";
+    const note =
+      "Foundational essay on the memex and associative trails; argues for machines that extend human memory.";
+    await using cleanup = new AsyncDisposableStack();
+    await createFiles(cleanup, {
+      [path]: [
+        "views:",
+        "  - type: table",
+        "    name: All",
+        "    from: items",
+        '    filters: library == "personal"',
+        "    sort:",
+        "      - property: title",
+        "        direction: ASC",
+        "    order:",
+        "      - title",
+        "      - vault.note",
+        "",
+      ].join("\n"),
+    });
+    await obRun(
+      vaultId,
+      async ({ app }, { path }) => {
+        const leaf = app.workspace.getLeaf("tab");
+        await leaf.openFile(app.vault.getFileByPath(path)!);
+        app.workspace.setActiveLeaf(leaf, { focus: true });
+      },
+      { path },
+    );
+    // The paper at the top of the box scrolled half way, and the last one.
+    const [middle, last] = await obRunUntil(
+      vaultId,
+      async ({ app }) => {
+        const view = app.workspace.getLeavesOfType("zotlit-query-file")[0]
+          ?.view as import("@/views/query-view/file-view").QueryFileView;
+        if (!view) return [];
+        await view.query.settled;
+        const keys =
+          view.query.state.getState().results?.rows.map((r) => r.indexedKey) ??
+          [];
+        const box =
+          view.contentEl.querySelector<HTMLElement>(".zt-table-scroller");
+        if (!box || keys.length <= 100) return [];
+        box.scrollTop = box.scrollHeight / 2;
+        await new Promise((resolve) => setTimeout(resolve, 300));
+        // The header stays at the box's top.
+        const under =
+          box.getBoundingClientRect().top +
+          box.querySelector("thead")!.offsetHeight;
+        const row = [
+          ...box.querySelectorAll<HTMLElement>(
+            'tr[data-query-table-row="item"]',
+          ),
+        ].find((row) => row.getBoundingClientRect().top >= under);
+        return row ? [row.getAttribute("data-query-key")!, keys.at(-1)!] : [];
+      },
+      undefined,
+      {
+        what: "the long Table scrolled half way",
+        ready: (keys) => keys.length === 2,
+      },
+    );
+    // Each of the two papers gets a note with the long text.
+    await createFiles(
+      cleanup,
+      Object.fromEntries(
+        [middle!, last!].map((key) => [
+          `Editor side ${key}.md`,
+          `---\nzotero-key: ${key}\nnote: ${note}\n---\n`,
+        ]),
+      ),
+    );
+    await obRunUntil(
+      vaultId,
+      ({ zotlit }, { keys }) =>
+        keys.every(
+          (key) =>
+            zotlit.services.bridge.runSync(
+              zotlit.services.noteIndex.getNotesByItemKey(key),
+            ).length > 0,
+        ),
+      { keys: [middle!, last!] },
+      { what: "the notes of the two papers in the note index" },
+    );
+    // The middle paper's row stays mounted: the box has not scrolled.
+    await obRunUntil(
+      vaultId,
+      ({ app }, { middle, note }) =>
+        (
+          app.workspace.getLeavesOfType("zotlit-query-file")[0]!
+            .view as import("obsidian").ItemView
+        ).contentEl
+          .querySelector(
+            `[data-query-key="${middle}"] [data-query-vault-name="note"]`,
+          )
+          ?.textContent?.includes(note) ?? false,
+      { middle: middle!, note },
+      { what: "the middle paper's note in its vault cell" },
+    );
+    expectEditorSide(
+      await openEditorAt(vaultId, { key: middle!, name: "note", place: "top" }),
+      false,
+    );
+    expectEditorSide(
+      await openEditorAt(vaultId, { key: last!, name: "note", place: "end" }),
+      true,
+    );
+  }, 180_000);
 });
