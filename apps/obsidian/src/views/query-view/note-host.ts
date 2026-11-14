@@ -106,8 +106,14 @@ export class NoteQueryHost extends Component {
           state.phase === "failed" ||
           state.problems.length > 0;
         if (!settled) return;
-        delete this.#el.dataset.queryWaiting;
-        reserving.delete(this);
+        const done = () => {
+          delete this.#el.dataset.queryWaiting;
+          reserving.delete(this);
+        };
+        // The rows draw a paint after the state that holds them: the view
+        // keeps its room until they do.
+        if (state.phase === "ready") void this.#query.drawn().then(done);
+        else done();
       }),
     );
     const resize = observeResize(this.#el, [this.#el], () => this.#drew());

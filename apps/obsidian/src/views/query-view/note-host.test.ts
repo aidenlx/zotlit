@@ -321,6 +321,8 @@ describe.each<HostKind>(["embed", "block"])("a %s", (kind) => {
     expect(run).toHaveBeenCalledTimes(1);
     expect(run.mock.calls[0]![0].context).toEqual({ item: "SMITHJ25" });
     expect(view.state.getState().phase).toBe("ready");
+    // It lets the room go once the Layout draws the rows, not before.
+    await act(() => view.drawn());
     expect(el.hasAttribute("data-query-waiting")).toBe(false);
   });
 

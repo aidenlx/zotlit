@@ -671,9 +671,18 @@ export class QueryView extends Component implements HistorySurface {
    * Elsewhere it settles as {@link settled}. Never rejects.
    */
   async shownIn(el: HTMLElement): Promise<void> {
-    await this.settled;
     // A view that does not draw has nothing to wait for.
-    if (el.closest(".print") === null || !this.#rendered) return;
+    if (el.closest(".print") === null || !this.#rendered) return this.settled;
+    return this.drawn();
+  }
+
+  /**
+   * Settles once the Layout has drawn the rows of the last run the view
+   * started, which can be a paint after the state that holds them. Never
+   * rejects.
+   */
+  async drawn(): Promise<void> {
+    await this.settled;
     await (this.#cardsShown ? this.#cards : this.#records).drawn();
   }
 
