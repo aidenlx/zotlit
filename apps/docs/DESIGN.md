@@ -381,7 +381,7 @@ closing call. Sections run 1152px wide (`max-w-6xl`) with 32px side gutters
   outer edge, so each of its objects keeps at least 72px clear of the text at every
   width while the text keeps its size; a soft clearing of the ground colour
   sits behind the headline. The note card and the Word page lie at full size
-  above the clearing, hung from the hero's middle so they stay about 45px
+  above the clearing, hung from the hero's middle so they stay about 80px
   under the requirements line at every hero height. The
   stage scales in steps with the window — 0.88 from 1280px, 0.94 from
   1360px, 1 from 1440px, 1.08 from 1800px — and the text zooms with it.
@@ -389,14 +389,17 @@ closing call. Sections run 1152px wide (`max-w-6xl`) with 32px side gutters
   headline and the sections below carry its meaning.
 - **Below 1280px.** The text, then the library sheet, the table and the PDF
   in a short fanned stack (460px wide at most).
-- **Hero motion, once.** The objects drop onto the desk in order (library,
+- **Hero motion.** Once on load, the objects drop onto the desk in order (library,
   table, PDF, note card, draft, references; 100–1100 ms delays): a 38px
   fall with a 5° turn and a 7% shrink over 780 ms. Then the ratings fill in,
   the table's cell focus lands and the highlighter sweeps across "research desk" (at
-  2.3 s). As the draft lands, a caret shows, `[@ten` types one character at
-  a time, the citation picker opens, its first row is picked, and the picker
-  closes as "(Rougier et al., 2014)." takes the key's place (1.9–3.8 s); the
-  final state shows the citation alone. From 1280px the
+  2.3 s). From the moment the draft lands, it cites a paper in an 11 s
+  loop, slow enough to follow from across the desk: a caret shows, `[@ten`
+  types at 250 ms per character, the citation picker opens and holds, its
+  first row is picked, and the picker closes as "(Rougier et al., 2014)."
+  takes the key's place, marked in the accent tint for 4 s; then the
+  sentence clears and the loop starts again. Without motion the citation
+  stands in place. From 1280px the
   objects drift with a fine pointer, each by its depth, up to 8px. All of it
   is CSS under `motion-safe:`, except the drift, which writes `translate` on
   each object in one animation frame. The prerendered page and reduced

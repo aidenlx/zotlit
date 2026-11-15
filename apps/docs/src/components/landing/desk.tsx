@@ -505,9 +505,9 @@ const CITATION =
   "text-fd-primary underline decoration-fd-primary/40 decoration-dotted underline-offset-[3px]";
 
 /**
- * The chapter draft: one citation in place, a second one typed, picked from
- * the suggestion list and put in. The list shows only while the key is being
- * picked; the final frame has both citations in place.
+ * The chapter draft: one citation in place, and a second one cited in a
+ * slow loop: the key is typed, picked from the suggestion list, and the
+ * citation lands marked. Without motion, both citations are in place.
  */
 function DraftSheet() {
   return (
@@ -536,7 +536,7 @@ function DraftSheet() {
               </span>
               <span className="ms-px inline-block h-[15px] w-[1.5px] translate-y-[3px] bg-fd-foreground motion-safe:animate-desk-blink" />
             </span>
-            <span className="[grid-area:1/1] motion-safe:animate-desk-cited">
+            <span className="-mx-0.5 rounded-[3px] px-0.5 [grid-area:1/1] motion-safe:animate-desk-cited">
               <span className={CITATION}>(Rougier et al., 2014)</span>.
             </span>
           </span>
@@ -697,7 +697,7 @@ export function Desk() {
       <div className="absolute top-1/2 left-1/2 w-[1440px] origin-top -translate-x-1/2 scale-(--desk-s)">
         <Piece
           x={-364}
-          y={150}
+          y={185}
           w={330}
           r={-3}
           d={700}
@@ -708,7 +708,7 @@ export function Desk() {
         </Piece>
         <Piece
           x={-8}
-          y={162}
+          y={197}
           w={372}
           r={1.5}
           d={1100}
