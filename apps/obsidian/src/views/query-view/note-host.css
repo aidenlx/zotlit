@@ -64,3 +64,13 @@
   word-break: normal;
   overflow-wrap: break-word;
 }
+
+/* A view whose rows have not come yet, an embed or a Query Block, stands at
+   the height it last drew at in this session (`--zt-query-note-reserve`, see
+   `note-host.ts`), so the note keeps its height as its views load. A view
+   the note never drew stands at its toolbar and one row of the same height,
+   the least room a view with rows takes: the text under it only moves down
+   as the rows come. */
+.zt-query-note[data-query-waiting] {
+  min-height: var(--zt-query-note-reserve, calc(2 * var(--size-4-10)));
+}

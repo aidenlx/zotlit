@@ -501,7 +501,14 @@ function NoteCard() {
   );
 }
 
-/** The chapter draft: one citation already in place, a second one being typed. */
+const CITATION =
+  "text-fd-primary underline decoration-fd-primary/40 decoration-dotted underline-offset-[3px]";
+
+/**
+ * The chapter draft: one citation in place, and a second one cited in a
+ * slow loop: the key is typed, picked from the suggestion list, and the
+ * citation lands marked. Without motion, both citations are in place.
+ */
 function DraftSheet() {
   return (
     <div
@@ -520,15 +527,24 @@ function DraftSheet() {
         {/* The draft is in the reader's language; the citations stay as the references give them. */}
         <p>
           {m.docs_home_desk_draft_before_citation()}
-          <span className="text-fd-primary underline decoration-fd-primary/40 decoration-dotted underline-offset-[3px]">
-            (Sandve et al., 2013)
-          </span>
+          <span className={CITATION}>(Sandve et al., 2013)</span>
           {m.docs_home_desk_draft_after_citation()}
-          <span className="font-mono text-[12px] text-fd-primary">[@ten</span>
-          <span className="ms-px inline-block h-[15px] w-[1.5px] translate-y-[3px] bg-fd-foreground motion-safe:animate-desk-blink" />
+          {/* The typed key and the citation that replaces it share one cell. */}
+          <span className="inline-grid">
+            <span className="opacity-0 [grid-area:1/1] motion-safe:animate-desk-typed">
+              <span className="inline-block overflow-hidden align-bottom font-mono text-[12px] whitespace-nowrap text-fd-primary motion-safe:animate-desk-type">
+                [@ten
+              </span>
+              <span className="ms-px inline-block h-[15px] w-[1.5px] translate-y-[3px] bg-fd-foreground motion-safe:animate-desk-blink" />
+            </span>
+            <span className="-mx-0.5 rounded-[3px] px-0.5 [grid-area:1/1] motion-safe:animate-desk-cited">
+              <span className={CITATION}>(Rougier et al., 2014)</span>
+              {m.docs_home_desk_draft_end()}
+            </span>
+          </span>
         </p>
-        <div className="absolute top-full left-[6%] mt-1.5 w-[268px] origin-[12%_0] overflow-hidden rounded-md border border-fd-border bg-fd-card [box-shadow:var(--desk-shadow)] motion-safe:animate-desk-pop">
-          <div className="bg-fd-muted px-3 py-2">
+        <div className="absolute top-full left-[6%] z-10 mt-1.5 w-[268px] origin-[12%_0] overflow-hidden rounded-md border border-fd-border bg-fd-card opacity-0 [box-shadow:var(--desk-shadow)] motion-safe:animate-desk-suggest">
+          <div className="bg-fd-muted px-3 py-2 motion-safe:animate-desk-pick">
             <p className="text-[12px] leading-snug font-medium text-fd-foreground">
               Ten Simple Rules for Better Figures
             </p>
@@ -545,6 +561,24 @@ function DraftSheet() {
             </p>
           </div>
         </div>
+      </div>
+      {/* The reference list takes the new entry as the citation lands. */}
+      <div className="mt-3 border-t border-fd-border pt-2">
+        <p className="font-mono text-[10px] tracking-[0.12em] text-fd-muted-foreground uppercase zh:font-sans zh:text-[11px] zh:tracking-normal">
+          {m.docs_home_desk_draft_references()}
+        </p>
+        <ul className="mt-1 font-serif text-[11px] leading-[1.5] text-fd-foreground/90">
+          <li className="-mx-1 overflow-hidden rounded-[3px] px-1 motion-safe:animate-desk-ref">
+            <p className="ps-4 -indent-4">
+              Rougier, N. P., et al. (2014). Ten simple rules for better
+              figures.
+            </p>
+          </li>
+          <li className="ps-4 -indent-4">
+            Sandve, G. K., et al. (2013). Ten simple rules for reproducible
+            computational research.
+          </li>
+        </ul>
       </div>
     </div>
   );
@@ -563,7 +597,7 @@ function WordPage() {
       <span className={cn(corner, "start-5 top-5 border-e border-b")} />
       <span className={cn(corner, "end-5 top-5 border-s border-b")} />
       <p className="text-center font-serif text-[15px] font-bold text-fd-foreground">
-        References
+        {m.docs_home_desk_draft_references()}
       </p>
       <ul className="mt-2.5 grid gap-1.5 font-serif text-[11.5px] leading-[1.6] text-fd-foreground/90">
         <li className="ps-6 -indent-6">
@@ -593,7 +627,7 @@ export function Desk() {
       className="pointer-events-none absolute inset-0 hidden select-none xl:block"
     >
       <div className="absolute top-0 left-1/2 h-[832px] w-[1440px] origin-top -translate-x-1/2 scale-(--desk-s)">
-        {/* Each group of objects is drawn at 0.84 towards its own outer edge, so
+        {/* Each side group is drawn at 0.84 towards its own outer edge, so
             the objects keep at least 72px clear of the text (which keeps its
             size) and the table's last column stays on screen. */}
         {/* Left of the text: the library sheet over a blank sheet, and the PDF. */}
@@ -674,45 +708,108 @@ export function Desk() {
             <DraftSheet />
           </Piece>
         </div>
-        {/* Below the text: the note card and the Word page. */}
-        <div className="absolute inset-0 origin-bottom -translate-y-[44px] scale-[0.84]">
-          <Piece
-            x={-312}
-            y={604}
-            w={292}
-            r={-3}
-            d={700}
-            depth={0.9}
-            tape={<Tape>{m.docs_home_desk_notes()}</Tape>}
-          >
-            <NoteCard />
-          </Piece>
-          <Piece
-            x={14}
-            y={618}
-            w={330}
-            r={1.5}
-            d={1100}
-            depth={0.5}
-            tape={<Tape inset={26}>{m.docs_home_desk_export()}</Tape>}
-          >
-            <WordPage />
-          </Piece>
-        </div>
-
         {/* A clearing on the desk, so nothing crowds the headline. */}
         <div className="absolute top-[43%] left-1/2 h-[460px] w-[760px] -translate-1/2 bg-[radial-gradient(closest-side,var(--color-fd-background)_60%,transparent)]" />
+      </div>
+      {/* Below the text: the note card and the Word page, at full size. They
+          hang from the hero's middle, so they follow the text as the hero's
+          height changes, and they lie above the clearing. */}
+      <div className="absolute top-1/2 left-1/2 w-[1440px] origin-top -translate-x-1/2 scale-(--desk-s)">
+        <Piece
+          x={-364}
+          y={185}
+          w={330}
+          r={-3}
+          d={700}
+          depth={0.9}
+          tape={<Tape>{m.docs_home_desk_notes()}</Tape>}
+        >
+          <NoteCard />
+        </Piece>
+        <Piece
+          x={-8}
+          y={197}
+          w={372}
+          r={1.5}
+          d={1100}
+          depth={0.5}
+          tape={<Tape inset={26}>{m.docs_home_desk_export()}</Tape>}
+        >
+          <WordPage />
+        </Piece>
       </div>
     </div>
   );
 }
 
-/** Below 1280px: the library sheet, the table and the PDF in a short fanned stack. */
+/** From 1024px to 1280px: a tidy two-column spread under the text. The
+ * cards share one width and one gutter and turn only slightly, the left
+ * column one way and the right the other: the library sheet over the draft,
+ * the table over the PDF. */
+export function DeskSpread() {
+  return (
+    <div
+      aria-hidden
+      className="pointer-events-none relative mx-auto mt-12 hidden h-[780px] w-full max-w-[960px] overflow-hidden select-none lg:block xl:hidden"
+    >
+      <Piece
+        x={-450}
+        y={28}
+        w={420}
+        r={-1.2}
+        d={100}
+        tape={<Tape>{m.docs_home_desk_library()}</Tape>}
+      >
+        <LibrarySheet />
+      </Piece>
+      <Piece
+        x={30}
+        y={28}
+        w={420}
+        r={1.2}
+        d={300}
+        tape={
+          <Tape side="right" inset={24}>
+            {m.docs_home_desk_table()}
+          </Tape>
+        }
+      >
+        <TableSheet />
+      </Piece>
+      <Piece
+        x={-450}
+        y={458}
+        w={420}
+        r={0.8}
+        d={500}
+        tape={<Tape>{m.docs_home_desk_cite()}</Tape>}
+      >
+        <DraftSheet />
+      </Piece>
+      <Piece
+        x={30}
+        y={363}
+        w={420}
+        r={-0.8}
+        d={700}
+        tape={
+          <Tape side="right" inset={24}>
+            {m.docs_home_desk_read()}
+          </Tape>
+        }
+      >
+        <PdfPage />
+      </Piece>
+    </div>
+  );
+}
+
+/** Below 1024px: the library sheet, the table and the PDF in a short fanned stack. */
 export function DeskStack() {
   return (
     <div
       aria-hidden
-      className="pointer-events-none relative mx-auto mt-10 h-[760px] w-full max-w-[460px] overflow-hidden select-none xl:hidden"
+      className="pointer-events-none relative mx-auto mt-10 h-[760px] w-full max-w-[460px] overflow-hidden select-none lg:hidden"
     >
       <Piece
         x={-174}

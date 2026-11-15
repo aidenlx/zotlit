@@ -2792,16 +2792,27 @@ export function createStressItems(
     const collection = COLLECTIONS.find(
       ({ libraryID }) => libraryID === library.libraryID,
     );
+    // One Item in ten has a long subtitle, Venue and author list, which wrap
+    // to more lines in a List: a long list draws rows of unlike heights.
+    const long = index % 10 === 8;
     return {
       itemID: firstItemID + index,
       libraryID: library.libraryID,
       key: stressItemKey(seededIndex),
       itemType: "journalArticle",
       citationKey: `stress${String(ordinal).padStart(7, "0")}`,
-      title: `Synthetic stress item ${ordinal}`,
-      venue: "Stress Build Journal",
+      title: long
+        ? `Synthetic stress item ${ordinal}: a longitudinal cohort study of reading practices across twelve countries, with an open dataset`
+        : `Synthetic stress item ${ordinal}`,
+      venue: long
+        ? "Quarterly Journal of Speculative and Occasionally Very Long Venue Names in the Humanities"
+        : "Stress Build Journal",
       date: String(2000 + (seededIndex % 25)),
-      creators: [author("Stress", `Author ${ordinal}`)],
+      creators: long
+        ? Array.from({ length: 12 }, (_, at) =>
+            author("Stress", `Author ${ordinal}-${at + 1}`),
+          )
+        : [author("Stress", `Author ${ordinal}`)],
       tags: [
         { name: "stress-build", type: 0 },
         { name: `stress-bucket-${seededIndex % 16}`, type: 1 },

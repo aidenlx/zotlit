@@ -6,6 +6,7 @@
 // It lays out as the Bases Sort menu: a "Sort by" section of rows, each a
 // drag handle, one joined [property | direction] box and a delete button,
 // then an "Add sort" footer. The Group control reuses the row parts.
+import { useState } from "react";
 import type { ReactNode } from "react";
 
 import { Dropdown, DropdownItem } from "@/components/obsidian/dropdown";
@@ -153,6 +154,64 @@ export function NotUsed() {
   );
 }
 
+/**
+ * The row the Sort menu shows while the view sorts by nothing, as Bases
+ * shows it: its property select holds the placeholder, and the property it
+ * takes becomes the first sort, in the direction chosen beside it. It has
+ * nothing to drag or to remove.
+ */
+function EmptySortRow({
+  options,
+  onChange,
+}: {
+  options: readonly PropertyOption[];
+  onChange: (sort: QueryFileSort) => void;
+}) {
+  const [direction, setDirection] = useState<QueryFileDirection>("ASC");
+  return (
+    <div className={sortRowsClass}>
+      <div data-sort-empty="" className={sortRowClass}>
+        <span aria-hidden="true" className="zt:opacity-50">
+          <GripIcon />
+        </span>
+        <JoinedSelects
+          property={
+            <Select
+              aria-label={m.query_view_sort_by()}
+              data-sort-property=""
+              className="zt:min-w-0 zt:flex-1"
+              placeholder={m.query_view_property_placeholder()}
+              value=""
+              options={options.map(propertySelectOption)}
+              onChange={(property) => onChange({ property, direction })}
+            />
+          }
+          direction={
+            <Dropdown
+              aria-label={m.query_view_sort_by()}
+              data-sort-direction=""
+              className="zt:shrink-0"
+              value={direction}
+              onChange={(next) => setDirection(next as QueryFileDirection)}
+            >
+              {(["ASC", "DESC"] as const).map((entry) => (
+                <DropdownItem key={entry} value={entry}>
+                  {directionLabel("text", entry)}
+                </DropdownItem>
+              ))}
+            </Dropdown>
+          }
+        />
+        <RemoveButton
+          label={m.query_view_sort_remove()}
+          disabled
+          onClick={() => {}}
+        />
+      </div>
+    </div>
+  );
+}
+
 export function SortEditor({
   value,
   options,
@@ -172,6 +231,12 @@ export function SortEditor({
     <>
       <PopoverSection data-sort-editor="">
         <PopoverHeader>{m.query_view_sort_by()}</PopoverHeader>
+        {value.length === 0 && (
+          <EmptySortRow
+            options={options}
+            onChange={(sort) => onChange([sort])}
+          />
+        )}
         {value.length > 0 && (
           <div className={sortRowsClass}>
             {value.map((sort, index) => {

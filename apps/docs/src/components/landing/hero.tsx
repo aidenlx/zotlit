@@ -13,7 +13,7 @@ import { useEffect, useRef } from "react";
 import { Message } from "@/components/message";
 import { m } from "@/paraglide/messages.js";
 
-import { Desk, DeskStack } from "./desk";
+import { Desk, DeskSpread, DeskStack } from "./desk";
 import { Actions, Highlighter } from "./parts";
 
 export function Hero() {
@@ -92,6 +92,7 @@ export function Hero() {
           </p>
         </div>
       </div>
+      <DeskSpread />
       <DeskStack />
     </section>
   );

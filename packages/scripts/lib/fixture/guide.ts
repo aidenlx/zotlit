@@ -409,7 +409,7 @@ Build an additive deterministic corpus for performance work:
 
   pnpm fixture stress
 
-This adds ${DEFAULT_STRESS_ITEM_COUNT.toLocaleString("en-US")} synthetic Items with creators, tags, and Citation Keys across all Fixture Libraries. The corpus uses one fixed seed. Pass ${STRESS_ITEM_COUNT_CONSTRAINT} to change the scale:
+This adds ${DEFAULT_STRESS_ITEM_COUNT.toLocaleString("en-US")} synthetic Items with creators, tags, and Citation Keys across all Fixture Libraries. One Item in ten has a long subtitle, Venue and author list, so a long list of them draws rows of unlike heights. The corpus uses one fixed seed. Pass ${STRESS_ITEM_COUNT_CONSTRAINT} to change the scale:
 
   pnpm fixture stress 100000
 

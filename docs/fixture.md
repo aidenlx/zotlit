@@ -106,6 +106,8 @@ unrun baseline, not a pass.
 
 `query-files/Reading list.zotquery` is a Query File with one Table view of the Items, sorted by title. Open it to expand an Item into its Attachments and Annotations, and to create a Literature Note from the "Literature note" column.
 
+`Long lists/` holds three Query Files over the papers of My Library, one per layout: `Papers.zotquery`, `Table.zotquery`, and `List.zotquery`. Each has views that are flat, grouped, and, for the Table, sized and narrow. `Long lists/Embeds.md` embeds all three in one note, and the Table once more in a folded callout. Build a Stress Build of My Library (see [Create a Stress Build](#create-a-stress-build)) to fill them with thousands of rows. Then use them to check scrolling, a scroll bar drag, and a long embed in a note.
+
 `query-files/Filter case.zotquery` checks how Filter rows treat case. Each view name states its case and its expected result. Open each view, and then open the Filter to see the row that it shows: a text row reads "contains" for `icontains`, and "contains, match case" for a saved `contains`. The Tag views keep exact matches.
 
 `query-files/Formula lab.zotquery` and `query-files/Annotation formulas.zotquery` are for manual checks of the Filter Expression editor: Expression Colors, Syntax Fault underlines, Expression Completion, and the Signature Hint. Formula lab holds 21 Formulas over the Items, each with a Display Name. They use text methods, regular expressions, dates and durations, number rounding with `min` and `max`, `filter`, `map`, and `reduce` with `value`, `index`, and `acc`, `if`, `firstAuthor` members, and Formulas that read other Formulas. Its six views show the Formulas in groups and test nested `and`, `or`, and `not` groups. These groups mix typed condition rows with expression rows, and some conditions read `formula.*`, `vault.*`, or `vault["…"]`. Annotation formulas shows nine Formulas over the Annotations in the List layout. Every view returns rows, and no Formula has a Fault on the Fixture data. Open the filter or a Formula's property page, then try these checks:
@@ -610,6 +612,8 @@ Pass a non-negative safe integer to set the synthetic Item count:
 ```sh
 pnpm fixture stress 100000
 ```
+
+One synthetic Item in ten (by position) has a long subtitle, a long Venue and twelve creators, so a long list of them draws rows of unlike heights. Each title starts with `Synthetic stress item <n>`.
 
 For Item Query performance work, fill My Library to an exact Item count. The measured tiers are 10,000, 50,000, and 100,000 Items:
 

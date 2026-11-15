@@ -59,6 +59,7 @@ import { registerPdfNote } from "./views/pdf-note/register";
 import { registerQueryBlock } from "./views/query-view/block";
 import { QueryCardFocus } from "./views/query-view/card-focus";
 import { QueryFileView } from "./views/query-view/file-view";
+import { whenNear } from "./views/query-view/note-host";
 import {
   queryFileFileMenu,
   queryFileFolderMenu,
@@ -331,6 +332,7 @@ export default class ZotLitPlugin extends UnloadAwarePlugin implements CliHost {
       runtime: services.runtime,
       app: this.app,
       cardFocus: queryCardFocus,
+      nearScreen: whenNear,
       literatureNotes: literatureNotes({
         registry: services.viewRegistry,
         app: this.app,

@@ -488,6 +488,10 @@ _Avoid_: tab, page, saved search
 How a Query View draws its rows: Annotations (Annotation Cards), Table (Item rows that expand into Attachments, Annotations and notes, as in Zotero's item list), Papers (two-line Item rows, expanding as the Table does), List, or Cards. A host may offer only some of them; the Library View offers Papers alone, so it shows no Layout switch.
 _Avoid_: view type, mode
 
+**Items Window**:
+The entries of a Papers, Table or List Layout that are mounted: the group headings and Item rows near the screen, with spacers for the rest, once a list holds more than 100 entries. The selected row, the first row and the row with the focus stay mounted, so the host's keys and the Tab stop find them. Export to PDF mounts every entry.
+_Avoid_: viewport, virtual list, page
+
 **Grouping**:
 How a Query View gathers its rows under group headings: by one group path its Query Dataset offers, such as the Item, the colour or a tag, in an ascending, descending or manual order. A row with two values of a list path, such as two tags, stands under both headings; a row with no value stands under "No value".
 _Avoid_: group by (the file key), section, category
