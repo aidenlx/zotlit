@@ -3123,6 +3123,8 @@
   "query_view_filter_error": "The filter has an error. The view shows the last results.",
   "docs_locale_fallback": "Simplified Chinese content is not ready. English content is shown.",
   "docs_read_in_english": "Read in English",
+  "docs_chinese_edition_available": "This page is available in Simplified Chinese.",
+  "docs_read_in_chinese": "Read in Chinese",
   "docs_fumadocs_ask_ai": "Ask AI",
   "docs_fumadocs_back_to_home": "Back to home",
   "docs_fumadocs_choose_a_language": "Choose a language",

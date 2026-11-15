@@ -3063,6 +3063,8 @@
   "docs_release_desktop_only": "仅限桌面端",
   "docs_locale_fallback": "简体中文内容尚未准备就绪，目前显示英文内容。",
   "docs_read_in_english": "阅读英文版",
+  "docs_chinese_edition_available": "本页有简体中文版。",
+  "docs_read_in_chinese": "阅读中文版",
   "docs_fumadocs_ask_ai": "咨询 AI",
   "docs_fumadocs_back_to_home": "返回首页",
   "docs_fumadocs_choose_a_language": "选择语言",

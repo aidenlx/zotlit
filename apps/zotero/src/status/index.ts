@@ -19,9 +19,15 @@ const logger = getLogger(["zotlit", "zotero", "database-status"]);
 
 const CONTROL_ID = "zotlit-database-status";
 const SIDENAV_ID = "zotero-view-item-sidenav";
-const GUIDE_URL = "https://zotlit.aidenlx.site/docs/how-to/fix-stale-data";
-const DEBUG_LOGS_URL =
-  "https://zotlit.aidenlx.site/docs/how-to/collect-debug-logs";
+
+/**
+ * A docs page in Zotero's language: the Chinese edition under `/zh-CN` while
+ * Zotero runs in Simplified Chinese, the English page otherwise.
+ */
+function docsUrl(path: string): string {
+  const prefix = Zotero.locale === "zh-CN" ? "/zh-CN" : "";
+  return `https://zotlit.aidenlx.site${prefix}${path}`;
+}
 
 /**
  * How each state appears. The tooltip carries the state too, so the tint is
@@ -83,7 +89,9 @@ async function showWriteOutcome(
     requireMessage(copy.title),
     requireMessage(
       copy.message,
-      failed ? { debugLogsUrl: DEBUG_LOGS_URL } : undefined,
+      failed
+        ? { debugLogsUrl: docsUrl("/docs/how-to/collect-debug-logs") }
+        : undefined,
     ),
   ]);
   progress.changeHeadline(title);
@@ -110,7 +118,9 @@ async function buildMenu(
     void showWriteOutcome(checkpoint, window);
   });
   const guide = menuItem(document, guideLabel);
-  guide.addEventListener("command", () => Zotero.launchURL(GUIDE_URL));
+  guide.addEventListener("command", () =>
+    Zotero.launchURL(docsUrl("/docs/how-to/fix-stale-data")),
+  );
 
   popup.replaceChildren(
     menuItem(document, state, true),

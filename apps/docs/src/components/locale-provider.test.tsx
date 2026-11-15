@@ -27,7 +27,7 @@ import { m } from "@/paraglide/messages.js";
 import { deLocalizeUrl, getLocale, localizeUrl } from "@/paraglide/runtime.js";
 import { paraglideMiddleware } from "@/paraglide/server.js";
 
-import { LocaleFallbackNotice } from "./locale-fallback-notice";
+import { LanguageBanner } from "./language-banner";
 import { LocaleProvider } from "./locale-provider";
 
 // Compare packaged controls with the root facade in an explicit locale.
@@ -99,7 +99,7 @@ async function withPage(
                 data-testid="page-actions"
                 markdownUrl="/docs/new-feature.md"
               />
-              <LocaleFallbackNotice
+              <LanguageBanner
                 state={getPageLocaleState("/docs/new-feature", getLocale(), {
                   nativeChinesePages: new Set(),
                 })}

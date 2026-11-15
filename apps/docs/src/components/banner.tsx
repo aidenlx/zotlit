@@ -25,6 +25,7 @@ export function Banner({
     "rgba(255,0,0,0.73)",
     "rgba(131,255,166,0.66)",
   ],
+  onClose: onCloseProp,
   ...props
 }: HTMLAttributes<HTMLDivElement> & {
   /**
@@ -41,6 +42,12 @@ export function Banner({
    * For rainbow variant only, customize the colors
    */
   rainbowColors?: string[];
+
+  /**
+   * Called when the reader closes the strip. Like `id`, it adds the close
+   * button; unlike `id`, the caller decides what closing remembers.
+   */
+  onClose?: () => void;
 
   /**
    * Change Fumadocs layout styles
@@ -78,6 +85,7 @@ export function Banner({
   function onClose() {
     setOpen(false);
     if (globalKey) localStorage.setItem(globalKey, "true");
+    onCloseProp?.();
   }
 
   if (!open) return null;
@@ -122,7 +130,7 @@ export function Banner({
           })
         : null}
       {props.children}
-      {id ? (
+      {id || onCloseProp ? (
         <button
           type="button"
           aria-label={m.docs_close_banner()}
