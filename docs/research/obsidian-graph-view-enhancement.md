@@ -68,8 +68,8 @@ Every frame, `GraphLink.render()` recomputes colour and alpha from the
 
 ```js
 var s = r.getHighlightNode(),
-  l = o === s || a === s, // o = source, a = target
-  c = QQ; // QQ = 0.2, the dim alpha
+    l = o === s || a === s,        // o = source, a = target
+    c = QQ;                        // QQ = 0.2, the dim alpha
 (s && !l) || (c = 1);
 var h = r.colors.line;
 l && (h = r.colors.lineHighlight);
@@ -99,14 +99,12 @@ on the way in.
 
 ```ts
 ExtendedGraphInstances.proxysManager.registerProxy<typeof link.line>(
-  this.coreElement,
-  "line",
-  {
-    set(target, p, newValue, receiver) {
-      if (p === "tint") newValue = getStrokeColor() ?? newValue;
-      return Reflect.set(target, p, newValue, receiver);
-    },
-  },
+    this.coreElement, 'line', {
+        set(target, p, newValue, receiver) {
+            if (p === 'tint') newValue = getStrokeColor() ?? newValue;
+            return Reflect.set(target, p, newValue, receiver);
+        },
+    }
 );
 ```
 
@@ -191,11 +189,9 @@ Extended Graph does. Reserve A2/A3 for a later dashed-line treatment.
 
 ```js
 if (t.getHighlightNode() === this) return t.colors.fillHighlight;
-if ("focused" === n) {
-  var r = t.colors.fillFocused;
-  if (r.a > 0) return r;
-} else {
-  if (i) return i; // i = this.color
+if ("focused" === n) { var r = t.colors.fillFocused; if (r.a > 0) return r; }
+else {
+  if (i) return i;                                    // i = this.color
   if ("tag" === n) return t.colors.fillTag;
   if ("unresolved" === n) return t.colors.fillUnresolved;
   if ("attachment" === n) return t.colors.fillAttachment;
@@ -251,13 +247,10 @@ No, for two independent reasons.
 filter predicate confirms the split (`app.js:139645`–`139655`):
 
 ```js
-!o ||
-  ("" === n
-    ? t === s.localFile || (a.hasOwnProperty(t) ? a[t] : !e.hasFilter)
-    : "tag" === n
-      ? o.every((e) => !!e.color || !!e.query.matchTag(t))
-      : "attachment" !== n ||
-        o.every((e) => !!e.color || !!e.query.matchFilepath(t)));
+!o || ("" === n
+  ? t === s.localFile || (a.hasOwnProperty(t) ? a[t] : !e.hasFilter)
+  : "tag" === n ? o.every(e => !!e.color || !!e.query.matchTag(t))
+  : "attachment" !== n || o.every(e => !!e.color || !!e.query.matchFilepath(t)))
 ```
 
 Only `""` (markdown) nodes consult `fileFilter`, and only real files are ever in
@@ -304,10 +297,8 @@ files only.
 
 ```js
 n.optionListeners.colorGroups = function (e) {
-  return (
-    Array.isArray(e) && (n.setColorQueries(e), n.engine.requestUpdateSearch()),
-    n.getColoredQueries()
-  );
+  return (Array.isArray(e) && (n.setColorQueries(e), n.engine.requestUpdateSearch()),
+          n.getColoredQueries());
 };
 ```
 
@@ -417,20 +408,12 @@ Every row is a public `Setting` (`_b`) with a `mod-toggle` class. The Filters
 rows follow one shape (`app.js:140039` for _Existing files only_):
 
 ```js
-new _b(r)
-  .setName(J1.optionShowExistingFilesOnly())
+new _b(r).setName(J1.optionShowExistingFilesOnly())
   .setTooltip(J1.optionShowExistingFilesOnlyDescription())
   .setClass("mod-toggle")
-  .addToggle((e) =>
-    e
-      .setValue(t.options.hideUnresolved)
-      .registerOptionListener(i.optionListeners, "hideUnresolved")
-      .onChange((e) => {
-        t.options.hideUnresolved = e;
-        t.render();
-        t.onOptionsChange();
-      }),
-  );
+  .addToggle(e => e.setValue(t.options.hideUnresolved)
+    .registerOptionListener(i.optionListeners, "hideUnresolved")
+    .onChange(e => { t.options.hideUnresolved = e; t.render(); t.onOptionsChange(); }));
 ```
 
 Three things happen per change: write `engine.options`, call `engine.render()`,
@@ -461,12 +444,9 @@ It does not touch the internal section class. It finds the panel by class and
 hand-rolls the same DOM:
 
 ```ts
-this.graphControls = view.contentEl.querySelector(
-  ".graph-controls",
-) as HTMLElement;
+this.graphControls = view.contentEl.querySelector(".graph-controls") as HTMLElement;
 this.root = this.graphControls.createDiv(
-  `tree-item graph-control-section mod-extended-graph-${sectionID}`,
-);
+    `tree-item graph-control-section mod-extended-graph-${sectionID}`);
 ```
 
 (`exg/src/ui/graphControl/GCSection.ts:20`.) It implements its own collapse, and
@@ -538,10 +518,7 @@ Native toggles ZotLit can lean on rather than duplicate:
 The graph core plugin registers its hover source once, at plugin enable:
 
 ```js
-e.workspace.registerHoverLinkSource("graph", {
-  display: this.name,
-  defaultMod: !0,
-});
+e.workspace.registerHoverLinkSource("graph", { display: this.name, defaultMod: !0 });
 ```
 
 (`app.js:139082`; unregistered at `app.js:139093`.) The engine fires the event
@@ -549,18 +526,10 @@ from `onNodeHover` (`app.js:139827`):
 
 ```js
 if ("" === n || "focused" === n || "attachment" === n) {
-  if (o && o.state !== w$.Hidden && a === t) {
-    o.onTarget = !0;
-    return void o.transition();
-  }
+  if (o && o.state !== w$.Hidden && a === t) { o.onTarget = !0; return void o.transition(); }
   this.lastHoverLink = t;
-  r.workspace.trigger("hover-link", {
-    event: e,
-    source: "graph",
-    hoverParent: this,
-    targetEl: null,
-    linktext: t,
-  });
+  r.workspace.trigger("hover-link",
+    { event: e, source: "graph", hoverParent: this, targetEl: null, linktext: t });
 }
 ```
 
@@ -659,10 +628,8 @@ Use the engine as `hoverParent` — it already implements the contract and its
 ```js
 var i = this.app;
 if ("tag" !== n) i.workspace.openLinkText(t, "", sy.isModEvent(e));
-else {
-  var r = i.internalPlugins.getEnabledPluginById("global-search");
-  r && r.openGlobalSearch("tag:" + t);
-}
+else { var r = i.internalPlugins.getEnabledPluginById("global-search");
+       r && r.openGlobalSearch("tag:" + t); }
 ```
 
 There is **no special case for `"unresolved"`** — it takes the `openLinkText`
@@ -685,13 +652,7 @@ it builds a `Menu` with sections `title, open, action, info, info.copy, view,
 view.linked, system, "", danger`, adds a title item and _Open in new tab_, fires
 
 ```js
-this.app.workspace.trigger(
-  "file-menu",
-  a,
-  o,
-  "graph-context-menu",
-  this.view.leaf,
-);
+this.app.workspace.trigger("file-menu", a, o, "graph-context-menu", this.view.leaf);
 ```
 
 (`app.js:139804`) and appends _Delete file_. **`"graph-context-menu"` is the
@@ -713,10 +674,7 @@ therefore stable for the life of the renderer:
 ```ts
 const core = renderer.onNodeClick;
 renderer.onNodeClick = (evt, id, type) => {
-  if (isCitedWorkNode(id, type)) {
-    openZotLitTarget(id, evt);
-    return;
-  }
+  if (isCitedWorkNode(id, type)) { openZotLitTarget(id, evt); return; }
   core?.call(renderer, evt, id, type);
 };
 ```

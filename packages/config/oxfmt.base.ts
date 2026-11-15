@@ -26,9 +26,17 @@ export default defineConfig({
     "**/__fixtures__/**",
     "**/__snapshots__/**",
     "pnpm-lock.yaml",
-    // Agent skills are synced from upstream sources and checked against the
-    // hashes in skills-lock.json.
+    // Agent skills, most of them synced from upstream sources whose hashes
+    // skills-lock.json records.
     ".agents/**",
+  ],
+  overrides: [
+    {
+      // Code blocks in Markdown docs quote source and output as written,
+      // often with aligned comments.
+      files: ["**/*.md"],
+      options: { embeddedLanguageFormatting: "off" },
+    },
   ],
   sortImports: {
     newlinesBetween: true,

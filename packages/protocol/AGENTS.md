@@ -32,6 +32,7 @@ For either transport, update the inline snapshot in `src/wire-format.test.ts` â€
 ```ts
 // correct
 import type { ItemQuery } from "./types";
+
 // wrong
 import type { ItemQuery } from "./types.ts";
 ```

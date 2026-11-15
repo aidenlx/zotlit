@@ -36,11 +36,7 @@ const selected = await structure.selectText({ text, pages });
 // From a highlight's end handle, dragged to a page point:
 const adjusted = await structure.adjustRange({ position, end: "end", point });
 // Or its start stepped one character back from the keyboard:
-const stepped = await structure.adjustRange({
-  position,
-  end: "start",
-  step: "left",
-});
+const stepped = await structure.adjustRange({ position, end: "start", step: "left" });
 // The text rotation under a range's end, while drawing its handle; `null`
 // until `structure.page(pageIndex)` has structured that page:
 const rotation = structure.textRotation(pageIndex, rect);

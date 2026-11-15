@@ -59,7 +59,7 @@ prototypes** to wire up its self-dedupe / auto-remove feature:
 // node_modules/monkey-around/dist/index.mjs
 let current = createWrapper(original);
 if (inherited) Object.setPrototypeOf(current, inherited); // chrome wrapper proto ← content fn
-Object.setPrototypeOf(wrapper, current); // chrome fn proto ← chrome wrapper
+Object.setPrototypeOf(wrapper, current);                   // chrome fn proto ← chrome wrapper
 obj[method] = wrapper;
 ```
 

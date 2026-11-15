@@ -118,10 +118,10 @@ This is the closest analog to ZotLit's `ItemLookup`. Key behaviors:
 
 ```ts
 interface IndexedItem {
-  id: number; // itemID
-  title: string; // raw title or ""
-  creators: string; // "Family Given; Family Given" — formatted per language
-  date: string; // 4-digit year as a string
+  id: number;        // itemID
+  title: string;     // raw title or ""
+  creators: string;  // "Family Given; Family Given" — formatted per language
+  date: string;      // 4-digit year as a string
 }
 ```
 

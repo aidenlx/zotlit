@@ -9,6 +9,7 @@ Shared utilities consumed by multiple packages — app-agnostic.
 ```ts
 // correct
 import { createNanoEvents } from "./nanoevents";
+
 // wrong — bundler resolution, not Node ESM
 import { createNanoEvents } from "./nanoevents.ts";
 ```
