@@ -24,7 +24,7 @@ v2 修复了 Obsidian 安装程序更新后导致 v1 崩溃的问题。此外，
 
 v1 依赖的原生 SQLite 绑定在 Obsidian 更新 Electron 运行时时屡屡失效，导致用户频繁遇到错误弹窗和黑屏。替换这一依赖意味着需要重构插件的大部分代码，因此 v2 也借此机会简化了内部架构。
 
-_关于完整的背景故事，请参阅[重构 ZotLit：v2 公开公测版](/blog/rebuilding-zotlit-v2-public-beta)；关于决定重构背后更详尽的个人经历，请参阅 [Reconnecting the Dots](https://aidenlx.site/blog/reconnecting-dots)。_
+_关于完整的背景故事，请参阅[重构 ZotLit：v2 公开测试版](/blog/rebuilding-zotlit-v2-public-beta)；关于决定重构背后更详尽的个人经历，请参阅 [Reconnecting the Dots](https://aidenlx.site/blog/reconnecting-dots)。_
 
 ## 标注工作区 [#annotation-workspace]
 
@@ -99,12 +99,12 @@ More notes below, also untouched.
 
 ## 还有更多 [#and-more]
 
-- **`@` 引用触发符。** 输入 `@` 打开引文建议器。按 Shift+Enter 可选择替代引文格式。
+- **`@` 引用触发符**。输入 `@` 打开引文建议器。按 Shift+Enter 可选择替代引文格式。
 - ZotLit Companion（Zotero 插件）新增了**笔记状态列**，显示文库中哪些条目已在你的 Obsidian 仓库中建有文献笔记。
-- **欢迎视图**。 包含连接状态和快捷链接的设置屏幕。提示通知可直接跳转至相关设置页面。
-- **基于设备的 Zotero 路径**。 路径按设备单独保存，在不同设备间同步仓库不会覆盖彼此的配置。
+- **欢迎视图**。包含连接状态和快捷链接的设置屏幕。提示通知可直接跳转至相关设置页面。
+- **基于设备的 Zotero 路径**。路径按设备单独保存，在不同设备间同步仓库不会覆盖彼此的配置。
 - `zt.weblink` 是 Zotero 网页版文库的 URL；每个附件都包含一个能在 Zotero 阅读器中将其打开的 `backlink`。
-- **受控属性**。 由模板表达式生成的属性字段会在每次更新笔记时重新计算。支持拖动以调整顺序。
+- **受控属性**。由模板表达式生成的属性字段会在每次更新笔记时重新计算。支持拖动以调整顺序。
 - 简体中文是第一个非英语**语言包**，作为与版本绑定的发布资源提供。
 
 ## 从 v1 升级 [#upgrading-from-v1]

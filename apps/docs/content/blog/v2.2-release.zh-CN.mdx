@@ -36,11 +36,11 @@ import { ActionLink } from "@/components/action-link";
 
 PDF 旁的标注视图设计更为清晰简洁：每张卡片展示引用原文、你的评论以及标签。将卡片拖入笔记，ZotLit 就会插入带回原文精确段落链接的引用文段。日后悬停该链接，即可在文献参考信息上方重新查看该标注。
 
-标注链接也可以直接作为引文。在**设置 > 引文**（Settings > Citations）下开启**批注引用**（Annotation citations）和**将标注链接显示为引文**（Show annotation links as citations），无文本的链接（如 `[](zotero://…)`）就会显示为带页码的文献引文，并与其它引文统一编号。
+标注链接也可以直接作为引文。在**设置 > 引文**（Settings > Citations）下开启**批注引用**（Annotation citations）和**将批注链接显示为引用**（Show annotation links as citations），无文本的链接（如 `[](zotero://…)`）就会显示为带页码的文献引文，并与其它引文统一编号。
 
 ![一篇学位论文章节中，标注链接显示为引文“(Ioannidis 2005, 696)”，紧邻常规引文 Rougier et al. 2014，其弹出框处于打开状态：文献参考按钮与参考文献条目上方显示了第 696 页的引文以及评论“Both apply to the pilot cohort (n = 24)”](/img/blog/v2.2-annotation-link-as-citation.webp)
 
-将标注链接显示为引文为可选功能，默认处于关闭状态。关闭时，标注链接仍为普通链接，悬停时会显示相同的弹出框。
+**将批注链接显示为引用**是一项可选功能，默认处于关闭状态。关闭时，标注链接仍为普通链接，悬停时会显示相同的弹出框。
 
 <ActionLink href="/docs/how-to/open-pdf-in-obsidian" kind="external">
   在 Obsidian 中打开条目的 PDF
@@ -94,4 +94,4 @@ PDF 旁的标注视图设计更为清晰简洁：每张卡片展示引用原文�
 
 1. 在 Obsidian 中，打开**设置 > 第三方插件**（Settings > Community plugins），选择**浏览**（Browse），然后安装或更新 **ZotLit**。
 2. 在 Zotero 中，安装匹配的 [ZotLit Companion](/docs/install-companion) 插件。
-3. 打开**命令面板**（Command palette），运行 **ZotLit: Open Library View** 或 **ZotLit: New Query File**。
+3. 打开**命令面板**（Command palette），运行 **ZotLit: 打开 Zotero 文库**或 **ZotLit: 新建查询文件**。
