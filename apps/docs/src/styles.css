@@ -468,7 +468,7 @@
   --zt-font-serif:
     "ZotLit CJK Punctuation Serif", "Gelasio Variable", "Gelasio Fallback",
     "Source Han Serif SC", "Noto Serif CJK SC", "Noto Serif SC Variable",
-    "Songti SC", serif;
+    "Noto Serif SC Fallback", serif;
 }
 
 /* `zh:` styles an element in Chinese text, e.g. the looser Chinese leading in

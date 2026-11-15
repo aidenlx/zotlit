@@ -11,6 +11,30 @@
    @see apps/docs/DESIGN.md → Type system */
 @import "@fontsource-variable/noto-serif-sc/wght.css";
 
+/* While a Noto Serif SC slice loads, the Chinese characters fall to a local
+   Song face, and that face's own ascent and descent move the line boxes when
+   Noto swaps in: the hero title shifts. This fallback sets a local Song face
+   on Noto Serif SC's vertical metrics (hhea 1151 / -286 / 0 at 1000 units per
+   em, which the Windows metrics repeat), so the line boxes match before and
+   after the swap. A CJK ideograph advances 1em in every Song face, so the
+   width needs no size-adjust; the Latin words keep Gelasio throughout.
+
+   `local()` matches a full font name or a PostScript name, never a family
+   name, so each face is named in both forms: Songti SC and STSong (macOS),
+   SimSun (Windows), Noto Serif CJK SC and Source Han Serif SC (Linux, or
+   installed). A face that matches nothing is inert. */
+@font-face {
+  font-family: "Noto Serif SC Fallback";
+  src:
+    local("Songti SC Regular"), local("STSongti-SC-Regular"), local("STSong"),
+    local("SimSun"), local("Noto Serif CJK SC Regular"),
+    local("NotoSerifCJKsc-Regular"), local("Source Han Serif SC Regular"),
+    local("SourceHanSerifSC-Regular");
+  ascent-override: 115.1%;
+  descent-override: 28.6%;
+  line-gap-override: 0%;
+}
+
 /* Chinese punctuation that shares its code point with Latin text: the double
    quotation marks, the dash and the ellipsis. Gelasio and Inter also cover
    these code points and would set them narrow, so these faces lead the Chinese
