@@ -167,8 +167,11 @@ Chinese text follows these rules:
 - **Weights.** Display headings stay at 500 and ledes at 400; the variable
   serif carries every weight the serif surfaces set.
 - **No slant.** Chinese has no italic. An italic run (a lede, a caption, a
-  quote) sets its Chinese upright and keeps the true Latin italic for Latin
-  words (`font-synthesis-style: none`).
+  quote) sets upright as a whole, its Latin words included, so no slanted
+  Latin word sits inside upright Chinese (`:lang(zh) :is(.italic, figcaption,
+  blockquote)` in `src/styles.css`). The run keeps its voice through face,
+  size and color. `<i>` in bibliographic data, such as a journal title in a
+  reference list, keeps its italic.
 - **Emphasis.** `<em>` takes emphasis dots under the text, the Chinese
   convention; `<strong>` takes the bold weight.
 - **Leading.** Body paragraphs and list items sit at 1.75, blockquotes at

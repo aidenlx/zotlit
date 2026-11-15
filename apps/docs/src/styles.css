@@ -496,8 +496,12 @@ html {
   scrollbar-gutter: stable;
 }
 
-/* Chinese text. Chinese has no italic, so an italic run (a lede, a caption)
-   keeps the true Latin italic and sets its Chinese upright, and emphasis
+/* Chinese text. Chinese has no italic, so an italic run (a lede, a caption,
+   a quote) sets upright as a whole: a Latin word in it stays upright beside
+   the Chinese, since a lone slanted word inside upright Chinese reads as
+   emphasis. These rules sit outside the layers, so they win over the
+   `italic` utility and the prose figcaption modifier; `<i>`, as in a
+   reference list's journal title, keeps its italic. Emphasis
    takes emphasis dots under the text. Line breaks follow the strict kinsoku
    rules, which keep closing punctuation off the start of a line.
    `text-autospace` puts a small gap between Chinese and Latin letters or
@@ -509,6 +513,10 @@ html {
   line-break: strict;
   text-autospace: normal;
   text-spacing-trim: normal;
+}
+
+:lang(zh) :is(.italic, figcaption, blockquote) {
+  font-style: normal;
 }
 
 :lang(zh) em {
