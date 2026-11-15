@@ -740,12 +740,76 @@ export function Desk() {
   );
 }
 
-/** Below 1280px: the library sheet, the table and the PDF in a short fanned stack. */
+/** From 1024px to 1280px: the library sheet and the table, then the PDF and
+ * the draft, in two columns under the text. */
+export function DeskSpread() {
+  return (
+    <div
+      aria-hidden
+      className="pointer-events-none relative mx-auto mt-12 hidden h-[780px] w-full max-w-[960px] overflow-hidden select-none lg:block xl:hidden"
+    >
+      <Piece
+        x={-444}
+        y={24}
+        w={412}
+        r={-2.5}
+        d={100}
+        tape={<Tape>{m.docs_home_desk_library()}</Tape>}
+      >
+        <LibrarySheet />
+      </Piece>
+      <Piece
+        x={36}
+        y={40}
+        w={412}
+        r={1.8}
+        d={300}
+        tape={
+          <Tape side="right" inset={24}>
+            {m.docs_home_desk_table()}
+          </Tape>
+        }
+      >
+        <TableSheet />
+      </Piece>
+      <Piece
+        x={-392}
+        y={420}
+        w={316}
+        r={2.5}
+        d={500}
+        tape={
+          <Tape side="right" inset={18}>
+            {m.docs_home_desk_read()}
+          </Tape>
+        }
+      >
+        <PdfPage />
+      </Piece>
+      <Piece
+        x={60}
+        y={466}
+        w={364}
+        r={-2}
+        d={900}
+        tape={
+          <Tape side="right" inset={22}>
+            {m.docs_home_desk_cite()}
+          </Tape>
+        }
+      >
+        <DraftSheet />
+      </Piece>
+    </div>
+  );
+}
+
+/** Below 1024px: the library sheet, the table and the PDF in a short fanned stack. */
 export function DeskStack() {
   return (
     <div
       aria-hidden
-      className="pointer-events-none relative mx-auto mt-10 h-[760px] w-full max-w-[460px] overflow-hidden select-none xl:hidden"
+      className="pointer-events-none relative mx-auto mt-10 h-[760px] w-full max-w-[460px] overflow-hidden select-none lg:hidden"
     >
       <Piece
         x={-174}
