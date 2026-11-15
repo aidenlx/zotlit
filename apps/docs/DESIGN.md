@@ -155,12 +155,12 @@ Chinese face in the same voice. The Latin face stays first in every stack, so
 Latin words, numerals and code inside Chinese text keep Gelasio, Inter and Plex
 Mono; the Chinese face sets the Chinese characters.
 
-| Role | Chinese face |
-| --- | --- |
+| Role                           | Chinese face                                                                                                                |
+| ------------------------------ | --------------------------------------------------------------------------------------------------------------------------- |
 | Serif (display, ledes, quotes) | **LXGW WenKai GB Screen** (霞鹜文楷 GB Screen: Kai style, mainland GB glyph forms, the screen cut, one weight 400, webfont) |
-| Sans (prose body, chrome) | **Noto Sans SC** (思源黑体, variable 100–900, webfont); an installed Source Han Sans SC or Noto Sans CJK SC takes its place |
-| Mono (Machine voice) | IBM Plex Mono for Latin, then Noto Sans SC |
-| Wordmark | Archivo, unchanged |
+| Sans (prose body, chrome)      | **Noto Sans SC** (思源黑体, variable 100–900, webfont); an installed Source Han Sans SC or Noto Sans CJK SC takes its place |
+| Mono (Machine voice)           | IBM Plex Mono for Latin, then Noto Sans SC                                                                                  |
+| Wordmark                       | Archivo, unchanged                                                                                                          |
 
 Chinese text follows these rules:
 
