@@ -25,10 +25,10 @@ export default defineConfig({
     "**/*.min.js",
     "**/__fixtures__/**",
     "**/__snapshots__/**",
-    "**/*.md",
     "pnpm-lock.yaml",
+    // Agent skills are synced from upstream sources and checked against the
+    // hashes in skills-lock.json.
     ".agents/**",
-    ".claude/**",
   ],
   sortImports: {
     newlinesBetween: true,
