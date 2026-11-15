@@ -18,12 +18,12 @@ creates (section h).
 
 Four kinds have to stay apart on screen:
 
-| Kind | Node id | Backing | Native analogue |
-| --- | --- | --- | --- |
-| Literature Note | vault path | real `.md`, frontmatter `zotero-key` | ordinary note node, `type: ""` |
-| Cited Work Node | `@smith2020` | none | unresolved node, `type: "unresolved"` |
-| Wikilink edge | — | already in `resolvedLinks` | native link |
-| Citekey edge | — | ZotLit Citation Index only | none |
+| Kind            | Node id      | Backing                              | Native analogue                       |
+| --------------- | ------------ | ------------------------------------ | ------------------------------------- |
+| Literature Note | vault path   | real `.md`, frontmatter `zotero-key` | ordinary note node, `type: ""`        |
+| Cited Work Node | `@smith2020` | none                                 | unresolved node, `type: "unresolved"` |
+| Wikilink edge   | —            | already in `resolvedLinks`           | native link                           |
+| Citekey edge    | —            | ZotLit Citation Index only           | none                                  |
 
 ## Sources and version
 
@@ -35,11 +35,11 @@ User-facing feature names come from the official help page,
 `/Users/aidenlx/repo/obsidian-help/en/Plugins/Graph view.md`. Community plugin
 citations name a file and the commit that was read.
 
-| Plugin | Commit | Repository |
-| --- | --- | --- |
-| Extended Graph | `c1aab34bdd2251f0dd1ad1193c16381f190acf36` | `ElsaTam/obsidian-extended-graph` |
-| folders2graph | `2c14aa563c7e13fc6993cacd16332a36ec0f9f5c` | `ratibus11/folders2graph` |
-| Graph-Link-Types | `18aa21e9793e7b48e81db7475a86da4d671e12f9` | `natefrisch01/Graph-Link-Types` |
+| Plugin           | Commit                                     | Repository                        |
+| ---------------- | ------------------------------------------ | --------------------------------- |
+| Extended Graph   | `c1aab34bdd2251f0dd1ad1193c16381f190acf36` | `ElsaTam/obsidian-extended-graph` |
+| folders2graph    | `2c14aa563c7e13fc6993cacd16332a36ec0f9f5c` | `ratibus11/folders2graph`         |
+| Graph-Link-Types | `18aa21e9793e7b48e81db7475a86da4d671e12f9` | `natefrisch01/Graph-Link-Types`   |
 
 Minified names (`h$` renderer, `s0` engine, `l$` node, `c$` link, `p$` local
 narrowing) are an analysis aid. The minifier keeps property and method names, so
@@ -68,8 +68,8 @@ Every frame, `GraphLink.render()` recomputes colour and alpha from the
 
 ```js
 var s = r.getHighlightNode(),
-    l = o === s || a === s,        // o = source, a = target
-    c = QQ;                        // QQ = 0.2, the dim alpha
+  l = o === s || a === s, // o = source, a = target
+  c = QQ; // QQ = 0.2, the dim alpha
 (s && !l) || (c = 1);
 var h = r.colors.line;
 l && (h = r.colors.lineHighlight);
@@ -99,12 +99,14 @@ on the way in.
 
 ```ts
 ExtendedGraphInstances.proxysManager.registerProxy<typeof link.line>(
-    this.coreElement, 'line', {
-        set(target, p, newValue, receiver) {
-            if (p === 'tint') newValue = getStrokeColor() ?? newValue;
-            return Reflect.set(target, p, newValue, receiver);
-        },
-    }
+  this.coreElement,
+  "line",
+  {
+    set(target, p, newValue, receiver) {
+      if (p === "tint") newValue = getStrokeColor() ?? newValue;
+      return Reflect.set(target, p, newValue, receiver);
+    },
+  },
 );
 ```
 
@@ -189,9 +191,11 @@ Extended Graph does. Reserve A2/A3 for a later dashed-line treatment.
 
 ```js
 if (t.getHighlightNode() === this) return t.colors.fillHighlight;
-if ("focused" === n) { var r = t.colors.fillFocused; if (r.a > 0) return r; }
-else {
-  if (i) return i;                                    // i = this.color
+if ("focused" === n) {
+  var r = t.colors.fillFocused;
+  if (r.a > 0) return r;
+} else {
+  if (i) return i; // i = this.color
   if ("tag" === n) return t.colors.fillTag;
   if ("unresolved" === n) return t.colors.fillUnresolved;
   if ("attachment" === n) return t.colors.fillAttachment;
@@ -247,10 +251,13 @@ No, for two independent reasons.
 filter predicate confirms the split (`app.js:139645`–`139655`):
 
 ```js
-!o || ("" === n
-  ? t === s.localFile || (a.hasOwnProperty(t) ? a[t] : !e.hasFilter)
-  : "tag" === n ? o.every(e => !!e.color || !!e.query.matchTag(t))
-  : "attachment" !== n || o.every(e => !!e.color || !!e.query.matchFilepath(t)))
+!o ||
+  ("" === n
+    ? t === s.localFile || (a.hasOwnProperty(t) ? a[t] : !e.hasFilter)
+    : "tag" === n
+      ? o.every((e) => !!e.color || !!e.query.matchTag(t))
+      : "attachment" !== n ||
+        o.every((e) => !!e.color || !!e.query.matchFilepath(t)));
 ```
 
 Only `""` (markdown) nodes consult `fileFilter`, and only real files are ever in
@@ -266,7 +273,7 @@ query. `node.color` in the data is the only route.
 ### Query syntax that does work, for Literature Notes
 
 Groups are documented as "type a search term for the notes you want to add to
-the group" (`Graph view.md`, *Groups*), and the box parses the full search
+the group" (`Graph view.md`, _Groups_), and the box parses the full search
 grammar. Two operators matter.
 
 **Path.** `path:` is in the operator table with `exclusive: true`
@@ -281,11 +288,11 @@ enumerates `cache.frontmatter` keys and matches each against the key pattern
 (`app.js:73827`–`73838`); with no value it records a hit on key presence alone
 (`app.js:73864`, `a.push({ key: c })`). So:
 
-| Query | Behaviour |
-| --- | --- |
-| `["zotero-key"]` | quoted key → exact-string matcher (`GA`), matches the property `zotero-key` only |
-| `[zotero-key]` | bare key → substring matcher (`YA`), also matches `zotero-key-extra`, `my-zotero-key` |
-| `["zotero-key":ABCD]` | key plus a value match |
+| Query                 | Behaviour                                                                             |
+| --------------------- | ------------------------------------------------------------------------------------- |
+| `["zotero-key"]`      | quoted key → exact-string matcher (`GA`), matches the property `zotero-key` only      |
+| `[zotero-key]`        | bare key → substring matcher (`YA`), also matches `zotero-key-extra`, `my-zotero-key` |
+| `["zotero-key":ABCD]` | key plus a value match                                                                |
 
 **Use the quoted form.** Both need `cache.frontmatter`, which exists for markdown
 files only.
@@ -297,8 +304,10 @@ files only.
 
 ```js
 n.optionListeners.colorGroups = function (e) {
-  return (Array.isArray(e) && (n.setColorQueries(e), n.engine.requestUpdateSearch()),
-          n.getColoredQueries());
+  return (
+    Array.isArray(e) && (n.setColorQueries(e), n.engine.requestUpdateSearch()),
+    n.getColoredQueries()
+  );
 };
 ```
 
@@ -314,9 +323,9 @@ falsy is dropped (`app.js:139503`).
 
 ### Recommendation for node kinds
 
-| Node kind | Technique | Why |
-| --- | --- | --- |
-| Cited Work Node | `color: {a, rgb}` in our `setData` data | only route; zero patching; survives re-render |
+| Node kind       | Technique                               | Why                                                      |
+| --------------- | --------------------------------------- | -------------------------------------------------------- |
+| Cited Work Node | `color: {a, rgb}` in our `setData` data | only route; zero patching; survives re-render            |
 | Literature Note | `color: {a, rgb}` in our `setData` data | consistent with the above; a group could not be enforced |
 
 Read the two RGB values from CSS custom properties on a probe element, mirroring
@@ -343,14 +352,14 @@ distance check at the end of every frame (`app.js:122781`–`122792`) and reset 
 
 Three visual consequences follow, all inside per-frame `render()`:
 
-| Element | With a highlight node | Source |
-| --- | --- | --- |
-| Hovered node fill | `colors.fillHighlight`, ahead of everything | `app.js:122154` |
-| Hovered node ring | extra `PIXI.Graphics` circle in `colors.circle` | `app.js:122135`–`122144` |
-| Hovered node text | alpha forced to 1, label pushed down 15 px | `app.js:122111`, `:122114` |
-| Neighbour node | full alpha; others fade to `QQ = 0.2` | `app.js:122104`–`122110` |
-| Incident link | `colors.lineHighlight` at alpha 1 | `app.js:122247` |
-| Other links | `colors.line` at `QQ = 0.2` | `app.js:122241` |
+| Element           | With a highlight node                           | Source                     |
+| ----------------- | ----------------------------------------------- | -------------------------- |
+| Hovered node fill | `colors.fillHighlight`, ahead of everything     | `app.js:122154`            |
+| Hovered node ring | extra `PIXI.Graphics` circle in `colors.circle` | `app.js:122135`–`122144`   |
+| Hovered node text | alpha forced to 1, label pushed down 15 px      | `app.js:122111`, `:122114` |
+| Neighbour node    | full alpha; others fade to `QQ = 0.2`           | `app.js:122104`–`122110`   |
+| Incident link     | `colors.lineHighlight` at alpha 1               | `app.js:122247`            |
+| Other links       | `colors.line` at `QQ = 0.2`                     | `app.js:122241`            |
 
 Neighbourhood is read from the node's own adjacency: `this.forward` /
 `this.reverse`, maintained by `setData` (`app.js:122910`–`122915`). **A citation
@@ -405,15 +414,23 @@ extend one base (`l0`, `app.js:139876`) that adds
 `collapse-<id>` option listener.
 
 Every row is a public `Setting` (`_b`) with a `mod-toggle` class. The Filters
-rows follow one shape (`app.js:140039` for *Existing files only*):
+rows follow one shape (`app.js:140039` for _Existing files only_):
 
 ```js
-new _b(r).setName(J1.optionShowExistingFilesOnly())
+new _b(r)
+  .setName(J1.optionShowExistingFilesOnly())
   .setTooltip(J1.optionShowExistingFilesOnlyDescription())
   .setClass("mod-toggle")
-  .addToggle(e => e.setValue(t.options.hideUnresolved)
-    .registerOptionListener(i.optionListeners, "hideUnresolved")
-    .onChange(e => { t.options.hideUnresolved = e; t.render(); t.onOptionsChange(); }));
+  .addToggle((e) =>
+    e
+      .setValue(t.options.hideUnresolved)
+      .registerOptionListener(i.optionListeners, "hideUnresolved")
+      .onChange((e) => {
+        t.options.hideUnresolved = e;
+        t.render();
+        t.onOptionsChange();
+      }),
+  );
 ```
 
 Three things happen per change: write `engine.options`, call `engine.render()`,
@@ -426,10 +443,10 @@ call `engine.onOptionsChange()`.
 `engine.setOptions(o)` feeds it back and calls `render()` (`app.js:139863`).
 Two different destinations:
 
-| View | Path | Source |
-| --- | --- | --- |
-| `graph` | `onOptionsChange` → core plugin `instance.options` → `saveOptions()` (its `data.json`) | `app.js:139242` |
-| `localgraph` | `getState`/`setState` carry `options` → workspace layout | `app.js:139272`, `:139276` |
+| View         | Path                                                                                   | Source                     |
+| ------------ | -------------------------------------------------------------------------------------- | -------------------------- |
+| `graph`      | `onOptionsChange` → core plugin `instance.options` → `saveOptions()` (its `data.json`) | `app.js:139242`            |
+| `localgraph` | `getState`/`setState` carry `options` → workspace layout                               | `app.js:139272`, `:139276` |
 
 **A plugin key round-trips if, and only if, it is registered as an option
 listener**, because `getOptions` enumerates `optionListeners`, not
@@ -444,9 +461,12 @@ It does not touch the internal section class. It finds the panel by class and
 hand-rolls the same DOM:
 
 ```ts
-this.graphControls = view.contentEl.querySelector(".graph-controls") as HTMLElement;
+this.graphControls = view.contentEl.querySelector(
+  ".graph-controls",
+) as HTMLElement;
 this.root = this.graphControls.createDiv(
-    `tree-item graph-control-section mod-extended-graph-${sectionID}`);
+  `tree-item graph-control-section mod-extended-graph-${sectionID}`,
+);
 ```
 
 (`exg/src/ui/graphControl/GCSection.ts:20`.) It implements its own collapse, and
@@ -491,7 +511,7 @@ animation (`app.js:139700`), `metadataCache.on("resolved")` via `view.update`
 ### Recommendation for the panel
 
 Add one **Filters**-shaped row for the citekey edges, matching the
-*Tags* / *Attachments* / *Existing files only* pattern:
+_Tags_ / _Attachments_ / _Existing files only_ pattern:
 
 1. Build a `Setting` with `.setClass("mod-toggle")` into
    `engine.filterOptions.childrenEl`, so it inherits the section's styling and
@@ -503,11 +523,11 @@ Add one **Filters**-shaped row for the citekey edges, matching the
 
 Native toggles ZotLit can lean on rather than duplicate:
 
-| Native row | Effect on Cited Work Nodes injected as `unresolved` | Source |
-| --- | --- | --- |
-| **Existing files only** | hides them, for free | `app.js:139612`, `if (!l && …)` where `l = options.hideUnresolved` |
-| **Orphans** | drops any that lost every edge | `app.js:139663` |
-| **Search files** | leaves them alone, like native unresolved nodes | `app.js:139652` |
+| Native row              | Effect on Cited Work Nodes injected as `unresolved` | Source                                                             |
+| ----------------------- | --------------------------------------------------- | ------------------------------------------------------------------ |
+| **Existing files only** | hides them, for free                                | `app.js:139612`, `if (!l && …)` where `l = options.hideUnresolved` |
+| **Orphans**             | drops any that lost every edge                      | `app.js:139663`                                                    |
+| **Search files**        | leaves them alone, like native unresolved nodes     | `app.js:139652`                                                    |
 
 ---
 
@@ -518,7 +538,10 @@ Native toggles ZotLit can lean on rather than duplicate:
 The graph core plugin registers its hover source once, at plugin enable:
 
 ```js
-e.workspace.registerHoverLinkSource("graph", { display: this.name, defaultMod: !0 });
+e.workspace.registerHoverLinkSource("graph", {
+  display: this.name,
+  defaultMod: !0,
+});
 ```
 
 (`app.js:139082`; unregistered at `app.js:139093`.) The engine fires the event
@@ -526,10 +549,18 @@ from `onNodeHover` (`app.js:139827`):
 
 ```js
 if ("" === n || "focused" === n || "attachment" === n) {
-  if (o && o.state !== w$.Hidden && a === t) { o.onTarget = !0; return void o.transition(); }
+  if (o && o.state !== w$.Hidden && a === t) {
+    o.onTarget = !0;
+    return void o.transition();
+  }
   this.lastHoverLink = t;
-  r.workspace.trigger("hover-link",
-    { event: e, source: "graph", hoverParent: this, targetEl: null, linktext: t });
+  r.workspace.trigger("hover-link", {
+    event: e,
+    source: "graph",
+    hoverParent: this,
+    targetEl: null,
+    linktext: t,
+  });
 }
 ```
 
@@ -605,11 +636,11 @@ Two ways to close it:
 Wrap `renderer.onNodeHover` per renderer instance, after the engine has assigned
 it. Then:
 
-| Hovered node | Action |
-| --- | --- |
-| Cited Work Node (`unresolved`, citekey id) | position the anchor, show ZotLit's Citation Popover for that citekey, and **do not** call through — the core would ignore it anyway |
-| Literature Note (`""`, has `zotero-key`) | honour the existing Hover Action setting (`hoverPreferences`, `hover.ts:26`): `page-preview` calls through to the core; `popover` shows ZotLit's and skips the core call |
-| Anything else | call through unchanged |
+| Hovered node                               | Action                                                                                                                                                                   |
+| ------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Cited Work Node (`unresolved`, citekey id) | position the anchor, show ZotLit's Citation Popover for that citekey, and **do not** call through — the core would ignore it anyway                                      |
+| Literature Note (`""`, has `zotero-key`)   | honour the existing Hover Action setting (`hoverPreferences`, `hover.ts:26`): `page-preview` calls through to the core; `popover` shows ZotLit's and skips the core call |
+| Anything else                              | call through unchanged                                                                                                                                                   |
 
 Use the engine as `hoverParent` — it already implements the contract and its
 `transition()` on unhover keeps dismissal consistent. Keep the existing
@@ -628,8 +659,10 @@ Use the engine as `hoverParent` — it already implements the contract and its
 ```js
 var i = this.app;
 if ("tag" !== n) i.workspace.openLinkText(t, "", sy.isModEvent(e));
-else { var r = i.internalPlugins.getEnabledPluginById("global-search");
-       r && r.openGlobalSearch("tag:" + t); }
+else {
+  var r = i.internalPlugins.getEnabledPluginById("global-search");
+  r && r.openGlobalSearch("tag:" + t);
+}
 ```
 
 There is **no special case for `"unresolved"`** — it takes the `openLinkText`
@@ -649,13 +682,19 @@ vault.** This is a correctness bug, not a polish item.
 `metadataCache.getFirstLinkpathDest(t, "")` — and does nothing at all when that
 returns null, so a Cited Work Node has no native context menu. For a real file
 it builds a `Menu` with sections `title, open, action, info, info.copy, view,
-view.linked, system, "", danger`, adds a title item and *Open in new tab*, fires
+view.linked, system, "", danger`, adds a title item and _Open in new tab_, fires
 
 ```js
-this.app.workspace.trigger("file-menu", a, o, "graph-context-menu", this.view.leaf);
+this.app.workspace.trigger(
+  "file-menu",
+  a,
+  o,
+  "graph-context-menu",
+  this.view.leaf,
+);
 ```
 
-(`app.js:139804`) and appends *Delete file*. **`"graph-context-menu"` is the
+(`app.js:139804`) and appends _Delete file_. **`"graph-context-menu"` is the
 source string** a `file-menu` listener must test to add ZotLit items to a
 Literature Note's graph menu — that is a fully public API
 (`obsidian.d.ts`, `Workspace.on("file-menu", …)`).
@@ -674,7 +713,10 @@ therefore stable for the life of the renderer:
 ```ts
 const core = renderer.onNodeClick;
 renderer.onNodeClick = (evt, id, type) => {
-  if (isCitedWorkNode(id, type)) { openZotLitTarget(id, evt); return; }
+  if (isCitedWorkNode(id, type)) {
+    openZotLitTarget(id, evt);
+    return;
+  }
   core?.call(renderer, evt, id, type);
 };
 ```
@@ -707,11 +749,11 @@ then loads the engine and applies the saved options (`app.js:139185`), and
 
 All three prior-art plugins converge on the same discovery loop.
 
-| Plugin | Discovery | Source |
-| --- | --- | --- |
-| folders2graph | `active-leaf-change` + `layout-change`, both non-forced | `f2g/src/Main.ts:224`, `:230` |
-| Extended Graph | `onLayoutReady` once, then `layout-change` | `exg/src/main.ts:46`, `exg/src/graphsManager.ts:142` |
-| Graph-Link-Types | `layout-change`, plus a polling `setInterval` fallback | `glt/src/main.ts:108`, `:183` |
+| Plugin           | Discovery                                               | Source                                               |
+| ---------------- | ------------------------------------------------------- | ---------------------------------------------------- |
+| folders2graph    | `active-leaf-change` + `layout-change`, both non-forced | `f2g/src/Main.ts:224`, `:230`                        |
+| Extended Graph   | `onLayoutReady` once, then `layout-change`              | `exg/src/main.ts:46`, `exg/src/graphsManager.ts:142` |
+| Graph-Link-Types | `layout-change`, plus a polling `setInterval` fallback  | `glt/src/main.ts:108`, `:183`                        |
 
 Each then enumerates leaves — `getLeavesOfType("graph")` and
 `getLeavesOfType("localgraph")` (`exg/src/main.ts:476`) — and reads
@@ -837,15 +879,15 @@ apply, because nothing outside this one call frame ever reads the facade.
 
 Everything then falls into place:
 
-| Behaviour | Result with seam 3 |
-| --- | --- |
-| Local depth BFS | traverses citation edges; `p$` copies node types via `r$` (`app.js:121972`) |
-| `localForelinks` / `localBacklinks` | apply to citation direction |
+| Behaviour                                | Result with seam 3                                                                              |
+| ---------------------------------------- | ----------------------------------------------------------------------------------------------- |
+| Local depth BFS                          | traverses citation edges; `p$` copies node types via `r$` (`app.js:121972`)                     |
+| `localForelinks` / `localBacklinks`      | apply to citation direction                                                                     |
 | Depth expansion through Cited Work Nodes | permitted — `o$ = { tag: !0 }` blocks tag nodes only (`app.js:121977`, used at `app.js:123121`) |
-| Orphan sweep | includes our edges, so a note whose only link is a citation stops being an orphan |
-| **Existing files only** | hides Cited Work Nodes for free, via `if (!l && …)` at `app.js:139612` |
-| `numLinks` | correct |
-| Search filter | see below |
+| Orphan sweep                             | includes our edges, so a note whose only link is a citation stops being an orphan               |
+| **Existing files only**                  | hides Cited Work Nodes for free, via `if (!l && …)` at `app.js:139612`                          |
+| `numLinks`                               | correct                                                                                         |
+| Search filter                            | see below                                                                                       |
 
 ### Should `fileFilter` apply to Cited Work Nodes? — No
 
@@ -879,7 +921,7 @@ colour-group behaviour unchanged. That is the desired asymmetry.
 
 Seams 1 and 3 are complementary, not alternatives:
 
-- **Seam 3** puts the *edges and nodes* into the graph so structure, narrowing,
+- **Seam 3** puts the _edges and nodes_ into the graph so structure, narrowing,
   orphan logic and the native **Existing files only** row are all correct.
 - **Seam 1** is still the place to stamp `node.color` on our nodes (b), because
   it runs after the engine's own colour pass and cannot be overwritten.
@@ -892,25 +934,25 @@ That is one wrapper on `engine.render` plus one on `renderer.setData`, per leaf.
 
 Ordered by risk; "surface" names what breaks if Obsidian changes it.
 
-| # | Technique | Surface touched | Scope | Risk | Notes |
-| --- | --- | --- | --- | --- | --- |
-| 1 | Patch `metadataCache` app-wide (strategy D) | `app.metadataCache` | whole app | **Highest** | Rejected in the prior report; superseded by #6 |
-| 2 | Replace `workspace.openLinkText` | public API, globally | whole app | **High** | folders2graph's approach (`GraphInteractions.ts:221`); use #10 instead |
-| 3 | Patch the `GraphNode` / `GraphLink` prototype | shared across every leaf | all graph leaves | High | folders2graph guards with `__f2gPatched`; unnecessary once `node.color` is used |
-| 4 | Reimplement `p$` and the orphan sweep | copied internal logic | one engine | High | Effort plus re-derivation of undocumented logic |
-| 5 | Rewrite `renderer.colors` roles | renderer palette | one renderer | Medium-high | `testCSS()` on `css-change` discards it (`app.js:123050`) |
-| 6 | Swap `engine.app` for one `render()` call (seam 3) | `engine.render`, `engine.app`, six `metadataCache` reads | one engine, one call frame | **Medium** | The only seam that reaches narrowing and orphan logic |
-| 7 | Own PIXI objects on `px.stage` with own rAF | `px.stage`, `panX/panY/scale`, `nodeScale` | one renderer | Medium | Graph-Link-Types; needs its own coordinate maths and PIXI bundle |
-| 8 | Proxy `renderer.renderCallback` | `renderCallback` | one renderer | Medium | Extended Graph; per-frame, idles with the graph |
-| 9 | Proxy `link.line` `tint` setter | `link.line`, `clearGraphics`, `destroyed` | one link object | Medium-low | Extended Graph; must re-install after every rebuild |
-| 10 | Wrap `renderer.onNodeClick` / `onNodeRightClick` / `onNodeHover` | four assignable callbacks | one renderer | **Low** | Assigned once in the engine constructor (`app.js:139385`), never reassigned |
-| 11 | Wrap `renderer.setData` (seam 1) | one method on one instance | one renderer | **Low** | Three plugins do it; documented in the prior report |
-| 12 | `node.color` / `node.type` in the data | `GraphData` shape | data only | **Low** | No patching; `getFillColor` reads it first (`app.js:122159`) |
-| 13 | Register an `optionListeners` key on `filterOptions` | `engine.filterOptions.optionListeners` | one engine | Low | Buys persistence in both destinations (`app.js:139914`) |
-| 14 | Build a `Setting` row into `.graph-controls` | class selector plus public `Setting` | one view's DOM | **Lowest** | Extended Graph's approach (`GCSection.ts:20`) |
-| 15 | `engine.setOptions({ colorGroups })` | one documented option key | one engine | Lowest | Creates real, user-editable groups |
-| 16 | `file-menu` listener on `"graph-context-menu"` | fully public API | app-wide, filtered | **None** | `app.js:139804` |
-| 17 | `workspace.trigger("hover-link", …)` under ZotLit's source id | fully public API | per event | **None** | Already ZotLit's pattern (`shell.ts:77`) |
+| #   | Technique                                                        | Surface touched                                          | Scope                      | Risk        | Notes                                                                           |
+| --- | ---------------------------------------------------------------- | -------------------------------------------------------- | -------------------------- | ----------- | ------------------------------------------------------------------------------- |
+| 1   | Patch `metadataCache` app-wide (strategy D)                      | `app.metadataCache`                                      | whole app                  | **Highest** | Rejected in the prior report; superseded by #6                                  |
+| 2   | Replace `workspace.openLinkText`                                 | public API, globally                                     | whole app                  | **High**    | folders2graph's approach (`GraphInteractions.ts:221`); use #10 instead          |
+| 3   | Patch the `GraphNode` / `GraphLink` prototype                    | shared across every leaf                                 | all graph leaves           | High        | folders2graph guards with `__f2gPatched`; unnecessary once `node.color` is used |
+| 4   | Reimplement `p$` and the orphan sweep                            | copied internal logic                                    | one engine                 | High        | Effort plus re-derivation of undocumented logic                                 |
+| 5   | Rewrite `renderer.colors` roles                                  | renderer palette                                         | one renderer               | Medium-high | `testCSS()` on `css-change` discards it (`app.js:123050`)                       |
+| 6   | Swap `engine.app` for one `render()` call (seam 3)               | `engine.render`, `engine.app`, six `metadataCache` reads | one engine, one call frame | **Medium**  | The only seam that reaches narrowing and orphan logic                           |
+| 7   | Own PIXI objects on `px.stage` with own rAF                      | `px.stage`, `panX/panY/scale`, `nodeScale`               | one renderer               | Medium      | Graph-Link-Types; needs its own coordinate maths and PIXI bundle                |
+| 8   | Proxy `renderer.renderCallback`                                  | `renderCallback`                                         | one renderer               | Medium      | Extended Graph; per-frame, idles with the graph                                 |
+| 9   | Proxy `link.line` `tint` setter                                  | `link.line`, `clearGraphics`, `destroyed`                | one link object            | Medium-low  | Extended Graph; must re-install after every rebuild                             |
+| 10  | Wrap `renderer.onNodeClick` / `onNodeRightClick` / `onNodeHover` | four assignable callbacks                                | one renderer               | **Low**     | Assigned once in the engine constructor (`app.js:139385`), never reassigned     |
+| 11  | Wrap `renderer.setData` (seam 1)                                 | one method on one instance                               | one renderer               | **Low**     | Three plugins do it; documented in the prior report                             |
+| 12  | `node.color` / `node.type` in the data                           | `GraphData` shape                                        | data only                  | **Low**     | No patching; `getFillColor` reads it first (`app.js:122159`)                    |
+| 13  | Register an `optionListeners` key on `filterOptions`             | `engine.filterOptions.optionListeners`                   | one engine                 | Low         | Buys persistence in both destinations (`app.js:139914`)                         |
+| 14  | Build a `Setting` row into `.graph-controls`                     | class selector plus public `Setting`                     | one view's DOM             | **Lowest**  | Extended Graph's approach (`GCSection.ts:20`)                                   |
+| 15  | `engine.setOptions({ colorGroups })`                             | one documented option key                                | one engine                 | Lowest      | Creates real, user-editable groups                                              |
+| 16  | `file-menu` listener on `"graph-context-menu"`                   | fully public API                                         | app-wide, filtered         | **None**    | `app.js:139804`                                                                 |
+| 17  | `workspace.trigger("hover-link", …)` under ZotLit's source id    | fully public API                                         | per event                  | **None**    | Already ZotLit's pattern (`shell.ts:77`)                                        |
 
 ---
 
@@ -922,14 +964,14 @@ is judgement.
 
 ### Core — six techniques
 
-| Goal | Technique | Rank |
-| --- | --- | --- |
-| Citation edges exist, and participate in narrowing, orphan logic and *Existing files only* | Wrap `engine.render`, swap `engine.app` for a `metadataCache` facade for that one call, inject into `resolvedLinks` (note→note) and `unresolvedLinks` (note→citekey) | #6 |
-| Node colours | Wrap `renderer.setData`; stamp `color: {a, rgb}` on our nodes, skipping any node that already carries one | #11 + #12 |
-| Citekey edges look different | Proxy the `line` sprite's `tint` setter, yielding to `lineHighlight` | #9 |
-| Filter toggle | One `mod-toggle` `Setting` row in the Filters section, plus an `optionListeners` key for persistence | #14 + #13 |
-| Highlight | Nothing. Real edges give the native hover behaviour (`app.js:122099`, `:122247`) | — |
-| Hover popover | Wrap `renderer.onNodeHover` / `onNodeUnhover`; position an anchor div in `renderer.containerEl`; keep the `zotlit-citekey` source id | #10 + #17 |
+| Goal                                                                                       | Technique                                                                                                                                                            | Rank      |
+| ------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------- |
+| Citation edges exist, and participate in narrowing, orphan logic and _Existing files only_ | Wrap `engine.render`, swap `engine.app` for a `metadataCache` facade for that one call, inject into `resolvedLinks` (note→note) and `unresolvedLinks` (note→citekey) | #6        |
+| Node colours                                                                               | Wrap `renderer.setData`; stamp `color: {a, rgb}` on our nodes, skipping any node that already carries one                                                            | #11 + #12 |
+| Citekey edges look different                                                               | Proxy the `line` sprite's `tint` setter, yielding to `lineHighlight`                                                                                                 | #9        |
+| Filter toggle                                                                              | One `mod-toggle` `Setting` row in the Filters section, plus an `optionListeners` key for persistence                                                                 | #14 + #13 |
+| Highlight                                                                                  | Nothing. Real edges give the native hover behaviour (`app.js:122099`, `:122247`)                                                                                     | —         |
+| Hover popover                                                                              | Wrap `renderer.onNodeHover` / `onNodeUnhover`; position an anchor div in `renderer.containerEl`; keep the `zotlit-citekey` source id                                 | #10 + #17 |
 
 ### Mandatory, not optional
 
@@ -940,13 +982,13 @@ polish.
 
 ### Deliberately excluded
 
-| Technique | Why not |
-| --- | --- |
-| Prototype patches (#3) | `node.color` in the data reaches the same result with no shared state |
-| `OutlineFilter` + opacity-layer highlight-all | Two extra PIXI dependencies; a permanent distinct colour reads better |
-| Own PIXI overlay (#7) | Only needed for dashed or curved lines; defer |
-| `engine.setOptions({ colorGroups })` (#15) | The group row is user-editable and user-deletable, so it cannot carry an invariant. Worth offering as an explicit "add a colour group for my Literature Notes" command with the query `["zotero-key"]` or `path:<folder>`, never as automatic setup |
-| Replacing `workspace.openLinkText` (#2) | App-wide blast radius for a per-leaf need |
+| Technique                                     | Why not                                                                                                                                                                                                                                             |
+| --------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Prototype patches (#3)                        | `node.color` in the data reaches the same result with no shared state                                                                                                                                                                               |
+| `OutlineFilter` + opacity-layer highlight-all | Two extra PIXI dependencies; a permanent distinct colour reads better                                                                                                                                                                               |
+| Own PIXI overlay (#7)                         | Only needed for dashed or curved lines; defer                                                                                                                                                                                                       |
+| `engine.setOptions({ colorGroups })` (#15)    | The group row is user-editable and user-deletable, so it cannot carry an invariant. Worth offering as an explicit "add a colour group for my Literature Notes" command with the query `["zotero-key"]` or `path:<folder>`, never as automatic setup |
+| Replacing `workspace.openLinkText` (#2)       | App-wide blast radius for a per-leaf need                                                                                                                                                                                                           |
 
 ### Lifecycle contract
 

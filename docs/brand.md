@@ -13,12 +13,12 @@ Visual identity for ZotLit v2, decided 2026-07-16. Assets live in [`assets/logo/
 
 A ZL ligature: a filled navy Z whose baseline extends right to become the L's foot, with a full-height orange stem abutting the top bar. The stem terminates in a bookmark-style V-notch (45° half-angle, depth = half the stem width) evoking a page marker. The diagonal drops from directly under the navy/orange joint and lands flush in the bottom-left corner, closing a triangular counter between diagonal, foot, and stem.
 
-| Asset | Grid | Use at |
-| --- | --- | --- |
-| [`zotlit-mark.svg`](../assets/logo/zotlit-mark.svg) | 24-unit, 3.5-unit bars | ≥ 24 px |
-| [`zotlit-mark-16.svg`](../assets/logo/zotlit-mark-16.svg) | 16-unit integer, 3-unit bars | 16–20 px (ribbon icon, plugin list) |
-| [`zotlit-tile.svg`](../assets/logo/zotlit-tile.svg) | 24-unit rounded tile, knockout mark at 0.78 (~23% padding) | contexts that need a self-contained background at generous sizes (app icon, README badge, social avatar) |
-| [`zotlit-tile-16.svg`](../assets/logo/zotlit-tile-16.svg) | 16-unit rounded tile, 16-cut knockout at 0.85 (~13% padding) | favicon / browser tabs (16–32 px) |
+| Asset                                                     | Grid                                                         | Use at                                                                                                   |
+| --------------------------------------------------------- | ------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------- |
+| [`zotlit-mark.svg`](../assets/logo/zotlit-mark.svg)       | 24-unit, 3.5-unit bars                                       | ≥ 24 px                                                                                                  |
+| [`zotlit-mark-16.svg`](../assets/logo/zotlit-mark-16.svg) | 16-unit integer, 3-unit bars                                 | 16–20 px (ribbon icon, plugin list)                                                                      |
+| [`zotlit-tile.svg`](../assets/logo/zotlit-tile.svg)       | 24-unit rounded tile, knockout mark at 0.78 (~23% padding)   | contexts that need a self-contained background at generous sizes (app icon, README badge, social avatar) |
+| [`zotlit-tile-16.svg`](../assets/logo/zotlit-tile-16.svg) | 16-unit rounded tile, 16-cut knockout at 0.85 (~13% padding) | favicon / browser tabs (16–32 px)                                                                        |
 
 The 16 px cut is a separate drawing, not a scaled master: every edge sits on a whole pixel and bars are exactly 3 device pixels, so the mark stays crisp where the master would anti-alias to grey. Use the master above ~24 px and the small cut at 16–20 px.
 
@@ -66,11 +66,11 @@ CSS recipe at wordmark font-size `1em` (Archivo cap height ≈ 0.73 em): mark `0
 
 ## Palette
 
-| Token | Light | Dark |
-| --- | --- | --- |
-| Ink (structure) | `#1E3A5F` navy · `oklch(34.62% 0.0736 256.04)` | `#D8E2F0` · `oklch(90.94% 0.0220 256.73)` |
-| Accent ("Lit", stem) | `#E8622C` orange · `oklch(65.74% 0.1789 40.45)` | `#F0793F` · `oklch(70.36% 0.1630 44.66)` |
-| Tile knockout | `#F5F2EA` · `oklch(96.13% 0.0111 89.72)` | same (tile is navy in both themes) |
+| Token                | Light                                           | Dark                                      |
+| -------------------- | ----------------------------------------------- | ----------------------------------------- |
+| Ink (structure)      | `#1E3A5F` navy · `oklch(34.62% 0.0736 256.04)`  | `#D8E2F0` · `oklch(90.94% 0.0220 256.73)` |
+| Accent ("Lit", stem) | `#E8622C` orange · `oklch(65.74% 0.1789 40.45)` | `#F0793F` · `oklch(70.36% 0.1630 44.66)`  |
+| Tile knockout        | `#F5F2EA` · `oklch(96.13% 0.0111 89.72)`        | same (tile is navy in both themes)        |
 
 OKLCH values computed from the hex sources via sRGB → linear → OKLab → OKLCH (Björn Ottosson's reference matrices); regenerate with any OKLCH conversion tool (e.g. `culori`) if the hex sources change.
 

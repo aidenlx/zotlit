@@ -16,5 +16,5 @@ Long batch loops (e.g. `classifyChunked` in `batch-run.ts`) yield between fixed-
 
 ## Consequences
 
-- The `await delay(0)` yield points in chunked loops move to the shared `MessageChannel` primitive; `delay`/`setTimeout` remain fine for actual *delays* (backoff, debounce), where wall-clock time is the point.
+- The `await delay(0)` yield points in chunked loops move to the shared `MessageChannel` primitive; `delay`/`setTimeout` remain fine for actual _delays_ (backoff, debounce), where wall-clock time is the point.
 - Background responsiveness is now a tested property of batch runs, not incidental to whether the window happens to be focused.

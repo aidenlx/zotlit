@@ -12,31 +12,31 @@ This record names the twenty probes that guard PDF annotation editing, tells you
 
 Run date **2026-09-17**. Every number below was measured on the live applications.
 
-| Component | Version |
-| --- | --- |
-| Obsidian | 1.14.2, installer 1.13.7 |
-| Electron | 43.3.0, Chrome 150.0.7871.212 |
-| Zotero | 10.0, platform 140.14.0, global schema 44 |
-| ZotLit | 2.2.0-beta.0, Obsidian plugin and ZotLit Companion, the Zotero add-on, both active |
-| PDF under test | `attachments/rougier-2014.pdf`, Fixture attachment `RGRPDF24` |
+| Component      | Version                                                                            |
+| -------------- | ---------------------------------------------------------------------------------- |
+| Obsidian       | 1.14.2, installer 1.13.7                                                           |
+| Electron       | 43.3.0, Chrome 150.0.7871.212                                                      |
+| Zotero         | 10.0, platform 140.14.0, global schema 44                                          |
+| ZotLit         | 2.2.0-beta.0, Obsidian plugin and ZotLit Companion, the Zotero add-on, both active |
+| PDF under test | `attachments/rougier-2014.pdf`, Fixture attachment `RGRPDF24`                      |
 
 ## Seam probes P1 to P11
 
 Read the binding's verdicts from `services.pdfAnnotationEditor.bindings[0].probes` with the PDF open. Each guarded member was then read directly out of the live reader.
 
-| Probe | Member guarded | Verdict | Evidence |
-| --- | --- | --- | --- |
-| P1 | `PDFFileView.file` | PASS | `view.file.path` reads `attachments/rougier-2014.pdf` |
-| P2 | `PDFFileView.viewer` | PASS | `typeof viewer.then === "function"`, and `child` is a member |
-| P3 | `PDFViewerHost.then` | PASS | the host resolves to `host.child`, by identity |
-| P4 | `PDFViewerController.on/off` | PASS | both are functions |
-| P5 | `PDFViewerController.getPage` | PASS | a function that returns a `PDFPageView` |
-| P6 | `PDFViewerController.applySubpath` | PASS | a function |
-| P7 | `PDFPageRenderedEvent` | PASS | captured live as `{source, pageNumber, cssTransform, isDetailView, timestamp, error}`, with `pageNumber` the number `1` and `source` a `PDFPageView` |
-| P8 | `PDFPageView` | PASS | `constructor.name` reads `PDFPageView`; `div` is a `DIV`; `viewport` and `pdfPage` are present |
-| P9 | `PDFPageViewport` | PASS | all nine constructor properties present, with `convertToViewportPoint` (see below) |
-| P10 | `PDFViewerController.toolbar.toolbarRightEl` | PASS | `div.pdf-toolbar-right` |
-| P11 | `getTextContent({ includeChars })`, `commonObjs`, and the document | PASS | 574 text items on page 1 (see below) |
+| Probe | Member guarded                                                     | Verdict | Evidence                                                                                                                                             |
+| ----- | ------------------------------------------------------------------ | ------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| P1    | `PDFFileView.file`                                                 | PASS    | `view.file.path` reads `attachments/rougier-2014.pdf`                                                                                                |
+| P2    | `PDFFileView.viewer`                                               | PASS    | `typeof viewer.then === "function"`, and `child` is a member                                                                                         |
+| P3    | `PDFViewerHost.then`                                               | PASS    | the host resolves to `host.child`, by identity                                                                                                       |
+| P4    | `PDFViewerController.on/off`                                       | PASS    | both are functions                                                                                                                                   |
+| P5    | `PDFViewerController.getPage`                                      | PASS    | a function that returns a `PDFPageView`                                                                                                              |
+| P6    | `PDFViewerController.applySubpath`                                 | PASS    | a function                                                                                                                                           |
+| P7    | `PDFPageRenderedEvent`                                             | PASS    | captured live as `{source, pageNumber, cssTransform, isDetailView, timestamp, error}`, with `pageNumber` the number `1` and `source` a `PDFPageView` |
+| P8    | `PDFPageView`                                                      | PASS    | `constructor.name` reads `PDFPageView`; `div` is a `DIV`; `viewport` and `pdfPage` are present                                                       |
+| P9    | `PDFPageViewport`                                                  | PASS    | all nine constructor properties present, with `convertToViewportPoint` (see below)                                                                   |
+| P10   | `PDFViewerController.toolbar.toolbarRightEl`                       | PASS    | `div.pdf-toolbar-right`                                                                                                                              |
+| P11   | `getTextContent({ includeChars })`, `commonObjs`, and the document | PASS    | 574 text items on page 1 (see below)                                                                                                                 |
 
 The binding records the probes in the order `P1 P2 P3 P4 P5 P6 P10 P8 P9 P11 P7`. P7 is last, because it records only when a real `pagerendered` event arrives.
 
@@ -46,15 +46,15 @@ Two records carry a `"path": null` field. P1 and P2 run inside `load()`, before 
 
 `constructor.name` reads `PageViewport`. On page 1, at scale `0.6957566780146867` and rotation `0`, the nine guarded properties read:
 
-| Property | Value |
-| --- | --- |
-| `viewBox` | `[0, 0, 612.28302, 790.866028]` |
-| `userUnit` | `1` |
-| `scale` | `0.6957566780146867` |
-| `rotation` | `0` |
-| `offsetX` / `offsetY` | `0` / `0` |
-| `transform` | `[0.6957…, 0, 0, -0.6957…, 0, 550.2503…]` |
-| `width` / `height` | `425.99999999999994` / `550.2503203959502` |
+| Property              | Value                                      |
+| --------------------- | ------------------------------------------ |
+| `viewBox`             | `[0, 0, 612.28302, 790.866028]`            |
+| `userUnit`            | `1`                                        |
+| `scale`               | `0.6957566780146867`                       |
+| `rotation`            | `0`                                        |
+| `offsetX` / `offsetY` | `0` / `0`                                  |
+| `transform`           | `[0.6957…, 0, 0, -0.6957…, 0, 550.2503…]`  |
+| `width` / `height`    | `425.99999999999994` / `550.2503203959502` |
 
 One further own property is present and is not guarded: `rawDims`. The prototype carries `clone`, `convertToViewportPoint`, `convertToViewportRectangle`, and `convertToPdfPoint`, all functions. The pair that P9 permits but type-checks when present, `clone` and `convertToPdfPoint`, is therefore present on 1.14.2, and the division fallback is not exercised on this version.
 
@@ -72,28 +72,28 @@ P11 guards more than the text call. `page.pdfPage.commonObjs` is a `PDFObjects` 
 
 Run this check first. Every other transport finding depends on it.
 
-| Call | Result |
-| --- | --- |
+| Call                                          | Result                                 |
+| --------------------------------------------- | -------------------------------------- |
 | Bare `requestUrl` GET to the Zotero Local API | Rejects with `net::ERR_EMPTY_RESPONSE` |
-| `requestUrl` with `Zotero-Allowed-Request: 1` | `200`, full body |
-| Node `http`, with or without the header | `200` both ways |
-| `@electron/remote` `net.request`, no opt-out | Rejects with `net::ERR_EMPTY_RESPONSE` |
+| `requestUrl` with `Zotero-Allowed-Request: 1` | `200`, full body                       |
+| Node `http`, with or without the header       | `200` both ways                        |
+| `@electron/remote` `net.request`, no opt-out  | Rejects with `net::ERR_EMPTY_RESPONSE` |
 
 Chromium adds `User-Agent: Mozilla/5.0 (…) obsidian/1.13.7 Chrome/150.0.7871.212 Electron/43.3.0 …` to every renderer-side request. Zotero reads a `User-Agent` that starts with `Mozilla/` as browser traffic and answers by closing the socket. The caller therefore sees a transport rejection with no status and no body, which is not a failure a status-code branch can catch. `Zotero-Allowed-Request: 1` is mandatory on every call from a Chromium-backed transport. The Node transport sends no user agent at all, so it never meets the refusal; ZotLit sends the header on every call regardless.
 
 ### The nine probes
 
-| Probe | What it asks | Verdict | Evidence |
-| --- | --- | --- | --- |
-| P1 | Does a write with no key return a normal `401`, rather than an authentication rejection? | PASS | Both transports: `401`, `www-authenticate: Zotero-API-Key realm="Zotero Local API"`, body `API key required -- POST /api/local/authorize to obtain one` |
-| P2 | What shape does a network error take? | PASS | `requestUrl`: an `Error` with message `net::ERR_CONNECTION_REFUSED` and **no own keys**, so no `status` and no `headers`. Node: an `Error` with `code` `ECONNREFUSED` |
-| P3 | Does a `204` resolve cleanly? | PASS | `requestUrl` DELETE: `204`, `last-modified-version: 5`, `text` `""`, `arrayBuffer.byteLength` `0`, and `json` throws `SyntaxError`. Node DELETE: `204`, `statusMessage` `No Content`, 0 bytes |
-| P4 | Do header names reach Zotero in the case they were sent in? | PASS | Both transports sent `Zotero-API-Key`, `Zotero-Server-ID`, `If-Unmodified-Since-Version`, `Zotero-Write-Token`, and `Zotero-Allowed-Request` byte for byte in the case given |
-| P5 | Which wins, `contentType` or a `Content-Type` header? | PASS | The `headers` entry wins in both argument orders: `text/plain; charset=utf-8` reached the wire while `contentType` was set to `application/json` |
-| P6 | Can a repeated GET be served from a cache? | PASS | Against a server that sends `Cache-Control: max-age=300`, a second identical `requestUrl` GET did not reach the server, and `Cache-Control: no-cache` on the third call did. Node reached the server every time. Against real Zotero, which sends no `Cache-Control`, no `ETag`, and no `Last-Modified`, the repeated `requestUrl` GET reached Zotero and returned the changed value |
-| P7 | What happens to the `file:` redirect? | PASS | `requestUrl` on `/file` rejects with `net::ERR_UNSAFE_REDIRECT`. Node returns the `302` itself, with `Location` a `file:` URI, and does not follow it. `/file/view/url` answers `200 text/plain` on both, with a `file:` URI as the body, not a bare path |
-| P8 | Does a hung request time out? | PASS | `requestUrl` stayed pending for 722 s against a route that never answers, with no rejection. Node `http` stayed pending. Node with an `AbortSignal` rejected at 2003 ms with `AbortError` |
-| P9 | Does a write through `@electron/remote` `net.request` round trip? | PASS, with two caveats | PATCH answered `204`; `rawHeaders` preserved Zotero's own case while `headers` were lower-cased; `redirect: "manual"` stopped the `file:` redirect and returned `redirectUrl` with the error `Redirect was cancelled`; `cache: "no-store"` was accepted; `abort()` on an in-flight request emitted `abort` |
+| Probe | What it asks                                                                             | Verdict                | Evidence                                                                                                                                                                                                                                                                                                                                                                             |
+| ----- | ---------------------------------------------------------------------------------------- | ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| P1    | Does a write with no key return a normal `401`, rather than an authentication rejection? | PASS                   | Both transports: `401`, `www-authenticate: Zotero-API-Key realm="Zotero Local API"`, body `API key required -- POST /api/local/authorize to obtain one`                                                                                                                                                                                                                              |
+| P2    | What shape does a network error take?                                                    | PASS                   | `requestUrl`: an `Error` with message `net::ERR_CONNECTION_REFUSED` and **no own keys**, so no `status` and no `headers`. Node: an `Error` with `code` `ECONNREFUSED`                                                                                                                                                                                                                |
+| P3    | Does a `204` resolve cleanly?                                                            | PASS                   | `requestUrl` DELETE: `204`, `last-modified-version: 5`, `text` `""`, `arrayBuffer.byteLength` `0`, and `json` throws `SyntaxError`. Node DELETE: `204`, `statusMessage` `No Content`, 0 bytes                                                                                                                                                                                        |
+| P4    | Do header names reach Zotero in the case they were sent in?                              | PASS                   | Both transports sent `Zotero-API-Key`, `Zotero-Server-ID`, `If-Unmodified-Since-Version`, `Zotero-Write-Token`, and `Zotero-Allowed-Request` byte for byte in the case given                                                                                                                                                                                                         |
+| P5    | Which wins, `contentType` or a `Content-Type` header?                                    | PASS                   | The `headers` entry wins in both argument orders: `text/plain; charset=utf-8` reached the wire while `contentType` was set to `application/json`                                                                                                                                                                                                                                     |
+| P6    | Can a repeated GET be served from a cache?                                               | PASS                   | Against a server that sends `Cache-Control: max-age=300`, a second identical `requestUrl` GET did not reach the server, and `Cache-Control: no-cache` on the third call did. Node reached the server every time. Against real Zotero, which sends no `Cache-Control`, no `ETag`, and no `Last-Modified`, the repeated `requestUrl` GET reached Zotero and returned the changed value |
+| P7    | What happens to the `file:` redirect?                                                    | PASS                   | `requestUrl` on `/file` rejects with `net::ERR_UNSAFE_REDIRECT`. Node returns the `302` itself, with `Location` a `file:` URI, and does not follow it. `/file/view/url` answers `200 text/plain` on both, with a `file:` URI as the body, not a bare path                                                                                                                            |
+| P8    | Does a hung request time out?                                                            | PASS                   | `requestUrl` stayed pending for 722 s against a route that never answers, with no rejection. Node `http` stayed pending. Node with an `AbortSignal` rejected at 2003 ms with `AbortError`                                                                                                                                                                                            |
+| P9    | Does a write through `@electron/remote` `net.request` round trip?                        | PASS, with two caveats | PATCH answered `204`; `rawHeaders` preserved Zotero's own case while `headers` were lower-cased; `redirect: "manual"` stopped the `file:` redirect and returned `redirectUrl` with the error `Redirect was cancelled`; `cache: "no-store"` was accepted; `abort()` on an in-flight request emitted `abort`                                                                           |
 
 The two P9 caveats: `net.request` through `@electron/remote` carries the same Chromium user agent, so it needs `Zotero-Allowed-Request: 1` exactly like `requestUrl`; and event order over the remote bridge is not the main-process order. `close` arrived before `response` on every request measured, and before `abort` on the aborted one. Do not use `close` as a completion signal from the renderer.
 
@@ -144,28 +144,28 @@ Zotero refuses a transaction that creates `text`-type annotations and calls `add
 
 ### Completeness
 
-| Check | Measured | Verdict |
-| --- | --- | --- |
-| Local API total against Zotero's own count | `Total-Results: 108` against `getAnnotations(true).length` `108`; key sets identical, zero overlap, zero missing | PASS |
-| The page boundary of the children walk | `limit=100&start=0` returned 100 items, `limit=100&start=100` returned 8; union 108, intersection 0 | PASS |
-| Annotation View cards against Zotero | 110 cards and the header "110 of 110" against Zotero's 110; 113 and "113 of 113" at the end of the run | PASS |
-| The list is not truncated | The `.zt-annot-card` count equals the header count; the view is not virtualised | PASS |
+| Check                                      | Measured                                                                                                         | Verdict |
+| ------------------------------------------ | ---------------------------------------------------------------------------------------------------------------- | ------- |
+| Local API total against Zotero's own count | `Total-Results: 108` against `getAnnotations(true).length` `108`; key sets identical, zero overlap, zero missing | PASS    |
+| The page boundary of the children walk     | `limit=100&start=0` returned 100 items, `limit=100&start=100` returned 8; union 108, intersection 0              | PASS    |
+| Annotation View cards against Zotero       | 110 cards and the header "110 of 110" against Zotero's 110; 113 and "113 of 113" at the end of the run           | PASS    |
+| The list is not truncated                  | The `.zt-annot-card` count equals the header count; the view is not virtualised                                  | PASS    |
 
 ### Responsiveness
 
 Every timing comes from `performance.now()` inside the renderer. The method is stated beside each number.
 
-| Measurement | Method | Number |
-| --- | --- | --- |
-| Full list rebuild, 107 cards | `annotations-changed` to the last `MutationObserver` record on the view container | 120.3 ms and 100.3 ms on two rebuilds. The intermediate record shows the list going to 0 cards and back, so this is a teardown and rebuild, not a diff |
-| Mount of a 110-card list | `openFile(note)` to the mutation records | First record at 34.4 ms, all 110 cards in the DOM at 62.5 ms, last record at 94.8 ms |
-| Local API refetch of 110 annotations | Query invalidation to the resolution of `repository.read` | 26.7 ms for two pages of the children route |
-| Re-render on an identical list | Mutation records after that refetch | 0 records. An unchanged list costs no DOM work |
-| Long tasks during a 110-card rebuild | `PerformanceObserver({entryTypes:["longtask"]})` | None. No task longer than 50 ms |
-| Main-thread responsiveness during the same rebuild | `requestAnimationFrame` round trip sampled every 16 ms, 486 samples | Median 8.5 ms, p95 16.5 ms, maximum 18.3 ms |
-| Overlay census, 3 rendered pages | DOM count per `.zt-pdf-annotation-overlay` | Page 1: 23 marks in 27 nodes. Page 2: 16 in 20. Page 3: 15 in 19. The overlay is one `<svg>` per page |
-| Overlay repaint after one zoom step of 1.25 | `requestAnimationFrame` poll of the overlay width until it reaches the expected value | Overlay gone at 6.4 ms, back and correctly sized at 69.9 ms, 873 px measured against 872.5 px expected. 23 marks redrawn |
-| Overlay geometry under the same zoom step | `getBoundingClientRect()` before and after | 559 × 722 to 698 × 902, against 698.75 × 902.5 expected |
+| Measurement                                        | Method                                                                                | Number                                                                                                                                                 |
+| -------------------------------------------------- | ------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Full list rebuild, 107 cards                       | `annotations-changed` to the last `MutationObserver` record on the view container     | 120.3 ms and 100.3 ms on two rebuilds. The intermediate record shows the list going to 0 cards and back, so this is a teardown and rebuild, not a diff |
+| Mount of a 110-card list                           | `openFile(note)` to the mutation records                                              | First record at 34.4 ms, all 110 cards in the DOM at 62.5 ms, last record at 94.8 ms                                                                   |
+| Local API refetch of 110 annotations               | Query invalidation to the resolution of `repository.read`                             | 26.7 ms for two pages of the children route                                                                                                            |
+| Re-render on an identical list                     | Mutation records after that refetch                                                   | 0 records. An unchanged list costs no DOM work                                                                                                         |
+| Long tasks during a 110-card rebuild               | `PerformanceObserver({entryTypes:["longtask"]})`                                      | None. No task longer than 50 ms                                                                                                                        |
+| Main-thread responsiveness during the same rebuild | `requestAnimationFrame` round trip sampled every 16 ms, 486 samples                   | Median 8.5 ms, p95 16.5 ms, maximum 18.3 ms                                                                                                            |
+| Overlay census, 3 rendered pages                   | DOM count per `.zt-pdf-annotation-overlay`                                            | Page 1: 23 marks in 27 nodes. Page 2: 16 in 20. Page 3: 15 in 19. The overlay is one `<svg>` per page                                                  |
+| Overlay repaint after one zoom step of 1.25        | `requestAnimationFrame` poll of the overlay width until it reaches the expected value | Overlay gone at 6.4 ms, back and correctly sized at 69.9 ms, 873 px measured against 872.5 px expected. 23 marks redrawn                               |
+| Overlay geometry under the same zoom step          | `getBoundingClientRect()` before and after                                            | 559 × 722 to 698 × 902, against 698.75 × 902.5 expected                                                                                                |
 
 ### A Zotero-side change reaches an open surface, and a lost Live Updates channel is silent
 
@@ -187,12 +187,12 @@ Read the Live Updates receiver from `services.localServer.available`. `services.
 
 File Link Capture ([ADR 0045](../apps/obsidian/docs/adr/0045-file-link-capture-patches-window-open.md)) reads four behaviours Obsidian documents nowhere. All four were read out of the 1.14.2 renderer bundle, `node_modules/.ob-rev-1.14.2/app.js`. **None is live-measured yet**, so they carry no verdict in the tables above; a Paired Run has to confirm them before the release. Re-verify all four against a fresh extraction whenever `minAppVersion` moves; all four hold in the 1.15.1 bundle, where "Open in default browser" passes `"_external"` only for a URL that Obsidian's link check accepts.
 
-| Behaviour | Where it is read | Why Capture needs it |
-| --- | --- | --- |
-| Every external-link click ends at `window.open(href, target)` | The reading-view delegate `t.on("click", "a.external-link", ...)` and `onExternalLinkClick`; the Live Preview path `triggerClickableToken`, which reads the URL off the CodeMirror tree because no anchor exists in that view; the Properties and Bases renderers | It is the only symbol all four paths share, so it is the only complete place to take the click |
-| `"_external"` is the target Obsidian's own "Open in default browser" item passes | `handleExternalLinkContextMenu`, which also triggers the public `url-menu` event | Capture hands that target straight back, which is what keeps the per-link way out working |
-| `Vault.getFileByPath("file:<abs>")` falls through to the external file manager | `getFileByPath` → `externalFileManager.getExternalFile`, gated on `Platform.isDesktopApp` | How an Attachment outside the vault reaches Obsidian's reader at all. Already relied on by the four existing open gestures |
-| The PDF view reads a page jump off `eState.subpath` as the string `"#page=N"` | `PDFView.setEphemeralState` → `applySubpath`, which parses the fragment with `URLSearchParams` and also accepts `offset`, `annotation`, `selection`, and `height` | How a link's `#page=N` lands on the right page |
+| Behaviour                                                                        | Where it is read                                                                                                                                                                                                                                                  | Why Capture needs it                                                                                                       |
+| -------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| Every external-link click ends at `window.open(href, target)`                    | The reading-view delegate `t.on("click", "a.external-link", ...)` and `onExternalLinkClick`; the Live Preview path `triggerClickableToken`, which reads the URL off the CodeMirror tree because no anchor exists in that view; the Properties and Bases renderers | It is the only symbol all four paths share, so it is the only complete place to take the click                             |
+| `"_external"` is the target Obsidian's own "Open in default browser" item passes | `handleExternalLinkContextMenu`, which also triggers the public `url-menu` event                                                                                                                                                                                  | Capture hands that target straight back, which is what keeps the per-link way out working                                  |
+| `Vault.getFileByPath("file:<abs>")` falls through to the external file manager   | `getFileByPath` → `externalFileManager.getExternalFile`, gated on `Platform.isDesktopApp`                                                                                                                                                                         | How an Attachment outside the vault reaches Obsidian's reader at all. Already relied on by the four existing open gestures |
+| The PDF view reads a page jump off `eState.subpath` as the string `"#page=N"`    | `PDFView.setEphemeralState` → `applySubpath`, which parses the fragment with `URLSearchParams` and also accepts `offset`, `annotation`, `selection`, and `height`                                                                                                 | How a link's `#page=N` lands on the right page                                                                             |
 
 A change to the first two costs Capture its clicks; the link then opens in the system app, which is what happened before the feature existed. A change to the third or fourth is already covered by the reader seam's own failure mode: a notice, not a wrong file.
 
@@ -200,10 +200,10 @@ A change to the first two costs Capture its clicks; the link then opens in the s
 
 Mark Landing ([ADR 0046](../apps/obsidian/docs/adr/0046-landing-on-a-mark-is-an-ephemeral-state-contract-read-at-the-leaf.md)) reads two more. Both were read out of the same 1.14.2 bundle, neither is live-measured yet, and both are re-verified whenever `minAppVersion` moves; both hold in the 1.15.1 bundle.
 
-| Behaviour | Where it is read | Why Mark Landing needs it |
-| --- | --- | --- |
-| `WorkspaceLeaf.setEphemeralState` is the only path the ephemeral state takes to a view | `setViewState`, which calls it unconditionally whenever an ephemeral state is given and compares nothing; the deferred view, which stores the whole object and replays it verbatim through `setViewState` on rerender; `History.updateState`, which restores through the same call | It is the one documented symbol every delivery path crosses, and the PDF view keeps nothing once the call returns |
-| An unknown key in a PDF fragment is inert | `applySubpath`, which parses the fragment with `URLSearchParams` and reads `page`, `offset`, `annotation`, `selection`, and `height` by name, looping over nothing | An Annotation Anchor rides beside `#page=N` without disturbing it, so a reader that is not listening still lands on the page |
+| Behaviour                                                                              | Where it is read                                                                                                                                                                                                                                                                   | Why Mark Landing needs it                                                                                                    |
+| -------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| `WorkspaceLeaf.setEphemeralState` is the only path the ephemeral state takes to a view | `setViewState`, which calls it unconditionally whenever an ephemeral state is given and compares nothing; the deferred view, which stores the whole object and replays it verbatim through `setViewState` on rerender; `History.updateState`, which restores through the same call | It is the one documented symbol every delivery path crosses, and the PDF view keeps nothing once the call returns            |
+| An unknown key in a PDF fragment is inert                                              | `applySubpath`, which parses the fragment with `URLSearchParams` and reads `page`, `offset`, `annotation`, `selection`, and `height` by name, looping over nothing                                                                                                                 | An Annotation Anchor rides beside `#page=N` without disturbing it, so a reader that is not listening still lands on the page |
 
 A change to the first costs a Landing its Anchor; the link then opens on its page, which is what ADR 0045 alone already did. A change to the second would have Obsidian claim `zt-annotation` for itself, which renaming the key answers.
 

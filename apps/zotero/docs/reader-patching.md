@@ -59,7 +59,7 @@ prototypes** to wire up its self-dedupe / auto-remove feature:
 // node_modules/monkey-around/dist/index.mjs
 let current = createWrapper(original);
 if (inherited) Object.setPrototypeOf(current, inherited); // chrome wrapper proto ← content fn
-Object.setPrototypeOf(wrapper, current);                   // chrome fn proto ← chrome wrapper
+Object.setPrototypeOf(wrapper, current); // chrome fn proto ← chrome wrapper
 obj[method] = wrapper;
 ```
 
@@ -103,7 +103,7 @@ Verified live over the dev server's Remote Debugging Protocol
 - **Measurement caveat:** `PDFViewerApplication` lives in a **nested** iframe
   inside `reader._iframeWindow`, not on it. And calling a content method that
   marshals content data (e.g. `_initProcessedData`) directly from a chrome RDP
-  eval throws the same membrane error even *unpatched* — so that error in an RDP
+  eval throws the same membrane error even _unpatched_ — so that error in an RDP
   session is not by itself proof the patch is at fault. Confirm reader health by
   the nested-iframe `pagesCount` / canvas count after a **natural** open.
 

@@ -10,10 +10,10 @@
 
 Each app's `apps/{app}/package.json#version` is the sole version source.
 
-| App | Tag format | Example |
-|---|---|---|
-| Obsidian (`@zotlit/obsidian`) | bare semver | `2.0.0`, `2.1.0-beta.1` |
-| Zotero (`@zotlit/zotero`) | `zt-` prefix | `zt-2.0.0`, `zt-2.1.0-beta.1` |
+| App                           | Tag format   | Example                       |
+| ----------------------------- | ------------ | ----------------------------- |
+| Obsidian (`@zotlit/obsidian`) | bare semver  | `2.0.0`, `2.1.0-beta.1`       |
+| Zotero (`@zotlit/zotero`)     | `zt-` prefix | `zt-2.0.0`, `zt-2.1.0-beta.1` |
 
 ### Branching model
 
@@ -57,6 +57,7 @@ counterpart line before merging a release PR.
 
    Every confirmation is taken as yes; the PR merges only with `--merge`. A
    branch with commits not yet on origin stops the run: push them first.
+
 3. Pull requests run no checks: the pre-push hook runs `pnpm verify`, and the
    release gate already passed in step 2. See
    [ADR 0076](docs/adr/0076-checks-run-before-push-and-ci-runs-only-to-release.md).
@@ -94,7 +95,7 @@ unreleased features:
 
 ### Distribution channels
 
-| Channel | Obsidian | Zotero |
-|---|---|---|
+| Channel     | Obsidian                                             | Zotero                                  |
+| ----------- | ---------------------------------------------------- | --------------------------------------- |
 | Pre-release | [BRAT](https://github.com/TfTHacker/obsidian42-brat) | `update-beta.json` on the `release` tag |
-| Stable | Community plugin store + BRAT | `update.json` on the `release` tag |
+| Stable      | Community plugin store + BRAT                        | `update.json` on the `release` tag      |

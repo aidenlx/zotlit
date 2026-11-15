@@ -47,21 +47,21 @@ The base Fixture provides real source documents, an Excerpt Image, multiple Libr
 - The same marked paper and bare Annotation key in My Library and Lab Archive, an unmarked paper, and a mark on a missing source.
 - Five papers in **Query thesis**, with zero, one, and two PDFs; marks on both PDF editions; a missing linked file; a publisher link with no local path; EPUB and snapshot Attachments; and an Attachment Tag.
 
-| Prototype case | Research task |
-| --- | --- |
-| no_usable_pdf | Papers without an available PDF |
-| broken_links | Missing linked files |
-| duplicate_pdfs | Papers with two PDFs and each file's tags |
-| recently_annotated | Papers marked in a fixed date interval, each once |
-| count_per_paper | Marks per paper across editions |
-| count_by_year | Papers by publication year, including missing years |
-| unread_in_collection | Collection papers without highlights |
-| attachment_types | Files counted by type |
-| fuzzy_search | Explain unavailable fuzzy search, then use the requested literal fallback |
-| files_of_paper | All files of one paper, including a publisher link |
-| csv_for_advisor | Convert verified JSON locally to a CSV |
-| recent_with_pdf_unread | Recent papers with files and no to-read tag |
-| chinese_title | Titles containing Chinese text |
+| Prototype case         | Research task                                                             |
+| ---------------------- | ------------------------------------------------------------------------- |
+| no_usable_pdf          | Papers without an available PDF                                           |
+| broken_links           | Missing linked files                                                      |
+| duplicate_pdfs         | Papers with two PDFs and each file's tags                                 |
+| recently_annotated     | Papers marked in a fixed date interval, each once                         |
+| count_per_paper        | Marks per paper across editions                                           |
+| count_by_year          | Papers by publication year, including missing years                       |
+| unread_in_collection   | Collection papers without highlights                                      |
+| attachment_types       | Files counted by type                                                     |
+| fuzzy_search           | Explain unavailable fuzzy search, then use the requested literal fallback |
+| files_of_paper         | All files of one paper, including a publisher link                        |
+| csv_for_advisor        | Convert verified JSON locally to a CSV                                    |
+| recent_with_pdf_unread | Recent papers with files and no to-read tag                               |
+| chinese_title          | Titles containing Chinese text                                            |
 
 The prototype's `search=` and `format=csv` forms are outside ADR 0071. Those tasks test honest capability reporting and local conversion. The date case uses January–April 2024 so the expected answer stays stable. The reading-plan case now starts from Items and returns Annotation summaries, retaining zero-mark papers in one query.
 
