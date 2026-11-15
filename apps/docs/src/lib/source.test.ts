@@ -51,6 +51,31 @@ describe("docs collection", () => {
     );
   });
 
+  // A CJK glyph takes about two Latin glyphs of a search result's width, so
+  // the Chinese editions meet the same limits counted by width.
+  it("titles each Chinese edition once, within search-result width", () => {
+    const pages = [
+      ...source.getPages("zh-CN").map((page) => ({
+        url: page.url,
+        title: docsPageTitle(page.data),
+        description: page.data.description ?? "",
+      })),
+      ...getLessonPages({ locale: "zh-CN" }).map((page) => ({
+        url: page.url,
+        title: page.data.title,
+        description: page.data.description,
+      })),
+    ].filter(({ title }) => cjkGlyph.test(title));
+    expect(pages.filter(({ title }) => searchWidth(title) > 60)).toEqual([]);
+    expect(
+      pages.filter(({ description }) => searchWidth(description) > 160),
+    ).toEqual([]);
+    const titles = pages.map(({ title }) => title);
+    expect(titles.filter((title, i) => titles.indexOf(title) !== i)).toEqual(
+      [],
+    );
+  });
+
   // FAQPage JSON-LD must carry the questions and answers the reader sees, so
   // the `faq` frontmatter is checked against the page's `## Questions`
   // section: each `###` heading, then the plain text of the paragraph under it.
@@ -69,6 +94,14 @@ describe("docs collection", () => {
 
 const docsDirectory = resolve(import.meta.dirname, "../../content/docs");
 
+const cjkGlyph = /[\p{Script=Han}\u3000-\u303f\uff00-\uffef]/u;
+/** A string's width in Latin glyphs: a CJK glyph or full-width mark counts two. */
+function searchWidth(text: string): number {
+  let width = 0;
+  for (const glyph of text) width += cjkGlyph.test(glyph) ? 2 : 1;
+  return width;
+}
+
 /** Markdown inline text as a reader sees it: link text, no code or bold marks. */
 function plainText(markdown: string): string {
   return markdown
@@ -81,7 +114,10 @@ function plainText(markdown: string): string {
 }
 
 function questionsSection(body: string) {
-  const [, section = ""] = body.split(/^## Questions\b.*$/m);
+  // The heading is `## Questions` in English and keeps its `[#questions]` anchor in a translation.
+  const [, section = ""] = body.split(
+    /^## (?:Questions\b.*|.*\[#questions\]\s*)$/m,
+  );
   const [questions = ""] = section.split(/^## /m);
   return questions
     .split(/^### /m)
@@ -92,7 +128,8 @@ function questionsSection(body: string) {
         .join("\n")
         .trim()
         .split(/\n\s*\n/);
-      return { question: heading.trim(), answer: plainText(answer) };
+      const question = heading.replace(/\s*\[#[^\]]+\]\s*$/, "").trim();
+      return { question, answer: plainText(answer) };
     });
 }
 

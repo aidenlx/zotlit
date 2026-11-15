@@ -1,0 +1,182 @@
+---
+title: "将 Zotero 连接到 Obsidian：你的第一篇文献笔记"
+description: "在 12 分钟内将 Zotero 文库连接到 Obsidian，并根据文献的高亮批注创建文献笔记。"
+lesson: 1
+minutes: 12
+media: connect-zotero-to-obsidian
+lede: 将 ZotLit 连接到你的 Zotero 文库，并创建你的第一篇文献笔记。
+chore: 连接 Zotero 一次
+instead: 选择 PDF 右上角的撰写文献笔记。
+note: ZotLit 会读取此电脑上的 Zotero 文库，且不会修改其中的任何内容。
+needs:
+  - item: Obsidian
+    detail: 1.15.1 或更高版本，桌面端
+  - item: Zotero
+    detail: 版本 7，同一台电脑
+  - item: Zotero 文献
+    detail: 一篇带有高亮 PDF 的文献
+steps:
+  - title: 安装 ZotLit
+    alt: Zotero 文库标签页打开，在文献列表上方显示“让我们开始吧”徽章和四个设置步骤。
+  - title: 检查 ZotLit 是否找到 Zotero
+    alt: 设置区域显示带有绿色对勾的“连接到 Zotero”、数据文件夹和条目数量，并且“安装 ZotLit Companion”标记为“推荐”。
+  - title: 安装 Zotero 插件
+    alt: 设置区域关闭后，该标签页列出你的 Zotero 文献及其作者、年份和期刊。
+  - title: 查找文献
+    alt: 文献列表下方的卡片显示所选条目的详情，以及“打开 PDF”和“撰写文献笔记”按钮。
+  - title: 打开 PDF
+    alt: PDF 在标签页中打开，显示彩色高亮以及包含评论和标签的标注列表。
+  - title: 撰写文献笔记
+    alt: 文献笔记在 PDF 旁打开并显示通知“文献笔记已创建”，展示链接和“Annotations”分节。
+  - title: 添加你自己的思考
+    alt: 文献笔记显示“My thoughts”标题以及直接写在“Annotations”分节上方的笔记。
+end:
+  title: 已连接的文库与你的第一篇文献笔记
+  caption: 你现在可以在 Obsidian 中打开 Zotero 文献并创建文献笔记。
+  next: 直接在 Obsidian 中批注文献。
+further:
+  - slug: how-to/create-and-open-notes
+    when: "需要通过快速切换器、引文或一次性为多篇文献创建笔记时。"
+  - slug: how-to/keep-notes-updated
+    when: "Zotero 数据或高亮发生变化且需要刷新笔记时。"
+  - slug: how-to/customize-a-template
+    when: "用于修改笔记名称、文件夹、属性或高亮格式。"
+  - slug: answers/zotlit-vs-zotero-integration-vs-citations
+    when: "如果你以前使用过 Zotero Integration 或 Citations，并需要做出选择。"
+  - slug: answers/zotero-integration-not-working
+    when: "排查连接错误、导入失败或插件无法加载的问题。"
+---
+
+import { ActionLink } from "@/components/action-link";
+import { Check, Fix, Step } from "@/components/learn/lesson-mdx";
+import { UiLabel } from "@/components/ui-label";
+import { XpiDownload } from "@/components/xpi-download";
+import { m } from "@/paraglide/messages.js";
+
+<Step n={1}>
+
+点击链接在 Obsidian 中打开 ZotLit，然后选择**安装**（Install）和**启用**（Enable）。
+
+<ActionLink href="obsidian://show-plugin?id=zotlit" kind="obsidian">
+  在 Obsidian 中显示 ZotLit
+</ActionLink>
+
+<Check>
+  打开名为 <UiLabel name={m.library_view_name()} /> 的标签页，文献上方带有徽章{" "}
+  <UiLabel name={m.welcome_badge()} /> 以及四个设置步骤。
+</Check>
+
+<Fix title="Obsidian 打开时处于受限模式">
+  选择**关闭受限模式**（Exit Restricted mode），然后重新点击链接。
+</Fix>
+
+<Fix title="链接未能打开 Obsidian">
+  打开 Obsidian **设置**（Settings）> **第三方插件**（Community plugins）> **浏览**（Browse），搜索
+  `ZotLit`，选择 Aiden Liu 开发的 ZotLit 卡片，然后点击**安装**和**启用**。
+</Fix>
+
+<Fix title="Obsidian 安装程序版本过旧">
+  从 obsidian.md/download 安装最新版 Obsidian，然后启用 ZotLit。
+</Fix>
+
+<Fix title="未打开标签页">点击左侧边栏中的 ZotLit 图标。</Fix>
+
+</Step>
+
+<Step n={2}>
+
+等待 <UiLabel name={m.welcome_step_connect_title()} /> 显示绿色对勾。
+
+<Check>
+  <UiLabel name={m.welcome_step_connect_title()} /> 显示绿色对勾、Zotero
+  数据文件夹以及条目数量。
+</Check>
+
+<Fix title={<>标签页显示 <UiLabel name={m.library_view_not_found()} /></>}>
+  在 Zotero 中，查看**设置**（Settings）> **高级**（Advanced）> **数据目录位置**（Data Directory Location）。在 Obsidian 中，点击 <UiLabel name={m.library_view_locate()} /> 并选择该文件夹。
+</Fix>
+
+</Step>
+
+<Step n={3}>
+
+下载插件：
+
+<XpiDownload channel="stable" />
+
+设置按钮 <UiLabel name={m.welcome_action_install_companion()} /> 指向同一个文件。
+
+在 Zotero 中，打开**工具**（Tools）> **插件**（Plugins），点击齿轮按钮 > **从文件安装插件…**（Install Plugin From File…），选择该 `.xpi` 文件，然后点击**打开**。点击右上角的 × 关闭设置区域。
+
+<Check>
+  **ZotLit** 出现在 Zotero 的插件列表中。{" "}
+  <UiLabel name={m.welcome_step_companion_title()} /> 显示为{" "}
+  <UiLabel name={m.welcome_step_companion_installed()} />
+  ，且文献列表填满标签页。
+</Check>
+
+<Fix title="Firefox 直接打开了文件而没有保存">
+  右键点击链接，选择**链接另存为…**，然后在 Zotero 中安装该文件。
+</Fix>
+
+</Step>
+
+<Step n={4}>
+
+在 <UiLabel name={m.library_view_search_placeholder()} /> 中输入文献标题中的某个词，例如 `reproducible`，然后选择该文献。
+
+<Check>
+  列表下方的卡片显示文献详情、 <UiLabel name={m.library_view_menu_open_pdf()} />{" "}
+  以及 <UiLabel name={m.library_view_menu_write_note()} />。
+</Check>
+
+<Fix title="列表为空">
+  检查 <UiLabel name={m.welcome_step_connect_title()} /> 是否显示绿色对勾。
+</Fix>
+
+</Step>
+
+<Step n={5}>
+
+在文献卡片上，点击 <UiLabel name={m.library_view_menu_open_pdf()} />。
+
+<Check>PDF 打开并显示高亮，侧边栏列出每处高亮、评论和标签。</Check>
+
+<Fix title="未显示高亮">滚动到有高亮的页面，或直接继续步骤 6。</Fix>
+
+</Step>
+
+<Step n={6}>
+
+在 PDF 标签页右上角，点击带有加号的页面图标：<UiLabel name={m.library_view_menu_write_note()} />。
+
+<Check>
+  出现提示：
+  <UiLabel name={m.notice_created_note()} /> 对应文献的笔记（此处为
+  `sandve2013`）在 PDF 旁边的 `literatures` 文件夹中打开，带有指向 Zotero 和 PDF
+  的链接，以及 **Annotations** 分节。
+</Check>
+
+<Fix
+  title={
+    <>
+      工具提示显示为 <UiLabel name={m.library_view_menu_open_note()} />
+    </>
+  }
+>
+  该笔记已存在。点击此按钮即可打开。
+</Fix>
+
+</Step>
+
+<Step n={7}>
+
+在链接下方输入一个标题，如 `My thoughts`，然后写下你的笔记。ZotLit 绝不会修改你输入的文本。它会持续保持 **Annotations** 为最新状态。
+
+<Check>你的文本显示在 **Annotations** 分节上方。</Check>
+
+<Fix title="没有高亮卡片">
+  在 Zotero 中或在第 2 课中添加高亮后，高亮就会显示在此处。
+</Fix>
+
+</Step>

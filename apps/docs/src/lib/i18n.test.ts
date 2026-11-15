@@ -244,7 +244,7 @@ describe("translated documentation links", () => {
     },
     {
       page: docs.getPage("how-to/migrate-from-pandoc-reference-list.zh-CN.mdx"),
-      anchor: "#在-zotero-中确认文献引用标识",
+      anchor: "#migrate-the-workflow",
     },
   ]) {
     it.skipIf(!page)(`retains the authored fragment ${anchor}`, async () => {

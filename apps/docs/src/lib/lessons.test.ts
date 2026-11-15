@@ -12,6 +12,7 @@ import { join, resolve } from "node:path";
 import * as v from "valibot";
 import { describe, expect, it } from "vitest";
 
+import { chineseFile } from "./content-scan";
 import { scanLearnMedia, webpSize } from "./learn-media";
 import { getMarkdownEdition } from "./markdown-editions";
 import { mp4Size } from "./media-store";
@@ -22,11 +23,23 @@ import { learnSchema } from "#content-config";
 const ascii = (text: string) => new TextEncoder().encode(text);
 
 const learnDir = resolve(import.meta.dirname, "../../content/learn");
-const lessons = globSync("*.mdx", { cwd: learnDir }).map((file) => {
+const readLesson = (file: string) => {
   const source = readFileSync(join(learnDir, file), "utf8");
   const { data, content } = frontmatter(source);
   return { file, data: v.parse(learnSchema, data), body: content };
-});
+};
+const lessonFiles = globSync("*.mdx", { cwd: learnDir });
+/** The course itself: the English lessons. */
+const lessons = lessonFiles
+  .filter((file) => !chineseFile.test(file))
+  .map(readLesson);
+/** Each Chinese edition beside the English lesson it translates. */
+const chineseLessons = lessonFiles
+  .filter((file) => chineseFile.test(file))
+  .map((file) => ({
+    ...readLesson(file),
+    english: readLesson(file.replace(chineseFile, "")),
+  }));
 
 const STEP_BLOCK = regex(
   "<Step n=\\{(?<n>\\d+)}>(?<inner>[\\s\\S]*?)</Step>",
@@ -78,6 +91,42 @@ describe("the lessons", () => {
     const chores = lessons.map(({ data }) => data.chore);
     expect(new Set(chores).size).toBe(chores.length);
   });
+});
+
+// A Chinese edition is the same lesson: same place in the course, same
+// recordings, the same steps with one check line each.
+describe.skipIf(chineseLessons.length === 0)("the Chinese lessons", () => {
+  it.each(chineseLessons)(
+    "$file keeps its English lesson's number, length, media and Go further slugs",
+    ({ data, english }) => {
+      expect({
+        lesson: data.lesson,
+        minutes: data.minutes,
+        media: data.media,
+        steps: data.steps.length,
+        further: data.further.map(({ slug }) => slug),
+      }).toEqual({
+        lesson: english.data.lesson,
+        minutes: english.data.minutes,
+        media: english.data.media,
+        steps: english.data.steps.length,
+        further: english.data.further.map(({ slug }) => slug),
+      });
+    },
+  );
+
+  it.each(chineseLessons)(
+    "$file has one <Step> per frontmatter step, each with one check line",
+    ({ data, body }) => {
+      const blocks = stepBlocks(body);
+      expect(blocks.map(({ n }) => n)).toEqual(
+        data.steps.map((_, index) => index + 1),
+      );
+      for (const { n, inner } of blocks) {
+        expect([...inner.matchAll(/<Check>/g)].length, `step ${n}`).toBe(1);
+      }
+    },
+  );
 });
 
 // A guide a lesson sends its reader on to sends a new reader back to that

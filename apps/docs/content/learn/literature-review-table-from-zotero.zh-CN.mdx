@@ -1,0 +1,108 @@
+---
+title: "制作文献综述表"
+description: 在 Obsidian 中基于 Zotero 分类构建包含作者、日期、期刊及自定义评分的文献综述表。
+lesson: 6
+minutes: 10
+media: build-a-literature-review-table
+lede: 构建文献对比表格并粘贴到章节中。
+note: 粘贴到草稿中的副本不会自动更新，因此在发送草稿前请重新复制。
+chore: 我用电子表格整理文献
+instead: 打开表格文件即可读取 Zotero 中的最新分类内容。
+needs:
+  - item: 第 1 课
+    detail: 已完成
+  - item: Zotero 分类
+    detail: 包含你文献的分类之一，例如 Reproducibility
+  - item: Obsidian 文件夹
+    detail: 你自选的文件夹，例如 Thesis
+steps:
+  - title: 将分类另存为表格文件
+    alt: 新标签页 Reproducibility.zotquery 在 Obsidian 中打开，列出该分类下的文献。
+  - title: 切换为表格
+    alt: 表格视图显示文献，包含条目类型、标题、修改日期和文献笔记等列。
+  - title: 选择要对比的列
+    alt: 表格显示标题、文献笔记、年份、出版物和创建者列。
+  - title: 添加自定义评分
+    alt: 列 rating (note) 显示每篇文献的评分，同时显示“文献笔记已创建”提示。
+  - title: 按年份排序
+    alt: 表格中的文献按条目日期从旧到新排序。
+  - title: 将表格复制到章节中
+    alt: 文献综述表已粘贴到章节笔记中，保留所有列。
+end:
+  title: 章节中的文献综述表
+  caption: 你现在可以在表格中对比 Zotero 分类下的文献，并将表格粘贴到草稿中。
+  next: 浏览指南以让 ZotLit 适配你的工作流。
+further:
+  - slug: how-to/use-query-files
+    when: "添加公式、按标题对行分组或在笔记中嵌入表格。"
+  - slug: how-to/use-library-view
+    when: "按分类、搜索词、阅读状态或标签查找文献的方法。"
+---
+
+import { Check, Step } from "@/components/learn/lesson-mdx";
+import { UiLabel } from "@/components/ui-label";
+import { m } from "@/paraglide/messages.js";
+
+<Step n={1}>
+
+在 <UiLabel name={m.library_view_name()} /> 中，选择你的一个分类（例如 `Reproducibility`），然后点击 <UiLabel name={m.annot_view_save_as_query_file()} />（列表右上角带加号的页面图标）。输入你自选的文件夹（例如 `Thesis`），然后选择 <UiLabel name={m.annot_view_save_action()} />。
+
+<Check>
+  对话框会显示根据你的文件夹和分类创建的文件（此处为{" "}
+  <UiLabel
+    name={m.annot_view_save_file({ file: "Thesis/Reproducibility.zotquery" })}
+  />
+  ），并且该文件会在新标签页中打开并列出你的文献。
+</Check>
+
+</Step>
+
+<Step n={2}>
+
+点击左上方的 <UiLabel name={m.query_view_views()} />，然后点击该行末尾的箭头（<UiLabel name={m.query_view_configure_view()} />）。将 <UiLabel name={m.query_view_layout()} /> 设置为 <UiLabel name={m.query_view_layout_table()} />。
+
+<Check>
+  文献以表格行呈现，列包括 **条目类型**、**标题**、**修改日期** 以及{" "}
+  <UiLabel name={m.query_view_table_literature_note()} />。
+</Check>
+
+</Step>
+
+<Step n={3}>
+
+点击 <UiLabel name={m.query_view_properties()} /> 并取消勾选 **条目类型** 与 **修改日期**。依次输入并选择各项：输入 `year` 选择 **年份**，输入 `publication` 选择 **出版物**，输入 `creators` 选择 <UiLabel name={m.query_view_properties_add({ name: "creators" })} />。
+
+<Check>
+  当前显示的列为 **标题**、{" "}
+  <UiLabel name={m.query_view_table_literature_note()} />
+  、**年份**、**出版物** 和 **创建者**。
+</Check>
+
+</Step>
+
+<Step n={4}>
+
+点击 <UiLabel name={m.query_view_properties()} />，输入 `rating`，然后选择 <UiLabel name={m.query_view_properties_add_vault({ name: "rating" })} />。在新列下方的每个单元格中输入评分（例如 `5`）并按 Enter。
+
+<Check>
+  列 **rating (note)** 会显示你的评分，且输入评分时会显示{" "}
+  <UiLabel name={m.notice_created_note()} />
+</Check>
+
+</Step>
+
+<Step n={5}>
+
+点击 <UiLabel name={m.query_view_sort()} /> > <UiLabel name={m.query_view_sort_add()} />，将第一个框设为 <UiLabel name={m.query_view_property_date()} />，第二个框设为 <UiLabel name={m.query_view_sort_old_new()} />。
+
+<Check>表格中的文献按日期从旧到新排序显示。</Check>
+
+</Step>
+
+<Step n={6}>
+
+点击结果数量（例如 <UiLabel name={m.query_view_results({ count: 4 })} />），然后点击 <UiLabel name={m.query_view_copy()} />。将表格粘贴到你的草稿中。
+
+<Check>表格出现在草稿中，并保留所有列。</Check>
+
+</Step>

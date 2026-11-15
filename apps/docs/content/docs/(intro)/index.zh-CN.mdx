@@ -1,0 +1,87 @@
+---
+title: "简介"
+searchTitle: "ZotLit 文档：安装配置、阅读、做笔记与引用"
+description: "ZotLit 连接 Zotero 与 Obsidian，无需 Zotero 插件即可阅读：浏览文献、阅读带高亮的 PDF、撰写文献笔记及引用。"
+---
+
+import { Card, Cards } from "fumadocs-ui/components/card";
+import { Step, Steps } from "fumadocs-ui/components/steps";
+import { Callout } from "@/components/callout";
+
+ZotLit 将你的 Zotero 文库带入 Obsidian。无需离开仓库，即可浏览文献、阅读带有 Zotero 高亮的 PDF，以及撰写文献笔记和插入引用。
+
+<Callout type="warn" title="从 v1 升级？">
+  v2
+  是一次包含破坏性变更的重大升级。现有的文献笔记和自定义模板无法直接沿用：在重新创建前，笔记将失去增量更新功能，自定义
+  Eta 模板也需要调整。升级前请阅读[从 v1 迁移](/docs/how-to/migrate-from-v1)。
+</Callout>
+
+<Callout type="info" title="从 2.1 升级？">
+  你现有的 2.1 文献笔记模板仍可继续工作。ZotLit
+  提供了单次转换功能，可将它们整合到配置方案文档中。在完成转换前，只有默认配置方案可以创建和更新笔记。在添加配置方案前，请阅读[从
+  2.1 模板迁移](/docs/how-to/migrate-from-2.1-templates)。
+</Callout>
+
+## 从这里开始 [#start-here]
+
+按照以下两步操作即可。ZotLit 直接从 Zotero 数据库读取文库，因此无需安装任何其他插件，即可浏览文库并阅读文献。
+
+<Steps>
+  <Step>
+    ### 安装 ZotLit [#install-zotlit]
+
+    [在 Obsidian 中安装并启用 ZotLit。](/docs/install-zotlit)
+
+  </Step>
+  <Step>
+    ### 打开你的文库 [#open-your-library]
+
+    [在文库视图中查找文献，在文库旁阅读，并撰写你的第一篇文献笔记。](/learn/connect-zotero-to-obsidian)
+
+  </Step>
+</Steps>
+
+根据任务需要随时进行补充配置：
+
+- 使用 Zotero 插件 ZotLit Companion [让 Zotero 与 Obsidian 保持同步](/docs/how-to/keep-zotero-and-obsidian-in-sync)，以便 Zotero 的最新更改能实时推送到 Obsidian，并通过 Zotero 菜单打开笔记。
+- 在边写边引用前[安装 Better BibTeX](/docs/how-to/insert-citations#citation-keys)。它能为每篇文献生成文献引用标识，供 ZotLit 引用使用。
+
+## 浏览文档 [#browse-the-docs]
+
+<Cards>
+  <Card
+    title="查找与阅读文献"
+    description="在 Obsidian 中查找 Zotero 文库中的文献，阅读带有高亮的 PDF，并将其提取到笔记中。"
+    href="/docs/find-and-read"
+  />
+  <Card
+    title="撰写与更新笔记"
+    description="为每篇文献撰写文献笔记，与 Zotero 保持同步更新，并将现有的 Zotero 笔记导入仓库。"
+    href="/docs/notes"
+  />
+  <Card
+    title="引用与导出"
+    description="在 Obsidian 中边写边引用文献，查看参考文献列表，并将带有引用的草稿导出为 Word 或 HTML。"
+    href="/docs/cite-and-export"
+  />
+  <Card
+    title="整理研究内容"
+    description="追踪阅读进度，将文献和高亮整理成表格、列表与统计。"
+    href="/docs/organize"
+  />
+  <Card
+    title="个性化定制"
+    description="自定义文献笔记：为不同文献配置笔记布局、文档属性、引用格式与模板规则。"
+    href="/docs/make-it-yours"
+  />
+  <Card
+    title="安装与故障排除"
+    description="连接 Zotero 与 Obsidian 并保持同步，解决条目无法显示或打开的问题。"
+    href="/docs/setup"
+  />
+  <Card
+    title="参考"
+    description="查阅设置选项、命令、主题钩子、协议操作以及模板契约。"
+    href="/docs/reference"
+  />
+</Cards>
