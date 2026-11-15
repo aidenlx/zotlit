@@ -22,13 +22,13 @@ Every read used to run on Obsidian's main thread. On a 10,000-item library in Ob
 
 Measured on the shipped worker adapter in Obsidian 1.14.4 (rAF gaps and `longtask` entries over the run; idle floor 19 ms):
 
-| Work | Library | Total | Longest frame gap | Long tasks |
-| --- | --- | --- | --- | --- |
-| Item index build (refresh, index, citekey snapshot, and path index together) | 10,000 items | 5.0 s | 19 ms | 0 |
-| Citekey snapshot | 10,000 items | 50–60 ms | 19 ms | 0 |
-| Citekey snapshot | 100,000 items | 360 ms | 83 ms | 1 (95–106 ms) |
-| Batch classify (update-all, before the confirmation) | 10,000 items | 0.4 s | 19 ms | 0 |
-| Batch classify (update-all, before the confirmation) | 100,000 items | 3.8 s | 50 ms | 1 (58 ms) |
+| Work                                                                         | Library       | Total    | Longest frame gap | Long tasks    |
+| ---------------------------------------------------------------------------- | ------------- | -------- | ----------------- | ------------- |
+| Item index build (refresh, index, citekey snapshot, and path index together) | 10,000 items  | 5.0 s    | 19 ms             | 0             |
+| Citekey snapshot                                                             | 10,000 items  | 50–60 ms | 19 ms             | 0             |
+| Citekey snapshot                                                             | 100,000 items | 360 ms   | 83 ms             | 1 (95–106 ms) |
+| Batch classify (update-all, before the confirmation)                         | 10,000 items  | 0.4 s    | 19 ms             | 0             |
+| Batch classify (update-all, before the confirmation)                         | 100,000 items | 3.8 s    | 50 ms             | 1 (58 ms)     |
 
 The in-process adapter on the main thread blocked 614 ms for the 10,000-item index and about 1.4 s for a 100,000-id classify. The long task that remains at 100,000 items is the renderer handling one large message: the citekey snapshot of a whole library, and the 100,000 item ids that classify reads and sends back. The citekey snapshot now streams in slices, measured before that change; the classify id list is still one message.
 

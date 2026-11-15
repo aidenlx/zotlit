@@ -26,15 +26,15 @@ This command builds the required workspace packages and development plugin bundl
 
 The generated tree is under `.scratch/acceptance-fixture`:
 
-| Path | Content |
-| --- | --- |
-| `.scratch/acceptance-fixture/zotero-data` | Zotero data directory |
-| `.scratch/acceptance-fixture/zotero-data/zotero.sqlite` | Generated Zotero database |
-| `.scratch/acceptance-fixture/zotero-data/styles` | Bundled CSL styles, plus the Fixture Spec's user-installed styles |
-| `.scratch/acceptance-fixture/linked-files` | Host-native files for linked-file attachments |
-| `.scratch/acceptance-fixture/zotero-profile` | Zotero profile whose preferences select the generated data directory |
-| `.scratch/acceptance-fixture/zt-fixture-vault` | Fixture Vault |
-| `.scratch/acceptance-fixture/zt-fixture-vault/.obsidian/plugins/zotlit` | Installed ZotLit development bundle and Fixture settings |
+| Path                                                                    | Content                                                              |
+| ----------------------------------------------------------------------- | -------------------------------------------------------------------- |
+| `.scratch/acceptance-fixture/zotero-data`                               | Zotero data directory                                                |
+| `.scratch/acceptance-fixture/zotero-data/zotero.sqlite`                 | Generated Zotero database                                            |
+| `.scratch/acceptance-fixture/zotero-data/styles`                        | Bundled CSL styles, plus the Fixture Spec's user-installed styles    |
+| `.scratch/acceptance-fixture/linked-files`                              | Host-native files for linked-file attachments                        |
+| `.scratch/acceptance-fixture/zotero-profile`                            | Zotero profile whose preferences select the generated data directory |
+| `.scratch/acceptance-fixture/zt-fixture-vault`                          | Fixture Vault                                                        |
+| `.scratch/acceptance-fixture/zt-fixture-vault/.obsidian/plugins/zotlit` | Installed ZotLit development bundle and Fixture settings             |
 
 `.scratch/acceptance-fixture` is a path only. The generated artifact is the Fixture.
 
@@ -67,11 +67,11 @@ The Fixture Vault contains generated Literature Notes, imported-note mirrors, co
 Each build copies three generated inputs to
 `attachments/excerpt-acceptance/` in the Fixture Vault:
 
-| File | Required outcome |
-| --- | --- |
+| File                    | Required outcome                                                                                                                                                                                                                                                                                                                                       |
+| ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `excerpt-rendering.pdf` | Render image and ink excerpts from the display intent. Its six pages cover rotations 0, 90, 180, and 270; a nonzero CropBox; UserUnit 2; small-point and large multi-path ink geometry; embedded Type3 CJK glyphs; explicit native Text and AcroForm Widget appearance streams; optional content; the maximum pixel budget; and the maximum dimension. |
-| `corrupt.pdf` | Return the explicit unavailable outcome. |
-| `encrypted.pdf` | Request a password in a PDF reader and return the explicit unavailable excerpt outcome. |
+| `corrupt.pdf`           | Return the explicit unavailable outcome.                                                                                                                                                                                                                                                                                                               |
+| `encrypted.pdf`         | Request a password in a PDF reader and return the explicit unavailable excerpt outcome.                                                                                                                                                                                                                                                                |
 
 The PDFs contain generated shapes only. Their source, declared SHA-256 values,
 and independent excerpt geometry are in
@@ -120,12 +120,12 @@ unrun baseline, not a pass.
 
 The configured Fixture keeps these source documents in `profile-examples/`, outside the template folder. You can select them with **Choose file…** without adding them to the installed Profiles:
 
-| File | Purpose |
-| --- | --- |
-| `profile-import-replacement-v1.md` | First version of a Profile import example. |
-| `profile-import-replacement-v2.md` | Second version of the same Profile. It has the same ID and a later version, for replacement checks. |
-| `profile-import-unavailable-style.md` | Profile import example that declares an unavailable citation style. |
-| `profile-import-partials.md` | Profile import example that bundles two Shared Partials. `book-details` is the name the vault already holds under different text, so import asks keep or replace. `reading-log` is new, so import writes it. |
+| File                                  | Purpose                                                                                                                                                                                                      |
+| ------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `profile-import-replacement-v1.md`    | First version of a Profile import example.                                                                                                                                                                   |
+| `profile-import-replacement-v2.md`    | Second version of the same Profile. It has the same ID and a later version, for replacement checks.                                                                                                          |
+| `profile-import-unavailable-style.md` | Profile import example that declares an unavailable citation style.                                                                                                                                          |
+| `profile-import-partials.md`          | Profile import example that bundles two Shared Partials. `book-details` is the name the vault already holds under different text, so import asks keep or replace. `reading-log` is new, so import writes it. |
 
 Each build writes a minimal saved layout. The first open shows the file explorer and search on the left. The right sidebar shows the Annotations, References, and Cited by tabs, then the Obsidian backlinks and outgoing links tabs. The ZotLit tabs are in this layout only when the build installs the plugin bundle. Obsidian writes its own layout to `workspace.json` while a session runs, so a rebuild is necessary to restore this preset.
 
@@ -229,16 +229,16 @@ Citations, and Show Formatted Citations, with the Pandoc Engine installed. Each
 page gives inputs, expected outcomes, and CLI commands. Inspect the named page's
 group in vault-wide answers because other Fixture pages cite the same Items.
 
-| Fixture Vault page | Purpose |
-| --- | --- |
-| `citation-only-test.md` | Run Set citation presentation, confirm a language, cancel a change, and disable ZotLit with the dialog open. The page states the expected note text and dialog state for each case. |
-| `citation-scan-forms.md` | Compare Pandoc citation forms, Citation Fragments, and normalised wikilinks across References, Cited By, the popover, CitationText, CLI, and export. |
-| `Scan target.md` | Provide an ordinary-space Literature Note target for the no-break-space and trailing-backslash links, as the only Literature Note of the My Library Item `PUBJRNL3` (`marshMarginaliaEvidence2019`). |
-| `citation-scan-exclusions.md` | Check code, math, frontmatter, HTML and Obsidian comments, plus a partially commented Citation Cluster and visible dollar-sign cases. |
-| `citation-scan-annotations.md` | Compare empty, labelled, whitespace-only, autolink, and embed uses of `PUPR5FG5`, then check source choices and immediate CLI reads after an edit. |
-| `citation-scan-errors.md` | Compare the reasons References and the CLI give for the declared unknown key, an ambiguous key, and an attachment-only empty link. |
-| `pandoc-export-scan-pipeline.md` | Run built-in export on a partially commented citation, a callout fence, and a fence on a list-marker line. Expect two Rougier citations. |
-| `pandoc-export-unclosed-math.md` | Check that unclosed display math runs to the end of the note. Expect zero citations and successful built-in export without a failure on either key (final review round). |
+| Fixture Vault page               | Purpose                                                                                                                                                                                              |
+| -------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `citation-only-test.md`          | Run Set citation presentation, confirm a language, cancel a change, and disable ZotLit with the dialog open. The page states the expected note text and dialog state for each case.                  |
+| `citation-scan-forms.md`         | Compare Pandoc citation forms, Citation Fragments, and normalised wikilinks across References, Cited By, the popover, CitationText, CLI, and export.                                                 |
+| `Scan target.md`                 | Provide an ordinary-space Literature Note target for the no-break-space and trailing-backslash links, as the only Literature Note of the My Library Item `PUBJRNL3` (`marshMarginaliaEvidence2019`). |
+| `citation-scan-exclusions.md`    | Check code, math, frontmatter, HTML and Obsidian comments, plus a partially commented Citation Cluster and visible dollar-sign cases.                                                                |
+| `citation-scan-annotations.md`   | Compare empty, labelled, whitespace-only, autolink, and embed uses of `PUPR5FG5`, then check source choices and immediate CLI reads after an edit.                                                   |
+| `citation-scan-errors.md`        | Compare the reasons References and the CLI give for the declared unknown key, an ambiguous key, and an attachment-only empty link.                                                                   |
+| `pandoc-export-scan-pipeline.md` | Run built-in export on a partially commented citation, a callout fence, and a fence on a list-marker line. Expect two Rougier citations.                                                             |
+| `pandoc-export-unclosed-math.md` | Check that unclosed display math runs to the end of the note. Expect zero citations and successful built-in export without a failure on either key (final review round).                             |
 
 Cases marked `(final review round)` state the intended outcomes for S1, S3, S4,
 and #1704. Check them again after that round merges. Annotation Citation links
@@ -261,11 +261,11 @@ Use these cases to compare the built-in and native export workflows in one Paire
 
 6. Compare the results with this checklist:
 
-   | Fixture Vault note | Built-in result | Native result |
-   | --- | --- | --- |
-   | `pandoc-export-success.md` | The export succeeds. Check the repeated source, Citation Fragments, Citation Run, literal citation, bibliography entries, and ordinary vault link. | The export succeeds. Check the same content against the built-in output. |
-   | `pandoc-export-error-intent.md` | The export stops because the `#cite:` target is not a Literature Note. | The export stops with `unresolved-citation-intent`. |
-   | `pandoc-export-missing-bibliography.md` | The export succeeds because ZotLit fetches the bibliography item. Check for the Xu citation and bibliography entry. | The export stops on the citeproc warning that `xuLiteratureNoteWhose2019` is missing. Add that Item to `references.json`, then check that the next run succeeds. |
+   | Fixture Vault note                      | Built-in result                                                                                                                                    | Native result                                                                                                                                                    |
+   | --------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+   | `pandoc-export-success.md`              | The export succeeds. Check the repeated source, Citation Fragments, Citation Run, literal citation, bibliography entries, and ordinary vault link. | The export succeeds. Check the same content against the built-in output.                                                                                         |
+   | `pandoc-export-error-intent.md`         | The export stops because the `#cite:` target is not a Literature Note.                                                                             | The export stops with `unresolved-citation-intent`.                                                                                                              |
+   | `pandoc-export-missing-bibliography.md` | The export succeeds because ZotLit fetches the bibliography item. Check for the Xu citation and bibliography entry.                                | The export stops on the citeproc warning that `xuLiteratureNoteWhose2019` is missing. Add that Item to `references.json`, then check that the next run succeeds. |
 
 Keep Obsidian and Paired Zotero open during this trial. Save the outputs and failure text with the trial result.
 
@@ -360,12 +360,12 @@ Zotero keeps remembered keys in `zotero-profile/localAPIKeys.json`. Clear them f
 
 A Scope Case is a named, saved Library Scope state.
 
-| Scope Case | Saved state |
-| --- | --- |
-| `all` | All Fixture Libraries take part in discovery. This is the default. |
-| `available` | Every selected Library is available. |
-| `partial` | One selected Library is unavailable. |
-| `unavailable` | No selected Library is available. |
+| Scope Case    | Saved state                                                        |
+| ------------- | ------------------------------------------------------------------ |
+| `all`         | All Fixture Libraries take part in discovery. This is the default. |
+| `available`   | Every selected Library is available.                               |
+| `partial`     | One selected Library is unavailable.                               |
+| `unavailable` | No selected Library is available.                                  |
 
 Select a Scope Case in an existing Fixture Vault without rebuilding the database:
 
@@ -391,30 +391,30 @@ Use `all`, `available`, `partial`, or `unavailable` in each command.
 
 A Vault Case is a named, saved Fixture Vault state. The Scope Case selects the saved Library Scope. The Vault Case selects everything else the vault holds: the settings file, the notes, the Profiles, and the template files. The `demo`, `graph`, and `docs` cases also hold only their own Items in the Zotero data.
 
-| Vault Case | Saved state |
-| --- | --- |
+| Vault Case   | Saved state                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `configured` | Current settings, the Books Profile, generated Literature Notes, and Imported Notes. This is the default. One Literature Note sits in the Books Profile folder and carries the Profile stamp `zotlit-profile: Books (V1StGXR8Z5jd)`; every other note is unstamped and belongs to the default Profile. It also seeds the graph's citation cases. The Fixture writes a Literature Note for My Library Items only, so `cited-work-node-test.md` cites three works without one — one key the `partial` Scope Case keeps, two it drops — and a fourth key that two Items hold, which stays ambiguous. `citation-only-test.md` carries its citation as its only link, and the `rougierTenSimpleRules2014` Literature Note cites a second Literature Note. The graph showcase adds a second citation web for screenshots and demonstrations: ten information-science Items — Bush, Nelson, Garfield, Small, Luhmann, Ahrens, Berners-Lee, Forte, Matuschak, and Engelbart — form three thematic clusters (personal knowledge management, citation analysis, and hypertext) linked by cross-citations and by three research-note vault pages (`knowledge-management-survey.md`, `citation-networks-notes.md`, `tools-for-thought.md`). Engelbart sits in the Shared Reading group and has no Literature Note, so it appears as a Cited Work Node. The vault cells showcase sets a vault property of every type a Bases table shows — text, a resolved, unresolved, and external link, checkbox, number, date, date and time, list, tags, and aliases, with empty and missing values — on seven of these Literature Notes, and records the types in `.obsidian/types.json`; `query-files/Vault cells.base` and `query-files/Vault cells.zotquery` show the same values in a Base and in a Query File's Table, to compare their cells side by side. The template folder also holds `zotlit-citation.md` and `zotlit-partial.book-details.md`. |
-| `fresh` | A vault with no notes, ZotLit installed, and no settings file. This is the new-user path. |
-| `upgrader` | A ZotLit v2.1 vault: version-9 settings, ejected Legacy Template Files with visible edits, and an edited Managed Frontmatter list. |
-| `demo` | A researcher's vault for screenshots and walkthroughs. `Papers/` holds the linked PDFs of two demo Items, Rougier et al. 2014 (`rougier2014`) and Ioannidis 2005 (`ioannidis2005`), and `Thesis/` holds a chapter draft that cites them. The vault has no test page, and notes render through the shipped templates. Its template folder holds one Profile document, `zotlit-profile.reading.md` ("Reading notes"), with no match: it adds a `year` property from one JSON-e `$eval`, and one rule that chooses which properties a note gets: a book gets `publisher`, any other item gets `journal`. The demo case also changes the Zotero data: it leaves out every test Item whose title a demo Item repeats (`RUGIER24` and `IANNP5A2`), with the notes, Attachments, and Annotations of those Items, so a title search finds each demo paper once. The demo Annotations are Zotero 10 reader output: a Paired Zotero drew each one with its own highlight, underline, note, and image tools, and the Spec keeps the rows it saved. One Ioannidis highlight, `XTPPV7Q3`, is an External Annotation, so its card in the annotation view shows the lock for screenshots of read-only Annotations. Its PDF does not hold that highlight, so when a Paired Zotero opens the Ioannidis PDF in its reader, Zotero imports the file again and erases the row; the next build restores it. The pages come from `packages/scripts/lib/fixture/demo-pages/`. |
-| `graph` | A researcher's vault for graph view screenshots. Its Zotero data holds only 29 real works on hypertext, citation analysis, and memory and note taking: the ten Items of the `configured` graph showcase, without their test collection and vault properties, and 19 more, such as Licklider 1960, Price 1965, Kleinberg 1999, Clark and Chalmers 1998, and Roediger and Karpicke 2006. Seven research notes in `Projects/`, `Topics/`, and `Reading log/` cite these works and link to one another. `literatures/` holds a Literature Note for each of the 26 works in My Library, in the shape the shipped templates render, with a reading note above the Annotations section; many of these reading notes cite other works, so the graph has edges from one paper to another. Engelbart 1962, Kessler 1963, and Ebbinghaus 1885 sit in the Shared Reading group and have no Literature Note, so each one appears as a Cited Work Node. The vault has no test page and no template folder. `.obsidian/graph.json` saves the global graph as a Citation Graph with author and title labels on, Literature Notes in the ZotLit accent color, and research notes in blue. Sync is disabled. The pages come from `packages/scripts/lib/fixture/graph-pages/`. |
-| `docs` | The shared vault of the docs lessons: a researcher who has just installed ZotLit. It writes no settings file and no Profile document, so ZotLit runs on its defaults and the Default Profile alone, and creating a note asks no Profile question. It holds no Literature Note and no `literatures/` folder, so the Library View shows the welcome banner's setup steps until the first note. The vault carries the demo case's `Papers/` and `Thesis/` pages, and its library is the demo papers plus three papers on reproducible research: Sandve et al. 2013 (`sandve2013`), a PDF in Zotero storage with five annotations in five colours (highlights, one underline, comments, tags); Wilson et al. 2014 (`wilson2014`), a PDF in storage with no annotation; and Munafò et al. 2017 (`munafo2017`), with no PDF. With the demo papers that gives three annotated PDFs, Rougier's image and ink annotations, and the collections "Reproducibility" and "Data visualization". The library holds four notes the reader wrote in Zotero, with no copy in the vault: the child note "Reading summary" on Ioannidis 2005; "Ten rules: what to change in my lab" on Sandve et al., with headings, a list, and Sandve's yellow highlight dragged in from the PDF with its citation; "Practices for our group" on Wilson et al., which cites Sandve; and the standalone note "Chapter 3 plan: reproducible analysis", filed in "Reproducibility", which cites Ioannidis and Munafò. Sandve's annotations are not reader output: each rectangle is the PDF's own line box for the quoted text, so the marks sit on the words. It has no group Library. Sync is disabled and Zotero's UI is English, as in `demo`. Live Updates stay off, as in `fresh`: a lesson that teaches them turns them on in its walk. |
+| `fresh`      | A vault with no notes, ZotLit installed, and no settings file. This is the new-user path.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| `upgrader`   | A ZotLit v2.1 vault: version-9 settings, ejected Legacy Template Files with visible edits, and an edited Managed Frontmatter list.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| `demo`       | A researcher's vault for screenshots and walkthroughs. `Papers/` holds the linked PDFs of two demo Items, Rougier et al. 2014 (`rougier2014`) and Ioannidis 2005 (`ioannidis2005`), and `Thesis/` holds a chapter draft that cites them. The vault has no test page, and notes render through the shipped templates. Its template folder holds one Profile document, `zotlit-profile.reading.md` ("Reading notes"), with no match: it adds a `year` property from one JSON-e `$eval`, and one rule that chooses which properties a note gets: a book gets `publisher`, any other item gets `journal`. The demo case also changes the Zotero data: it leaves out every test Item whose title a demo Item repeats (`RUGIER24` and `IANNP5A2`), with the notes, Attachments, and Annotations of those Items, so a title search finds each demo paper once. The demo Annotations are Zotero 10 reader output: a Paired Zotero drew each one with its own highlight, underline, note, and image tools, and the Spec keeps the rows it saved. One Ioannidis highlight, `XTPPV7Q3`, is an External Annotation, so its card in the annotation view shows the lock for screenshots of read-only Annotations. Its PDF does not hold that highlight, so when a Paired Zotero opens the Ioannidis PDF in its reader, Zotero imports the file again and erases the row; the next build restores it. The pages come from `packages/scripts/lib/fixture/demo-pages/`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| `graph`      | A researcher's vault for graph view screenshots. Its Zotero data holds only 29 real works on hypertext, citation analysis, and memory and note taking: the ten Items of the `configured` graph showcase, without their test collection and vault properties, and 19 more, such as Licklider 1960, Price 1965, Kleinberg 1999, Clark and Chalmers 1998, and Roediger and Karpicke 2006. Seven research notes in `Projects/`, `Topics/`, and `Reading log/` cite these works and link to one another. `literatures/` holds a Literature Note for each of the 26 works in My Library, in the shape the shipped templates render, with a reading note above the Annotations section; many of these reading notes cite other works, so the graph has edges from one paper to another. Engelbart 1962, Kessler 1963, and Ebbinghaus 1885 sit in the Shared Reading group and have no Literature Note, so each one appears as a Cited Work Node. The vault has no test page and no template folder. `.obsidian/graph.json` saves the global graph as a Citation Graph with author and title labels on, Literature Notes in the ZotLit accent color, and research notes in blue. Sync is disabled. The pages come from `packages/scripts/lib/fixture/graph-pages/`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| `docs`       | The shared vault of the docs lessons: a researcher who has just installed ZotLit. It writes no settings file and no Profile document, so ZotLit runs on its defaults and the Default Profile alone, and creating a note asks no Profile question. It holds no Literature Note and no `literatures/` folder, so the Library View shows the welcome banner's setup steps until the first note. The vault carries the demo case's `Papers/` and `Thesis/` pages, and its library is the demo papers plus three papers on reproducible research: Sandve et al. 2013 (`sandve2013`), a PDF in Zotero storage with five annotations in five colours (highlights, one underline, comments, tags); Wilson et al. 2014 (`wilson2014`), a PDF in storage with no annotation; and Munafò et al. 2017 (`munafo2017`), with no PDF. With the demo papers that gives three annotated PDFs, Rougier's image and ink annotations, and the collections "Reproducibility" and "Data visualization". The library holds four notes the reader wrote in Zotero, with no copy in the vault: the child note "Reading summary" on Ioannidis 2005; "Ten rules: what to change in my lab" on Sandve et al., with headings, a list, and Sandve's yellow highlight dragged in from the PDF with its citation; "Practices for our group" on Wilson et al., which cites Sandve; and the standalone note "Chapter 3 plan: reproducible analysis", filed in "Reproducibility", which cites Ioannidis and Munafò. Sandve's annotations are not reader output: each rectangle is the PDF's own line box for the quoted text, so the marks sit on the words. It has no group Library. Sync is disabled and Zotero's UI is English, as in `demo`. Live Updates stay off, as in `fresh`: a lesson that teaches them turns them on in its walk.                                                                                                                            |
 
 The Configured vault's template folder carries the two Template Documents the Template Workbench opens beside a Profile:
 
-| File | Content |
-| --- | --- |
-| `zotlit-citation.md` | The shipped Citation Template with one visible edit: the alternate branch inserts `cf. ` before the citation, so Shift+Enter and Enter read apart. |
+| File                             | Content                                                                                                                                                                                                                                       |
+| -------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `zotlit-citation.md`             | The shipped Citation Template with one visible edit: the alternate branch inserts `cf. ` before the citation, so Shift+Enter and Enter read apart.                                                                                            |
 | `zotlit-partial.book-details.md` | The Fixture's Shared Partial. The Books Profile note body calls it with `{% render "book-details" with zt as zt %}`. Delete the file, then create a Literature Note for a book: the create refuses and names the partial, and writes nothing. |
 
 The Upgrader vault's template folder carries the 2.1.x shapes the one-pass conversion folds:
 
-| File | Converts to |
-| --- | --- |
-| `zotlit-filename.liquid.md`, `zotlit-note.liquid.md`, `zotlit-content.liquid.md`, `zotlit-annotation.liquid.md` | The default Profile document. |
-| `zotlit-cite.liquid.md` | The main branch of `zotlit-citation.md`. |
-| `zotlit-cite2.eta.md` | Nothing. The pair is mixed-language, so the fold takes the Liquid side, the alternate branch keeps the built-in text, and this file stays in the vault and is named in the conversion notice. |
-| `zotlit-annotation-callout.liquid.md` | `zotlit-partial.annotation-callout.md`. |
+| File                                                                                                            | Converts to                                                                                                                                                                                   |
+| --------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `zotlit-filename.liquid.md`, `zotlit-note.liquid.md`, `zotlit-content.liquid.md`, `zotlit-annotation.liquid.md` | The default Profile document.                                                                                                                                                                 |
+| `zotlit-cite.liquid.md`                                                                                         | The main branch of `zotlit-citation.md`.                                                                                                                                                      |
+| `zotlit-cite2.eta.md`                                                                                           | Nothing. The pair is mixed-language, so the fold takes the Liquid side, the alternate branch keeps the built-in text, and this file stays in the vault and is named in the conversion notice. |
+| `zotlit-annotation-callout.liquid.md`                                                                           | `zotlit-partial.annotation-callout.md`.                                                                                                                                                       |
 
 Build the complete Fixture directly in a Vault Case:
 
@@ -464,10 +464,10 @@ pnpm fixture zotero
 
 The launcher uses the pinned Zotero version in `packages/scripts/lib/fixture/paired-zotero.ts`. On first use, it downloads the official macOS DMG or the Windows portable archive for the host architecture. It installs the application in a per-user, per-version cache:
 
-| Platform | Managed application |
-| --- | --- |
-| macOS | `~/Library/Caches/zotlit/zotero/<version>/Zotero.app` |
-| Windows | `%LOCALAPPDATA%\zotlit\zotero\<version>\<target>\Zotero_<target>` |
+| Platform | Managed application                                               |
+| -------- | ----------------------------------------------------------------- |
+| macOS    | `~/Library/Caches/zotlit/zotero/<version>/Zotero.app`             |
+| Windows  | `%LOCALAPPDATA%\zotlit\zotero\<version>\<target>\Zotero_<target>` |
 
 All worktrees reuse the cache. Windows selects the `win-arm64`, `win-x64`, or `win32` target from the Node.js host architecture. The Fixture profile disables automatic application updates, first-run prompts, sync, and backups so the managed application stays on the pinned version.
 
@@ -506,11 +506,11 @@ Beside that bundled set, each build copies the styles the Fixture Spec declares 
 
 Before regeneration, align these version declarations with the target Zotero release:
 
-| Declaration | File |
-| --- | --- |
-| `PINNED_ZOTERO_VERSION` | `packages/scripts/lib/fixture/paired-zotero.ts` |
-| `PRISTINE_SCHEMA_VERSIONS` | `packages/scripts/lib/fixture/pristine.ts` |
-| `SUPPORTED_SCHEMA_VERSIONS` | `packages/db/src/queries/schema-version.ts` |
+| Declaration                 | File                                            |
+| --------------------------- | ----------------------------------------------- |
+| `PINNED_ZOTERO_VERSION`     | `packages/scripts/lib/fixture/paired-zotero.ts` |
+| `PRISTINE_SCHEMA_VERSIONS`  | `packages/scripts/lib/fixture/pristine.ts`      |
+| `SUPPORTED_SCHEMA_VERSIONS` | `packages/db/src/queries/schema-version.ts`     |
 
 Raise the pinned application version and the pristine schema values together. Widen the supported schema ranges when the target release writes versions outside the current ranges.
 
@@ -552,11 +552,11 @@ http://localhost:3000/workbench#zotlit-connect=<code>&port=23120
 
 The default allowed origin is `http://localhost:3000`, the docs development server's origin. The hostname is part of the origin: use `localhost` for the page. The page exchanges the code, removes the fragment, and loads the Fixture's Books Profile and selected Item. Save writes to the Fixture Vault. Restart the bridge to rebuild the Fixture and receive a fresh code.
 
-| Flag | Default | Effect |
-| --- | --- | --- |
-| `--port <number>` | `23120` | Sets the bridge's loopback port. Use the same value in the launch URL's `port` field. |
-| `--origin <origin>` | `http://localhost:3000` | Sets the one allowed Workbench origin, including its scheme, hostname, and port. |
-| `--conflict-next-save` | `false` | Makes the next Save encounter an external revision, for conflict handling checks. |
+| Flag                   | Default                 | Effect                                                                                |
+| ---------------------- | ----------------------- | ------------------------------------------------------------------------------------- |
+| `--port <number>`      | `23120`                 | Sets the bridge's loopback port. Use the same value in the launch URL's `port` field. |
+| `--origin <origin>`    | `http://localhost:3000` | Sets the one allowed Workbench origin, including its scheme, hostname, and port.      |
+| `--conflict-next-save` | `false`                 | Makes the next Save encounter an external revision, for conflict handling checks.     |
 
 For example, start a bridge on another port and make its next Save conflict:
 
@@ -586,10 +586,10 @@ Requirements:
 
 Each suite file builds its own Fixture and vaults under `.scratch/`. `.scratch/acceptance-fixture`, the Development Vault, and a Paired Run that you started stay as they are, so you can keep them open during a run.
 
-| Suite | Fixture | Vault | Zotero |
-| --- | --- | --- | --- |
-| End-to-end Run area files (`packages/e2e/src/*.e2e.ts` except `paired-run`, `citation-index`, `query-cancel`, `walkthrough`) | `.scratch/e2e-fixture` | `.scratch/e2e-fixture-vault-<worktree-folder-name>`, and one `.scratch/e2e-<name>-<worktree-folder-name>` vault for each test that needs a vault of its own | None. The suite reads the database from disk. |
-| `paired-run.e2e.ts` | `.scratch/e2e-paired-fixture` | `.scratch/e2e-paired-vault-<worktree-folder-name>` | Its own Paired Zotero, with the Local API open. |
+| Suite                                                                                                                        | Fixture                       | Vault                                                                                                                                                       | Zotero                                          |
+| ---------------------------------------------------------------------------------------------------------------------------- | ----------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------- |
+| End-to-end Run area files (`packages/e2e/src/*.e2e.ts` except `paired-run`, `citation-index`, `query-cancel`, `walkthrough`) | `.scratch/e2e-fixture`        | `.scratch/e2e-fixture-vault-<worktree-folder-name>`, and one `.scratch/e2e-<name>-<worktree-folder-name>` vault for each test that needs a vault of its own | None. The suite reads the database from disk.   |
+| `paired-run.e2e.ts`                                                                                                          | `.scratch/e2e-paired-fixture` | `.scratch/e2e-paired-vault-<worktree-folder-name>`                                                                                                          | Its own Paired Zotero, with the Local API open. |
 
 Each vault starts new, with no stored state. The folder name includes the worktree, so runs in two worktrees use different vaults. At the end, it stops its Paired Zotero, removes its vault and the vault's local storage, and deletes its Fixture. If a run stops before this cleanup, the next run removes what it left first. The two files run one after the other, because both use the one desktop Obsidian.
 
@@ -633,12 +633,12 @@ This count includes the Fixture Spec Items of the group Library. Its synthetic I
 
 Each query target in the synthetic Items has a rare value (0.1% of the Items), a common value (10%), and a dominant value (60% or more). A query on a rare or common value is selective; a query on a dominant value reads most of the Library:
 
-| Target | Rare | Common | Dominant |
-| --- | --- | --- | --- |
-| Tag | `stress-rare` | `stress-common` | `stress-dominant` |
-| Collection | `Stress Build/Common/Rare` | `Stress Build/Common` | `Stress Build/Dominant` |
-| Item type | `thesis` | `book` | `journalArticle` |
-| `publicationTitle` | `Stress Rare Journal` | `Stress Common Journal` | `Stress Dominant Journal` |
+| Target             | Rare                       | Common                  | Dominant                  |
+| ------------------ | -------------------------- | ----------------------- | ------------------------- |
+| Tag                | `stress-rare`              | `stress-common`         | `stress-dominant`         |
+| Collection         | `Stress Build/Common/Rare` | `Stress Build/Common`   | `Stress Build/Dominant`   |
+| Item type          | `thesis`                   | `book`                  | `journalArticle`          |
+| `publicationTitle` | `Stress Rare Journal`      | `Stress Common Journal` | `Stress Dominant Journal` |
 
 The `Stress Build` Collection holds the other three Collections and no Items of its own. One Item of each filled Library has the title `Stress Build unique title`, and every other title is also unique in its Library. Modification times are spread across the Items. `STRESS_LIBRARY_VALUES` in `packages/scripts/lib/fixture/spec.ts` states the exact rule for each value.
 
@@ -675,6 +675,7 @@ For a check that needs database writes, use a named copy of the built Zotero dat
    ```
 
    The command prints the absolute `.scratch/acceptance-fixture/forks/scan-check` path. An existing name fails and keeps its contents. `pnpm fixture fork scan-check` runs the same command through Turbo.
+
 2. Hold a Desktop Slot for the app check as `/obsidian-debug` describes. Read and save the current Device Override:
 
    ```sh

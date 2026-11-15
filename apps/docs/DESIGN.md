@@ -63,19 +63,19 @@ Owned layout slots:
 
 ## Tokens
 
-| Role | Light | Dark | Maps to |
-| --- | --- | --- | --- |
-| Ground (page) | `#f7f5f0` | `#121418` | `--color-fd-background` |
-| Surface (cards, windows, popovers) | `#ffffff` | `#1b1e24` | `--color-fd-card`, `--color-fd-popover` |
-| Ink (text) | `#1b2029` | `#e9e6df` | `--color-fd-foreground`, `--color-fd-card-foreground`, `--color-fd-popover-foreground`, `--color-fd-secondary-foreground`, `--color-fd-accent-foreground` |
-| Muted (secondary text) | `#5f6672` | `#9b978f` | `--color-fd-muted-foreground` |
-| Line (hairlines) | `#e3dfd6` | `#2d3037` | `--color-fd-border` |
-| Accent text tone (accent text, accent fills that carry text) | `#b9461a` | `#f0793f` | `--color-fd-primary` |
-| Text on the accent fill | `#ffffff` | `#121418` | `--color-fd-primary-foreground` |
-| Accent (rings, dots, rules, large numerals) | `#e8622c` | `#f0793f` | `--color-fd-ring` |
-| Quiet fill (hover rows, code, chips)¹ | `#f0ede6` | `#23262d` | `--color-fd-muted`, `--color-fd-secondary` |
-| Warm tint (accent hover, notices)¹ | `#fbf1e6` | `#2a221d` | `--color-fd-accent` |
-| Highlighter | Zotero yellow `#ffd400` at 48% | at 30% | one marked phrase per page |
+| Role                                                         | Light                          | Dark      | Maps to                                                                                                                                                   |
+| ------------------------------------------------------------ | ------------------------------ | --------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Ground (page)                                                | `#f7f5f0`                      | `#121418` | `--color-fd-background`                                                                                                                                   |
+| Surface (cards, windows, popovers)                           | `#ffffff`                      | `#1b1e24` | `--color-fd-card`, `--color-fd-popover`                                                                                                                   |
+| Ink (text)                                                   | `#1b2029`                      | `#e9e6df` | `--color-fd-foreground`, `--color-fd-card-foreground`, `--color-fd-popover-foreground`, `--color-fd-secondary-foreground`, `--color-fd-accent-foreground` |
+| Muted (secondary text)                                       | `#5f6672`                      | `#9b978f` | `--color-fd-muted-foreground`                                                                                                                             |
+| Line (hairlines)                                             | `#e3dfd6`                      | `#2d3037` | `--color-fd-border`                                                                                                                                       |
+| Accent text tone (accent text, accent fills that carry text) | `#b9461a`                      | `#f0793f` | `--color-fd-primary`                                                                                                                                      |
+| Text on the accent fill                                      | `#ffffff`                      | `#121418` | `--color-fd-primary-foreground`                                                                                                                           |
+| Accent (rings, dots, rules, large numerals)                  | `#e8622c`                      | `#f0793f` | `--color-fd-ring`                                                                                                                                         |
+| Quiet fill (hover rows, code, chips)¹                        | `#f0ede6`                      | `#23262d` | `--color-fd-muted`, `--color-fd-secondary`                                                                                                                |
+| Warm tint (accent hover, notices)¹                           | `#fbf1e6`                      | `#2a221d` | `--color-fd-accent`                                                                                                                                       |
+| Highlighter                                                  | Zotero yellow `#ffd400` at 48% | at 30%    | one marked phrase per page                                                                                                                                |
 
 ¹ Derived for the Fumadocs token set: the light values come from the lesson
 prototype's chip and fix-panel fills; the dark values are set to sit between
@@ -89,20 +89,20 @@ large numerals, through `--color-fd-ring`. In dark the two are one colour.
 
 Measured contrast (WCAG 2.x):
 
-| Pair | Light | Dark |
-| --- | --- | --- |
-| Ink on ground | 15.0:1 | 14.8:1 |
-| Ink on surface | 16.3:1 | 13.4:1 |
-| Ink on quiet fill | 14.0:1 | 12.2:1 |
-| Muted on ground | 5.3:1 | 6.3:1 |
-| Muted on surface | 5.8:1 | 5.7:1 |
-| Muted on quiet fill | 4.9:1 | 5.2:1 |
-| Accent text on ground | 4.9:1 | 6.6:1 |
-| Accent text on surface | 5.3:1 | 6.0:1 |
-| Accent text on quiet fill | 4.5:1 (4.54) | 5.4:1 |
-| Accent text on warm tint | 4.8:1 | 5.6:1 |
-| Text on the accent fill | 5.3:1 (white) | 6.6:1 (ground) |
-| Accent (ring) on ground | 3.1:1 | 6.6:1 |
+| Pair                      | Light         | Dark           |
+| ------------------------- | ------------- | -------------- |
+| Ink on ground             | 15.0:1        | 14.8:1         |
+| Ink on surface            | 16.3:1        | 13.4:1         |
+| Ink on quiet fill         | 14.0:1        | 12.2:1         |
+| Muted on ground           | 5.3:1         | 6.3:1          |
+| Muted on surface          | 5.8:1         | 5.7:1          |
+| Muted on quiet fill       | 4.9:1         | 5.2:1          |
+| Accent text on ground     | 4.9:1         | 6.6:1          |
+| Accent text on surface    | 5.3:1         | 6.0:1          |
+| Accent text on quiet fill | 4.5:1 (4.54)  | 5.4:1          |
+| Accent text on warm tint  | 4.8:1         | 5.6:1          |
+| Text on the accent fill   | 5.3:1 (white) | 6.6:1 (ground) |
+| Accent (ring) on ground   | 3.1:1         | 6.6:1          |
 
 The Zotero annotation colours (`--z-yellow`, `--z-red`, …) appear only where
 they mean Zotero highlights: in recordings and inside the app windows on the
@@ -116,12 +116,12 @@ alone.
 
 Four faces, four roles:
 
-| Face | Role |
-| --- | --- |
-| **Gelasio** (serif) | Content & display: headings, titles, descriptions/ledes/standfirsts, feature descriptions, editorial annotations |
-| **Inter** (sans, unpreloaded) | Prose body & chrome: markdown running text, sidebar, TOC, buttons, search |
+| Face                                                 | Role                                                                                                                                                                                                  |
+| ---------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Gelasio** (serif)                                  | Content & display: headings, titles, descriptions/ledes/standfirsts, feature descriptions, editorial annotations                                                                                      |
+| **Inter** (sans, unpreloaded)                        | Prose body & chrome: markdown running text, sidebar, TOC, buttons, search                                                                                                                             |
 | **IBM Plex Mono** (weights 400/500/600, unpreloaded) | The **"Machine" voice**: code, version chips, numerals that count or order, meta lines, and every UPPERCASE apparatus label (home nav, landing labels, blog & changelog dates). Drives `--font-mono`. |
-| **Archivo** (subset woff2) | Wordmark only — subset to exactly the "ZotLit" glyphs |
+| **Archivo** (subset woff2)                           | Wordmark only — subset to exactly the "ZotLit" glyphs                                                                                                                                                 |
 
 The Journal prototypes set Newsreader and Source Sans 3 in the serif and sans
 roles; whether the site moves to those faces is an open owner decision.
@@ -155,12 +155,12 @@ Chinese face in the same voice. The Latin face stays first in every stack, so
 Latin words, numerals and code inside Chinese text keep Gelasio, Inter and Plex
 Mono; the Chinese face sets the Chinese characters.
 
-| Role | Chinese face |
-| --- | --- |
+| Role                           | Chinese face                                                                                                                |
+| ------------------------------ | --------------------------------------------------------------------------------------------------------------------------- |
 | Serif (display, ledes, quotes) | **LXGW WenKai GB Screen** (霞鹜文楷 GB Screen: Kai style, mainland GB glyph forms, the screen cut, one weight 400, webfont) |
-| Sans (prose body, chrome) | **Noto Sans SC** (思源黑体, variable 100–900, webfont); an installed Source Han Sans SC or Noto Sans CJK SC takes its place |
-| Mono (Machine voice) | IBM Plex Mono for Latin, then Noto Sans SC |
-| Wordmark | Archivo, unchanged |
+| Sans (prose body, chrome)      | **Noto Sans SC** (思源黑体, variable 100–900, webfont); an installed Source Han Sans SC or Noto Sans CJK SC takes its place |
+| Mono (Machine voice)           | IBM Plex Mono for Latin, then Noto Sans SC                                                                                  |
+| Wordmark                       | Archivo, unchanged                                                                                                          |
 
 Chinese text follows these rules:
 
@@ -581,20 +581,21 @@ explains, and each fact appears once (see The label voice).
   unitless line-height, from the role classes in
   `src/components/learn/lesson-mdx.tsx`:
 
-  | Role | Size | Line-height | Carries |
-  | --- | --- | --- | --- |
-  | Label | 11px (0.6875rem), mono uppercase | 1.25 | "You end with", the shell's "Learn", the player's time |
-  | Meta | 15px (0.9375rem) | 1.45 | the minutes, the needs and note, the progress count, buttons, card meta |
-  | Body | 17px (1.0625rem) | 1.55 | the lede and every step text: action, check line, fix, figure table |
-  | Title | 20px (1.25rem) | 1.25 | step titles, the panel title, the outcome, card titles, the wordmark |
-  | Section | 28px (1.75rem) | 1.2 | the course page's section heading only |
-  | Display | 38px (2.375rem), 34px below 561px | 1.12 | the H1 |
+  | Role    | Size                              | Line-height | Carries                                                                 |
+  | ------- | --------------------------------- | ----------- | ----------------------------------------------------------------------- |
+  | Label   | 11px (0.6875rem), mono uppercase  | 1.25        | "You end with", the shell's "Learn", the player's time                  |
+  | Meta    | 15px (0.9375rem)                  | 1.45        | the minutes, the needs and note, the progress count, buttons, card meta |
+  | Body    | 17px (1.0625rem)                  | 1.55        | the lede and every step text: action, check line, fix, figure table     |
+  | Title   | 20px (1.25rem)                    | 1.25        | step titles, the panel title, the outcome, card titles, the wordmark    |
+  | Section | 28px (1.75rem)                    | 1.2         | the course page's section heading only                                  |
+  | Display | 38px (2.375rem), 34px below 561px | 1.12        | the H1                                                                  |
 
   A lesson page sets five sizes (label, meta, body, title, display) and the
   course page six. Inline code in step text is mono 15px; a UI label is
   semibold at the text's own size. In a step, an `ActionLink`
   takes the meta size, an inline `Command` the text's size, and a block
   `Command` its name at the title size. Step titles carry the lesson's only H2 style.
+
 - **Shell.** The course sits outside the docs layout: a top bar (the
   wordmark, a mono "Learn" label, then "All lessons" and "Docs" as muted
   links, over a hairline) and one centred column, 720px at most, with 20px

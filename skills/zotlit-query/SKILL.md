@@ -20,11 +20,11 @@ metadata:
 
 Start with what one row should represent. Read `zotlit:query-guide topic=datasets` for the current universes and the paths between them.
 
-| Research task | Starting dataset |
-| --- | --- |
-| Plan reading, find missing PDFs, or list papers without marks | Items |
-| Check file availability or identify broken links and duplicate PDFs | Attachments |
-| Read highlights, notes, or other reading evidence | Annotations |
+| Research task                                                       | Starting dataset |
+| ------------------------------------------------------------------- | ---------------- |
+| Plan reading, find missing PDFs, or list papers without marks       | Items            |
+| Check file availability or identify broken links and duplicate PDFs | Attachments      |
+| Read highlights, notes, or other reading evidence                   | Annotations      |
 
 For a question about papers that depends on their files or marks, keep the answer at paper level and use related records as evidence. Read `zotlit:query-guide topic=filter` for Relation List navigation, key selection, and Library scope warnings. Include papers with no related evidence when the question asks what remains unread or unavailable.
 

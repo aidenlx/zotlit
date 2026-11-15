@@ -41,4 +41,3 @@ The Reader Surface State lives in the Reader Surface Model (`reader-surface-mode
 - `apps/obsidian` no longer depends on zustand: the Workbench left it in #1946.
 - The per-Annotation facts a refresh reads are ingested in one update.
 - Watchers of one derived atom hear a change together, in the order its node was first built; the Mark Popup Host watches its own atom and is built after the owners, so an editor that closes is still let go before the host redraws.
-

@@ -233,11 +233,10 @@ export function layerSource(
       });
       const databaseGenerations = makeDatabaseGenerations();
       const clients = yield* makeClientRef(
-        Effect.suspend(() =>
-          Effect.fail(
+        Effect.failSync(
+          () =>
             Ref.getUnsafe(state).lastError ??
-              new DbUnavailable({ message: "No database source is open" }),
-          ),
+            new DbUnavailable({ message: "No database source is open" }),
         ),
       );
 

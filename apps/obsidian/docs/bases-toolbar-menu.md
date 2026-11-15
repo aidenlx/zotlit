@@ -13,16 +13,16 @@ To check a newer version:
 1. Run `/obsidian-asar-extract` for that version.
 2. From `node_modules/.ob-rev-<version>/`, run the searches below and compare with the sections of this file.
 
-| Fact                                          | Search                                                                          |
-| --------------------------------------------- | ------------------------------------------------------------------------------- |
-| Page host: `show`, `back`, `displayPage`      | `rg -n 'pageStack' app.js` (the match beside `bases-toolbar-menu-container-header`) |
-| Header and form CSS                           | `rg -n 'bases-toolbar-menu-container-header\|bases-toolbar-menu-form' app.css`  |
-| Properties page, Edit property page           | `rg -n 'bases-properties-page\|labelEditProperty' app.js`                       |
-| Views page, Configure view page               | `rg -n 'bases-views-page\|view-config-menu' app.js`                             |
-| Formula editor, status line, debounce         | `rg -n 'formula-editor-status' app.js app.css`                                  |
-| Key dispatch                                  | `rg -n 'prototype.onKeyEvent\|prototype.handleKey' app.js`                      |
-| Menu strings                                  | `rg -n 'actionSetDefaultView\|labelEditProperty\|actionDeleteFormula' i18n.js`  |
-| Menu layers                                   | `rg -n 'layer-popover:\|layer-menu:' app.css`                                   |
+| Fact                                     | Search                                                                              |
+| ---------------------------------------- | ----------------------------------------------------------------------------------- |
+| Page host: `show`, `back`, `displayPage` | `rg -n 'pageStack' app.js` (the match beside `bases-toolbar-menu-container-header`) |
+| Header and form CSS                      | `rg -n 'bases-toolbar-menu-container-header\|bases-toolbar-menu-form' app.css`      |
+| Properties page, Edit property page      | `rg -n 'bases-properties-page\|labelEditProperty' app.js`                           |
+| Views page, Configure view page          | `rg -n 'bases-views-page\|view-config-menu' app.js`                                 |
+| Formula editor, status line, debounce    | `rg -n 'formula-editor-status' app.js app.css`                                      |
+| Key dispatch                             | `rg -n 'prototype.onKeyEvent\|prototype.handleKey' app.js`                          |
+| Menu strings                             | `rg -n 'actionSetDefaultView\|labelEditProperty\|actionDeleteFormula' i18n.js`      |
+| Menu layers                              | `rg -n 'layer-popover:\|layer-menu:' app.css`                                       |
 
 ## Page-stack model
 
@@ -47,14 +47,14 @@ toolbar button ── click ──▶ menu host (div.menu.bases-toolbar-menu on 
 
 Ways to enter a page:
 
-| Entry                                              | Opens                                                              |
-| -------------------------------------------------- | ------------------------------------------------------------------ |
-| Chevron or ArrowRight on a property row            | Edit property                                                      |
-| Chevron or ArrowRight on a view row                | Configure view                                                     |
-| Add "name" property row (Properties)               | Edit property, as a new property                                   |
-| Add formula row (Properties)                       | Edit property, as a new formula                                    |
-| Add view row (Views)                               | Configure view, as a new view                                      |
-| Right-click on the Views toolbar button            | Views menu with Configure view of the current view above the list  |
+| Entry                                   | Opens                                                             |
+| --------------------------------------- | ----------------------------------------------------------------- |
+| Chevron or ArrowRight on a property row | Edit property                                                     |
+| Chevron or ArrowRight on a view row     | Configure view                                                    |
+| Add "name" property row (Properties)    | Edit property, as a new property                                  |
+| Add formula row (Properties)            | Edit property, as a new formula                                   |
+| Add view row (Views)                    | Configure view, as a new view                                     |
+| Right-click on the Views toolbar button | Views menu with Configure view of the current view above the list |
 
 ## Anatomy
 
@@ -77,48 +77,48 @@ div.menu.bases-toolbar-menu                       --input-height: 28px · z-inde
 
 ### Header
 
-| Part            | Declarations                                                                                                                                            |
-| --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Header          | `display: flex; padding: var(--size-4-1)`                                                                                                               |
-| `.back-button`  | `display: flex; flex-grow: 1; align-items: center; gap: var(--size-4-1); padding: var(--size-2-2); font-size: var(--font-ui-small); font-weight: var(--font-medium); border-radius: var(--radius-s); corner-shape: var(--corner-shape)` |
-| Back hover      | `background-color: var(--background-modifier-hover)`, under `@media (hover: hover)`                                                                     |
-| `.back-icon`, `.close-icon` | `color: var(--text-muted)`; `.close-icon` adds `padding: var(--size-2-2)` and `--text-normal` on hover                                      |
+| Part                        | Declarations                                                                                                                                                                                                                            |
+| --------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Header                      | `display: flex; padding: var(--size-4-1)`                                                                                                                                                                                               |
+| `.back-button`              | `display: flex; flex-grow: 1; align-items: center; gap: var(--size-4-1); padding: var(--size-2-2); font-size: var(--font-ui-small); font-weight: var(--font-medium); border-radius: var(--radius-s); corner-shape: var(--corner-shape)` |
+| Back hover                  | `background-color: var(--background-modifier-hover)`, under `@media (hover: hover)`                                                                                                                                                     |
+| `.back-icon`, `.close-icon` | `color: var(--text-muted)`; `.close-icon` adds `padding: var(--size-2-2)` and `--text-normal` on hover                                                                                                                                  |
 
 The header holds a `.menu-title` rule next to `.back-button` with the same declarations. The pages read here use `.back-button`.
 
 ### Form
 
-| Part                                  | Declarations                                                                                                         |
-| ------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
-| `.bases-toolbar-menu-form`            | `display: flex; flex-direction: column; gap: var(--size-4-2); padding: var(--size-4-1) var(--size-4-2) var(--size-4-2); font-size: var(--font-ui-small); overflow-y: auto; min-height: 0` |
-| `.input-row-label`                    | `display: flex; align-items: center; gap: var(--size-2-1); padding: var(--size-2-2) var(--size-2-1); color: var(--text-normal)` |
-| `.input-row-content`                  | `display: flex; align-items: center; gap: 0 var(--size-4-1); width: 100%; min-height: var(--input-height)`            |
-| Controls in `.input-row-content`      | `flex-grow: 1` on `.combobox-button`, `button`, `select`, `textarea`, `input`                                          |
-| `.mod-error` on those controls        | `box-shadow: 0 0 0 var(--border-width) var(--background-modifier-error)`                                              |
-| `.slider-value`                       | `padding: 0 var(--size-2-1)`                                                                                         |
-| `.help-icon` (in a label)             | `--icon-size: var(--icon-xs); color: var(--text-faint); padding: var(--size-2-1) var(--size-2-2)`; a click opens the Bases functions page of the docs |
+| Part                             | Declarations                                                                                                                                                                              |
+| -------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `.bases-toolbar-menu-form`       | `display: flex; flex-direction: column; gap: var(--size-4-2); padding: var(--size-4-1) var(--size-4-2) var(--size-4-2); font-size: var(--font-ui-small); overflow-y: auto; min-height: 0` |
+| `.input-row-label`               | `display: flex; align-items: center; gap: var(--size-2-1); padding: var(--size-2-2) var(--size-2-1); color: var(--text-normal)`                                                           |
+| `.input-row-content`             | `display: flex; align-items: center; gap: 0 var(--size-4-1); width: 100%; min-height: var(--input-height)`                                                                                |
+| Controls in `.input-row-content` | `flex-grow: 1` on `.combobox-button`, `button`, `select`, `textarea`, `input`                                                                                                             |
+| `.mod-error` on those controls   | `box-shadow: 0 0 0 var(--border-width) var(--background-modifier-error)`                                                                                                                  |
+| `.slider-value`                  | `padding: 0 var(--size-2-1)`                                                                                                                                                              |
+| `.help-icon` (in a label)        | `--icon-size: var(--icon-xs); color: var(--text-faint); padding: var(--size-2-1) var(--size-2-2)`; a click opens the Bases functions page of the docs                                     |
 
 ### Option groups
 
 A layout can declare groups of options. A group renders as a collapsible section that starts collapsed.
 
-| Part                      | Declarations                                                                                                         |
-| ------------------------- | -------------------------------------------------------------------------------------------------------------------- |
-| `.input-group-container`  | `display: flex; flex-direction: column; gap: var(--size-4-2)`                                                         |
-| `.input-group-divider`    | A rule that bleeds to the menu edges: `margin-inline: calc(var(--size-4-2) * -1); width: calc(100% + var(--size-4-4)); border-top: var(--border-width) solid var(--background-modifier-border)`. After an `.input-row`, `margin-top: var(--size-4-1)` |
-| `.input-group-header`     | `display: flex; align-items: center; gap: var(--size-4-2); font-size: var(--font-ui-small); font-weight: var(--font-semibold)`; holds `.collapse-icon` (`is-collapsed`) and `.input-group-header-text`; a click expands or collapses |
-| `.input-group-content`    | `display: flex; flex-direction: column; gap: var(--size-2-3)`                                                         |
+| Part                     | Declarations                                                                                                                                                                                                                                          |
+| ------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `.input-group-container` | `display: flex; flex-direction: column; gap: var(--size-4-2)`                                                                                                                                                                                         |
+| `.input-group-divider`   | A rule that bleeds to the menu edges: `margin-inline: calc(var(--size-4-2) * -1); width: calc(100% + var(--size-4-4)); border-top: var(--border-width) solid var(--background-modifier-border)`. After an `.input-row`, `margin-top: var(--size-4-1)` |
+| `.input-group-header`    | `display: flex; align-items: center; gap: var(--size-4-2); font-size: var(--font-ui-small); font-weight: var(--font-semibold)`; holds `.collapse-icon` (`is-collapsed`) and `.input-group-header-text`; a click expands or collapses                  |
+| `.input-group-content`   | `display: flex; flex-direction: column; gap: var(--size-2-3)`                                                                                                                                                                                         |
 
 ### Formula editor
 
-| Part                                   | Declarations                                                                                                         |
-| -------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
-| `.formula-editor-container`            | `width: 100%`; holds `.formula-editor` and `.formula-editor-status`                                                    |
-| `.formula-editor`                      | A CodeMirror 6 host drawn as a text area: `background-color: var(--background-modifier-form-field); border: var(--input-border-width) solid var(--background-modifier-border); border-radius: var(--textarea-radius, var(--input-radius))`; focus uses `--background-modifier-border-focus` and `--input-border-width-focus` |
-| In the form                            | `resize: both; overflow: auto; min-width: 100%; max-width: 260px`; `.cm-content` has `min-height: calc(var(--input-height) * 3)`  |
-| Text                                   | `.cm-scroller` uses `--font-monospace`, `--font-small`, `--code-normal`; the placeholder uses `--font-interface`, `--font-ui-small`, `--text-faint` |
-| `.formula-editor-status`               | `display: flex; align-items: center; margin-top: var(--size-4-1); font-size: var(--font-ui-smaller); color: var(--text-success)`; `.mod-empty` uses `--text-faint`, `.mod-error` uses `--text-error`; `.status-icon` uses `--icon-xs` |
-| In the Configure view form (`.view-config-menu`) | `.cm-content` has `min-height: var(--input-height)`, and the status line shows only with `.mod-error`                |
+| Part                                             | Declarations                                                                                                                                                                                                                                                                                                                 |
+| ------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `.formula-editor-container`                      | `width: 100%`; holds `.formula-editor` and `.formula-editor-status`                                                                                                                                                                                                                                                          |
+| `.formula-editor`                                | A CodeMirror 6 host drawn as a text area: `background-color: var(--background-modifier-form-field); border: var(--input-border-width) solid var(--background-modifier-border); border-radius: var(--textarea-radius, var(--input-radius))`; focus uses `--background-modifier-border-focus` and `--input-border-width-focus` |
+| In the form                                      | `resize: both; overflow: auto; min-width: 100%; max-width: 260px`; `.cm-content` has `min-height: calc(var(--input-height) * 3)`                                                                                                                                                                                             |
+| Text                                             | `.cm-scroller` uses `--font-monospace`, `--font-small`, `--code-normal`; the placeholder uses `--font-interface`, `--font-ui-small`, `--text-faint`                                                                                                                                                                          |
+| `.formula-editor-status`                         | `display: flex; align-items: center; margin-top: var(--size-4-1); font-size: var(--font-ui-smaller); color: var(--text-success)`; `.mod-empty` uses `--text-faint`, `.mod-error` uses `--text-error`; `.status-icon` uses `--icon-xs`                                                                                        |
+| In the Configure view form (`.view-config-menu`) | `.cm-content` has `min-height: var(--input-height)`, and the status line shows only with `.mod-error`                                                                                                                                                                                                                        |
 
 ### Rows of a list page
 
@@ -126,13 +126,13 @@ A list page holds a raised search field (`.search-input-container.mod-raised`) a
 
 ### Pages and their rows
 
-| Page                       | Title in the back label                                      | Rows                                                                                                                               |
-| -------------------------- | ------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------- |
-| Properties (root)          | none (no header)                                             | Search ("Find or create..."), property rows, then the actions Add "name" property (search text names no existing property), Add formula, Hide all |
-| Views (root)               | none (no header)                                             | Search, view rows, Add view                                                                                                         |
-| Edit property, existing    | `Edit {name}`, with the raw property name                    | Display name (label and text field); Property type (dropdown) for a note property; Formula (label with help icon, editor, status) for a formula |
-| Edit property, new         | `Edit property`                                              | The first row has no label. Its text field sets the property or formula key (see [Save triggers](#save-triggers))                  |
-| Configure view             | `Configure view`                                             | View name (text field, no label, placeholder "View name"); Layout (combobox); then the options the layout declares                 |
+| Page                    | Title in the back label                   | Rows                                                                                                                                              |
+| ----------------------- | ----------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Properties (root)       | none (no header)                          | Search ("Find or create..."), property rows, then the actions Add "name" property (search text names no existing property), Add formula, Hide all |
+| Views (root)            | none (no header)                          | Search, view rows, Add view                                                                                                                       |
+| Edit property, existing | `Edit {name}`, with the raw property name | Display name (label and text field); Property type (dropdown) for a note property; Formula (label with help icon, editor, status) for a formula   |
+| Edit property, new      | `Edit property`                           | The first row has no label. Its text field sets the property or formula key (see [Save triggers](#save-triggers))                                 |
+| Configure view          | `Configure view`                          | View name (text field, no label, placeholder "View name"); Layout (combobox); then the options the layout declares                                |
 
 The option controls of Configure view are: dropdown, multi-text, slider, text, toggle, property combobox, file path, folder path, and formula editor. Each control sits in an `.input-row` under its label. After each change the page hides or shows rows by the layout's own rule, and a layout change rebuilds the whole form.
 
@@ -140,18 +140,18 @@ The option controls of Configure view are: dropdown, multi-text, slider, text, t
 
 Obsidian listens for `keydown` on the window in the capture phase. It looks for a handler in the scope chain: the page scope, then the host scope, then the app scope. A handler that returns `false` also calls `preventDefault` and `stopPropagation`. A handler that returns nothing ends the search without blocking the event, so the focused element's own key handler still runs afterwards.
 
-| Key                                   | Where                              | Effect                                                                                                           |
-| ------------------------------------- | ---------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
-| Escape                                | List page (Properties, Views)      | The page has no handler, so the host scope closes the whole menu                                                   |
-| Escape                                | Edit property page                 | The page scope calls `back()`, also when a field has focus                                                         |
-| Escape                                | Configure view page                | `back()` only when focus is outside an `<input>` and a contenteditable element. In View name, Escape restores the saved name and blurs the field, and a second Escape goes back |
-| Escape                                | Display name field                 | The field's own handler puts the raw property name (the placeholder) in the field and blurs it. See [Not verified](#not-verified) |
-| ArrowRight                            | Property or view row               | Opens the page of the highlighted row. The Properties page ignores action rows                                      |
-| Enter                                 | List page                          | Uses the highlighted row. Properties: toggles the property or runs the action. Views: selects the view and closes the menu; the Add view row opens Configure view |
-| Enter                                 | Display name field                 | Blurs the field, which saves                                                                                       |
-| Enter                                 | View name field                    | Blurs the field, which saves, unless a validation message shows                                                    |
-| ArrowUp, ArrowDown, PageUp, PageDown, Home, End, Ctrl+P, Ctrl+N | List page | Move the highlight; ArrowUp on the first row wraps to the last                                       |
-| Alt+ArrowUp, Alt+ArrowDown            | Properties page                    | Move the highlighted visible property one place in the column order                                                 |
+| Key                                                             | Where                         | Effect                                                                                                                                                                          |
+| --------------------------------------------------------------- | ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Escape                                                          | List page (Properties, Views) | The page has no handler, so the host scope closes the whole menu                                                                                                                |
+| Escape                                                          | Edit property page            | The page scope calls `back()`, also when a field has focus                                                                                                                      |
+| Escape                                                          | Configure view page           | `back()` only when focus is outside an `<input>` and a contenteditable element. In View name, Escape restores the saved name and blurs the field, and a second Escape goes back |
+| Escape                                                          | Display name field            | The field's own handler puts the raw property name (the placeholder) in the field and blurs it. See [Not verified](#not-verified)                                               |
+| ArrowRight                                                      | Property or view row          | Opens the page of the highlighted row. The Properties page ignores action rows                                                                                                  |
+| Enter                                                           | List page                     | Uses the highlighted row. Properties: toggles the property or runs the action. Views: selects the view and closes the menu; the Add view row opens Configure view               |
+| Enter                                                           | Display name field            | Blurs the field, which saves                                                                                                                                                    |
+| Enter                                                           | View name field               | Blurs the field, which saves, unless a validation message shows                                                                                                                 |
+| ArrowUp, ArrowDown, PageUp, PageDown, Home, End, Ctrl+P, Ctrl+N | List page                     | Move the highlight; ArrowUp on the first row wraps to the last                                                                                                                  |
+| Alt+ArrowUp, Alt+ArrowDown                                      | Properties page               | Move the highlighted visible property one place in the column order                                                                                                             |
 
 ArrowLeft and Backspace have no handler in these page classes.
 
@@ -171,29 +171,29 @@ Focus:
 
 Items by page:
 
-| Page                         | Item                                                    | Icon             | Section  | Effect                                                                                                                  |
-| ---------------------------- | ------------------------------------------------------- | ---------------- | -------- | ----------------------------------------------------------------------------------------------------------------------- |
-| Edit property                | Hide property or Show property (follows the column order) | `lucide-eye-off` | action   | Removes the property from the column order, or adds it                                                                  |
-| Edit property (formula only) | Delete formula                                          | `lucide-trash-2` | danger, warning | Removes the formula from the column order, clears its display name, deletes it from `formulas`, then goes back one page |
-| Configure view               | Default view                                            | `lucide-layers-2` | action  | A tick shows when the view is first in the list. A click moves the view to the first place and saves                     |
-| Configure view               | Duplicate view                                          | `lucide-files`   | action   | Goes back, then shows a Configure view page for a copy with a unique name                                                |
-| Configure view               | Delete view                                             | `lucide-trash-2` | danger, warning | Removes the view, selects the view before it (or the first), goes back, saves                                     |
+| Page                         | Item                                                      | Icon              | Section         | Effect                                                                                                                  |
+| ---------------------------- | --------------------------------------------------------- | ----------------- | --------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| Edit property                | Hide property or Show property (follows the column order) | `lucide-eye-off`  | action          | Removes the property from the column order, or adds it                                                                  |
+| Edit property (formula only) | Delete formula                                            | `lucide-trash-2`  | danger, warning | Removes the formula from the column order, clears its display name, deletes it from `formulas`, then goes back one page |
+| Configure view               | Default view                                              | `lucide-layers-2` | action          | A tick shows when the view is first in the list. A click moves the view to the first place and saves                    |
+| Configure view               | Duplicate view                                            | `lucide-files`    | action          | Goes back, then shows a Configure view page for a copy with a unique name                                               |
+| Configure view               | Delete view                                               | `lucide-trash-2`  | danger, warning | Removes the view, selects the view before it (or the first), goes back, saves                                           |
 
 **Close button.** The `×` calls `host.close()`, which closes the whole menu from any depth. The back button and Escape on a page move one level. Escape on a list page and a click outside the menu also close it.
 
 ## Save triggers
 
-| Control                                   | Saves                     | Detail                                                                                                                                |
-| ----------------------------------------- | ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
-| Display name (existing property)          | On blur                   | Enter blurs. The value is trimmed. Nothing is written when it equals the current display name. It writes the display name of the property in the view |
-| Display name field of a new property      | On blur                   | The value is the new key, not a display name. A new formula renames its entry in `formulas`; a new note property calls `fileManager.renameProperty`, which renames the property in the vault. The column order follows the new key |
-| Property type                             | On change                 | Calls `metadataTypeManager.setType`                                                                                                    |
-| Formula (Edit property and formula options) | After a 250 ms pause in typing, and on blur | Each change restarts a 250 ms debounce. Blur cancels the debounce and saves at once. A save writes the formula (on Edit property, through `query.setFormulas`) and updates the status line |
-| Show or hide a property                   | On click                  | The row checkbox, or the Hide property item                                                                                            |
-| View name                                 | On blur                   | Checked on every input: an empty name, a name with a forbidden character, and a name that another view uses each show a message as a tooltip on the field. A blur saves when the name is valid and either changed or the view is new. Enter blurs only when no message shows |
-| Rename of a view                          | With the View name save   | Links of the form `[[base#old name]]` in the vault change to the new name, and a notice reports the count of links and files          |
-| Layout and layout options                 | On change                 | A change of layout rebuilds the form and saves. Option controls write the option when they change; the page code has no commit step     |
-| Delete formula, Delete view, Default view | On click                  | Immediate                                                                                                                              |
+| Control                                     | Saves                                       | Detail                                                                                                                                                                                                                                                                       |
+| ------------------------------------------- | ------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Display name (existing property)            | On blur                                     | Enter blurs. The value is trimmed. Nothing is written when it equals the current display name. It writes the display name of the property in the view                                                                                                                        |
+| Display name field of a new property        | On blur                                     | The value is the new key, not a display name. A new formula renames its entry in `formulas`; a new note property calls `fileManager.renameProperty`, which renames the property in the vault. The column order follows the new key                                           |
+| Property type                               | On change                                   | Calls `metadataTypeManager.setType`                                                                                                                                                                                                                                          |
+| Formula (Edit property and formula options) | After a 250 ms pause in typing, and on blur | Each change restarts a 250 ms debounce. Blur cancels the debounce and saves at once. A save writes the formula (on Edit property, through `query.setFormulas`) and updates the status line                                                                                   |
+| Show or hide a property                     | On click                                    | The row checkbox, or the Hide property item                                                                                                                                                                                                                                  |
+| View name                                   | On blur                                     | Checked on every input: an empty name, a name with a forbidden character, and a name that another view uses each show a message as a tooltip on the field. A blur saves when the name is valid and either changed or the view is new. Enter blurs only when no message shows |
+| Rename of a view                            | With the View name save                     | Links of the form `[[base#old name]]` in the vault change to the new name, and a notice reports the count of links and files                                                                                                                                                 |
+| Layout and layout options                   | On change                                   | A change of layout rebuilds the form and saves. Option controls write the option when they change; the page code has no commit step                                                                                                                                          |
+| Delete formula, Delete view, Default view   | On click                                    | Immediate                                                                                                                                                                                                                                                                    |
 
 **New view.** The Add view row builds a view named from the search text, or "View" when the field is empty, made unique among the view names. The Configure view page shows it as new. The view joins the base only at the first valid blur of View name.
 
@@ -226,19 +226,19 @@ What a popup control owes the keyboard, the screen reader and the pointer. `Sele
 
 `apps/obsidian/src/components/chooser.tsx` holds the ZotLit parts. The Query View consumers are in `apps/obsidian/src/views/query-view/` (`properties-menu.tsx`, `view-menu.tsx`, `configure-view.tsx`, `property-page.tsx`).
 
-| Bases part                                                | Chooser part                                                                                                                                                         |
-| --------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Menu host and page stack                                  | The popup session. `useChooserPage()` returns `page`, `openPage`, `back`, `replacePage`. A page is a name; the last name is on screen; the rows are the root       |
-| Opening a page from outside (right-click on Views button) | `useChooserOpenPage()`                                                                                                                                               |
-| Page container, one at a time                             | `Chooser.Page` (`data-chooser-page`). It takes a render function of the page name, and it focuses the first field with its text selected                              |
-| Header: back with title, actions, close                   | `Chooser.PageHeader` (`title`, `backLabel`, `closeLabel`, `actions`). Close ends the whole popup, as in Bases                                                         |
-| `.bases-toolbar-menu-form`                                | `Chooser.PageForm`                                                                                                                                                   |
-| `.input-row` with label above the control                 | `Chooser.PageField` (`label`, `description`, `invalid`, `after`). `inline` is a ZotLit addition; the Bases markup puts every control under its label                  |
-| `…` button and its menu                                   | `Chooser.PageMenu` (`label`, `items`). A `warning` item follows a separator, as the danger section does                                                              |
-| Row chevron and ArrowRight                                | `Chooser.Item`'s `end` slot for the chevron, and `ChooserRow.next` (`chooser-logic.ts`) for the ArrowRight action                                                    |
-| Escape on a page goes back                                | The Escape handler of the popup session                                                                                                                              |
-| Enter in a text field saves                               | `commitField` in the popup session: focus moves to the page, the field blurs and saves, and the form submits                                                          |
-| Save on blur                                              | The field's own blur handler. `useChooserPageText` keeps the typed text, and `useChooserPageSave` runs the save as a page unmounts                                    |
+| Bases part                                                | Chooser part                                                                                                                                                 |
+| --------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Menu host and page stack                                  | The popup session. `useChooserPage()` returns `page`, `openPage`, `back`, `replacePage`. A page is a name; the last name is on screen; the rows are the root |
+| Opening a page from outside (right-click on Views button) | `useChooserOpenPage()`                                                                                                                                       |
+| Page container, one at a time                             | `Chooser.Page` (`data-chooser-page`). It takes a render function of the page name, and it focuses the first field with its text selected                     |
+| Header: back with title, actions, close                   | `Chooser.PageHeader` (`title`, `backLabel`, `closeLabel`, `actions`). Close ends the whole popup, as in Bases                                                |
+| `.bases-toolbar-menu-form`                                | `Chooser.PageForm`                                                                                                                                           |
+| `.input-row` with label above the control                 | `Chooser.PageField` (`label`, `description`, `invalid`, `after`). `inline` is a ZotLit addition; the Bases markup puts every control under its label         |
+| `…` button and its menu                                   | `Chooser.PageMenu` (`label`, `items`). A `warning` item follows a separator, as the danger section does                                                      |
+| Row chevron and ArrowRight                                | `Chooser.Item`'s `end` slot for the chevron, and `ChooserRow.next` (`chooser-logic.ts`) for the ArrowRight action                                            |
+| Escape on a page goes back                                | The Escape handler of the popup session                                                                                                                      |
+| Enter in a text field saves                               | `commitField` in the popup session: focus moves to the page, the field blurs and saves, and the form submits                                                 |
+| Save on blur                                              | The field's own blur handler. `useChooserPageText` keeps the typed text, and `useChooserPageSave` runs the save as a page unmounts                           |
 
 Differences from Bases:
 

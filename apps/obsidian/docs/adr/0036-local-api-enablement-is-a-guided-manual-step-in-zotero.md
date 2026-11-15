@@ -1,6 +1,6 @@
 # Local API enablement is a guided manual step in Zotero; the Companion stays out of Zotero's own preferences
 
-Zotero ships its HTTP server on but the `httpServer.localAPI.enabled` preference off, and every Zotero Local API request — the unkeyed Capability Probe included — checks that preference live, so a flip in Zotero Settings → Advanced takes effect with no restart. ZotLit Companion runs inside Zotero and could set that preference, but we keep it out of Zotero's own preference branch: ZotLit for Obsidian explains the manual step, and the Capability Probe alone decides whether the local API is on. The preference, once on, opens unauthenticated *reads* of the whole library to every local process, so it is the user's security boundary, and a boundary the user did not move is not one an add-on should move for them.
+Zotero ships its HTTP server on but the `httpServer.localAPI.enabled` preference off, and every Zotero Local API request — the unkeyed Capability Probe included — checks that preference live, so a flip in Zotero Settings → Advanced takes effect with no restart. ZotLit Companion runs inside Zotero and could set that preference, but we keep it out of Zotero's own preference branch: ZotLit for Obsidian explains the manual step, and the Capability Probe alone decides whether the local API is on. The preference, once on, opens unauthenticated _reads_ of the whole library to every local process, so it is the user's security boundary, and a boundary the user did not move is not one an add-on should move for them.
 
 ## Considered Options
 

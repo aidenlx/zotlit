@@ -8,15 +8,15 @@ Both systems answer "given a user query, return the most relevant items from a Z
 
 ## 1. Top-level architecture
 
-| Aspect                | Zotero (upstream)                                                                                             | ZotLit `item-lookup`                                                                                                       |
-| --------------------- | ------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
-| Query model           | **Declarative**: build a `Zotero.Search` object by adding `(condition, operator, value)` tuples.              | **Imperative**: pass a raw string to `ItemLookup.search(query)`; engine tokenizes and scores.                              |
-| Execution             | Compiles to a single (often very large) SQL statement, then runs subsearches for full-text/scope as needed.   | Loads all items for the active library into memory once, builds a MiniSearch index, runs in-process for every keystroke.   |
-| Index location        | SQLite tables: `itemData`, `itemDataValues`, `itemCreators`, `fulltextItemWords`, `fulltextItems`.            | In-process `MiniSearch<IndexedItem>` over three flat fields (`title`, `creators`, `date`).                                 |
-| Ranking               | None — SQL returns a set of `itemID`s. Ordering is decided by the caller (e.g. `_createItemsSort` collation). | BM25 from MiniSearch, multiplied by a small recency boost (≤1.1×). Empty queries fall back to `dateModified DESC`.         |
-| Highlighting          | Caller's responsibility (item-tree row painter). Search itself returns no offsets.                            | Engine returns `SearchMatches` byte ranges aligned to the **original** title via a normalized index map.                   |
-| Statefulness          | Each `Zotero.Search` instance is single-use; conditions accumulate and SQL is built lazily.                   | Single long-lived `ItemLookup` service; cache invalidated on DB change or `zotero.citation-library` setting change.        |
-| Code size             | `xpcom/data/search.js` 1834 LOC + `searchConditions.js` 823 LOC + dialog-side `searchHandler.mjs` 513 LOC.    | 12 files, ~1.5k LOC total (incl. tests/fixtures). Production code is ~700 LOC.                                             |
+| Aspect         | Zotero (upstream)                                                                                             | ZotLit `item-lookup`                                                                                                     |
+| -------------- | ------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| Query model    | **Declarative**: build a `Zotero.Search` object by adding `(condition, operator, value)` tuples.              | **Imperative**: pass a raw string to `ItemLookup.search(query)`; engine tokenizes and scores.                            |
+| Execution      | Compiles to a single (often very large) SQL statement, then runs subsearches for full-text/scope as needed.   | Loads all items for the active library into memory once, builds a MiniSearch index, runs in-process for every keystroke. |
+| Index location | SQLite tables: `itemData`, `itemDataValues`, `itemCreators`, `fulltextItemWords`, `fulltextItems`.            | In-process `MiniSearch<IndexedItem>` over three flat fields (`title`, `creators`, `date`).                               |
+| Ranking        | None — SQL returns a set of `itemID`s. Ordering is decided by the caller (e.g. `_createItemsSort` collation). | BM25 from MiniSearch, multiplied by a small recency boost (≤1.1×). Empty queries fall back to `dateModified DESC`.       |
+| Highlighting   | Caller's responsibility (item-tree row painter). Search itself returns no offsets.                            | Engine returns `SearchMatches` byte ranges aligned to the **original** title via a normalized index map.                 |
+| Statefulness   | Each `Zotero.Search` instance is single-use; conditions accumulate and SQL is built lazily.                   | Single long-lived `ItemLookup` service; cache invalidated on DB change or `zotero.citation-library` setting change.      |
+| Code size      | `xpcom/data/search.js` 1834 LOC + `searchConditions.js` 823 LOC + dialog-side `searchHandler.mjs` 513 LOC.    | 12 files, ~1.5k LOC total (incl. tests/fixtures). Production code is ~700 LOC.                                           |
 
 ---
 
@@ -36,7 +36,7 @@ A static dictionary populated lazily at startup. Each entry binds a condition na
 
 1. **Standard conditions** — back a real SQL column: `title`, `creator`, `date`, `tag`, `note`, `annotationText`, etc.
 2. **Special conditions** — affect query shape, not the WHERE clause: `joinMode`, `noChildren`, `includeDeleted`, `includeParentsAndChildren`, `blockStart`/`blockEnd`.
-3. **Quicksearch macros** — `quicksearch-titleCreatorYear`, `quicksearch-titleCreatorYearNote`, `quicksearch-fields`, `quicksearch-everything`. These are *expanded* by `addCondition` (see `search.js:307–362`) into a block of real conditions:
+3. **Quicksearch macros** — `quicksearch-titleCreatorYear`, `quicksearch-titleCreatorYearNote`, `quicksearch-fields`, `quicksearch-everything`. These are _expanded_ by `addCondition` (see `search.js:307–362`) into a block of real conditions:
 
 ```
 blockStart
@@ -93,7 +93,7 @@ This is the closest analog to ZotLit's `ItemLookup`. Key behaviors:
 - `cleanSearchQuery(str)` strips brackets, commas, semicolons, periods, the localized "and", and `et al`. — so pasting `(Smith et al., 2020)` works. Detects ISBN/DOI shapes and bypasses the cleaner.
 - Maintains four buckets: `found`, `open`, `cited`, `selected`. The first comes from the SQL search; the others come from window state (currently-open readers, currently-selected items, items already cited in the document).
 - `_getMatchingLibraryItems()` builds a `Zotero.Search`, picks DOI/ISBN/quicksearch by query shape, and runs once per debounce tick. Results are then re-sorted by `_createItemsSort` using `Zotero.getLocaleCollation()`, with a **left-bound match boost on the first creator's last name** ("Baum" beats "Appelbaum" when typing `baum`).
-- `_filterNonMatchingItems(items)` runs `semanticSplitter(query)` against an in-memory string concatenation of each item's creators + title + date(year) + publicationTitle + shortTitle + court + year + citationKey. Used for the *selected/open/cited* buckets, where running another SQL search would be wasteful.
+- `_filterNonMatchingItems(items)` runs `semanticSplitter(query)` against an in-memory string concatenation of each item's creators + title + date(year) + publicationTitle + shortTitle + court + year + citationKey. Used for the _selected/open/cited_ buckets, where running another SQL search would be wasteful.
 
 ---
 
@@ -101,16 +101,16 @@ This is the closest analog to ZotLit's `ItemLookup`. Key behaviors:
 
 ### 3.1 Module layout
 
-| File                 | Role                                                                                                                  |
-| -------------------- | --------------------------------------------------------------------------------------------------------------------- |
-| `service.ts`         | `ItemLookup` `Service` — owns the cache lifecycle, debounces parallel loads, reacts to DB and settings changes.       |
-| `engine.ts`          | Pure: `buildIndex(items, …)` and `searchIndex(index, query, …)`. BM25 via MiniSearch + recency multiplier + highlights. |
+| File                 | Role                                                                                                                                          |
+| -------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| `service.ts`         | `ItemLookup` `Service` — owns the cache lifecycle, debounces parallel loads, reacts to DB and settings changes.                               |
+| `engine.ts`          | Pure: `buildIndex(items, …)` and `searchIndex(index, query, …)`. BM25 via MiniSearch + recency multiplier + highlights.                       |
 | `tokenizer.ts`       | Pure: `tokenize`, `normalize`, `normalizeWithIndexMap`. Uses `Intl.Segmenter`; the `Segmenter` port (`segmenter.ts`) adds jieba for CJK runs. |
-| `format-creator.ts`  | Pure: replicates Zotero `citeproc` `ROMANESQUE_REGEXP` for given/family name ordering, with CJK exception.           |
-| `creator-summary.ts` | Pure: "Smith", "Smith and Doe", "Smith et al." for the journalArticle suggestion meta line.                          |
-| `render-hit.ts`      | Obsidian-side: `renderSuggestion(settings, hit, el)` paints title + journalArticle meta into the suggester row.       |
-| `fixtures.ts`        | Vitest fixtures; lets engine/service tests build items without the DB.                                                |
-| `*.test.ts`          | Vitest coverage of each pure module + service lifecycle (cache reuse, debounce, invalidation, degraded-DB).           |
+| `format-creator.ts`  | Pure: replicates Zotero `citeproc` `ROMANESQUE_REGEXP` for given/family name ordering, with CJK exception.                                    |
+| `creator-summary.ts` | Pure: "Smith", "Smith and Doe", "Smith et al." for the journalArticle suggestion meta line.                                                   |
+| `render-hit.ts`      | Obsidian-side: `renderSuggestion(settings, hit, el)` paints title + journalArticle meta into the suggester row.                               |
+| `fixtures.ts`        | Vitest fixtures; lets engine/service tests build items without the DB.                                                                        |
+| `*.test.ts`          | Vitest coverage of each pure module + service lifecycle (cache reuse, debounce, invalidation, degraded-DB).                                   |
 
 ### 3.2 Indexing strategy
 
@@ -135,7 +135,7 @@ The full item list is held by reference on the index (`items: readonly Item[]`) 
 
 ### 3.3 Search path (`searchIndex`)
 
-1. Tokenize the query through the *same* tokenizer used to build the index.
+1. Tokenize the query through the _same_ tokenizer used to build the index.
 2. Run MiniSearch with:
    - `combineWith: "AND"` — every token must match somewhere.
    - `prefix: true`.
@@ -176,27 +176,27 @@ The two-pass design (score+slice first, highlight only the survivors) is deliber
 
 ## 4. Side-by-side feature comparison
 
-| Capability                              | Zotero                                                                                                                | ZotLit `item-lookup`                                                                                |
-| --------------------------------------- | --------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
-| Saved searches                          | Yes (`Zotero.Search` is also a persisted `DataObject`; UI in `advancedSearch.xhtml`).                                 | **No.** Scoped to ad-hoc lookup.                                                                    |
-| Multiple search modes                   | `titleCreatorYear`, `titleCreatorYearNote`, `fields`, `everything` + arbitrary advanced builder.                      | **One mode**: title + creators + year.                                                              |
-| Full-text content                       | Yes — `fulltextItemWords` index + `findTextInItems` cache scan + regex modes.                                         | **No.**                                                                                             |
-| Tags / notes / annotations              | Yes (in `fields` / `everything` modes).                                                                               | **No.**                                                                                             |
-| Cross-library                           | Yes — every search runs against the SQLite db; `libraryID` is just a condition.                                       | **Single library** at a time — driven by the `zotero.citation-library` setting.                     |
-| Quoted phrases                          | Preserved by `parseSearchString`; `fulltextContent` runs against raw cache for phrase match.                          | **No phrase syntax** — every token is independent (AND-combined).                                   |
-| Boolean / operator syntax               | Yes via the advanced builder (`is`, `isNot`, `contains`, `beginsWith`, `isInTheLast`, etc.).                          | **None** — implicit AND-of-terms.                                                                   |
-| Fuzzy / typo tolerance                  | None inherent. (`contains` is substring; full-text is exact-word.)                                                    | MiniSearch fuzzy with length-scaled edit distance.                                                  |
-| Prefix matching                         | `beginsWith` operator on specific fields; `quicksearch` is `contains` (substring).                                    | MiniSearch `prefix: true` on every token.                                                           |
-| Diacritic folding                       | Whatever SQLite collation provides (locale-dependent, not used uniformly).                                            | Explicit NFD + diacritic strip + Polish ł patch in both index and query.                            |
-| CJK segmentation                        | `semanticSplitter` emits one token per Han character.                                                                 | Cuts CJK runs with jieba when the Chinese Segmenter (a Managed Binary) is installed; otherwise `Intl.Segmenter` cuts them. |
-| Ranking                                 | None from `Zotero.Search`; caller sorts (collation + left-bound creator match in citation dialog).                    | BM25 × field boosts × recency multiplier; empty query falls back to `dateModified DESC`.            |
-| Recency bias                            | None.                                                                                                                 | Soft (≤1.1×) exp-decay with 30-day half-life — tie-breaks only.                                     |
-| Highlighting                            | Caller's responsibility; no offsets returned.                                                                         | Engine returns `SearchMatches` ranges in original-glyph offsets.                                    |
-| ISBN / DOI shortcut                     | `citationDialog` detects and redirects to `DOI contains …` / `ISBN contains …`.                                       | **No.**                                                                                             |
-| Punctuation-tolerant paste              | `cleanSearchQuery` strips brackets, et al, `&`, `;`, etc.                                                             | **No** — the tokenizer alone handles separators.                                                    |
-| Reactivity to library mutation          | Each search rebuilds SQL; tree views subscribe to `Zotero.Notifier` for invalidation.                                 | `db.on("changed")` → cache invalidate → background rebuild.                                         |
-| Cost per query                          | One or more SQL roundtrips; cost dominated by `LIKE '%…%'` scans and full-text lookups.                               | One MiniSearch call + a `for…of` over survivors. **Constant per query** once the index is built.    |
-| Cost up front                           | None — pay per query.                                                                                                 | One full library load + tokenize on first use or after invalidation. Linear in library size.        |
+| Capability                     | Zotero                                                                                             | ZotLit `item-lookup`                                                                                                       |
+| ------------------------------ | -------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| Saved searches                 | Yes (`Zotero.Search` is also a persisted `DataObject`; UI in `advancedSearch.xhtml`).              | **No.** Scoped to ad-hoc lookup.                                                                                           |
+| Multiple search modes          | `titleCreatorYear`, `titleCreatorYearNote`, `fields`, `everything` + arbitrary advanced builder.   | **One mode**: title + creators + year.                                                                                     |
+| Full-text content              | Yes — `fulltextItemWords` index + `findTextInItems` cache scan + regex modes.                      | **No.**                                                                                                                    |
+| Tags / notes / annotations     | Yes (in `fields` / `everything` modes).                                                            | **No.**                                                                                                                    |
+| Cross-library                  | Yes — every search runs against the SQLite db; `libraryID` is just a condition.                    | **Single library** at a time — driven by the `zotero.citation-library` setting.                                            |
+| Quoted phrases                 | Preserved by `parseSearchString`; `fulltextContent` runs against raw cache for phrase match.       | **No phrase syntax** — every token is independent (AND-combined).                                                          |
+| Boolean / operator syntax      | Yes via the advanced builder (`is`, `isNot`, `contains`, `beginsWith`, `isInTheLast`, etc.).       | **None** — implicit AND-of-terms.                                                                                          |
+| Fuzzy / typo tolerance         | None inherent. (`contains` is substring; full-text is exact-word.)                                 | MiniSearch fuzzy with length-scaled edit distance.                                                                         |
+| Prefix matching                | `beginsWith` operator on specific fields; `quicksearch` is `contains` (substring).                 | MiniSearch `prefix: true` on every token.                                                                                  |
+| Diacritic folding              | Whatever SQLite collation provides (locale-dependent, not used uniformly).                         | Explicit NFD + diacritic strip + Polish ł patch in both index and query.                                                   |
+| CJK segmentation               | `semanticSplitter` emits one token per Han character.                                              | Cuts CJK runs with jieba when the Chinese Segmenter (a Managed Binary) is installed; otherwise `Intl.Segmenter` cuts them. |
+| Ranking                        | None from `Zotero.Search`; caller sorts (collation + left-bound creator match in citation dialog). | BM25 × field boosts × recency multiplier; empty query falls back to `dateModified DESC`.                                   |
+| Recency bias                   | None.                                                                                              | Soft (≤1.1×) exp-decay with 30-day half-life — tie-breaks only.                                                            |
+| Highlighting                   | Caller's responsibility; no offsets returned.                                                      | Engine returns `SearchMatches` ranges in original-glyph offsets.                                                           |
+| ISBN / DOI shortcut            | `citationDialog` detects and redirects to `DOI contains …` / `ISBN contains …`.                    | **No.**                                                                                                                    |
+| Punctuation-tolerant paste     | `cleanSearchQuery` strips brackets, et al, `&`, `;`, etc.                                          | **No** — the tokenizer alone handles separators.                                                                           |
+| Reactivity to library mutation | Each search rebuilds SQL; tree views subscribe to `Zotero.Notifier` for invalidation.              | `db.on("changed")` → cache invalidate → background rebuild.                                                                |
+| Cost per query                 | One or more SQL roundtrips; cost dominated by `LIKE '%…%'` scans and full-text lookups.            | One MiniSearch call + a `for…of` over survivors. **Constant per query** once the index is built.                           |
+| Cost up front                  | None — pay per query.                                                                              | One full library load + tokenize on first use or after invalidation. Linear in library size.                               |
 
 ---
 
@@ -220,19 +220,19 @@ The two-pass design (score+slice first, highlight only the survivors) is deliber
 Even within the narrow "type-ahead a citation" use case, ZotLit deviates from Zotero's `quicksearch-titleCreatorYear` in observable ways:
 
 1. **Fewer indexed fields.** Zotero adds `publicationTitle`, `shortTitle`, `court`, and `citationKey` to the OR group. ZotLit indexes only `title`, `creators`, and `date`. A query like `Nature 2024 Doudna` will hit fewer items in ZotLit because `publicationTitle="Nature"` is not searched.
-2. **Citation-key lookup.** Zotero matches `citationKey contains <part>`; ZotLit's engine deliberately *excludes* citation keys from the indexed surface (see `engine.test.ts:34` — "ignores citationKey when scoring matches"). The citation key is shown in the rendered row but cannot be searched against.
+2. **Citation-key lookup.** Zotero matches `citationKey contains <part>`; ZotLit's engine deliberately _excludes_ citation keys from the indexed surface (see `engine.test.ts:34` — "ignores citationKey when scoring matches"). The citation key is shown in the rendered row but cannot be searched against.
 3. **No paste-clean.** Pasting `(Smith et al., 2020)` in Zotero produces `Smith 2020`; in ZotLit it produces three tokens `smith`, `et`, `al`, `2020` (after the regex-based segmenter), all required, which can yield zero hits because `et`/`al` won't appear in the indexed creators string.
 4. **Item-key shortcut.** Zotero's quicksearch checks `isValidObjectKey(part)` and adds `key is <part>` — typing a full 8-char Zotero key resolves directly to that item. ZotLit has no such shortcut.
 5. **Children excluded.** `quicksearch-titleCreatorYear` adds `noChildren` so attachments/notes never appear; ZotLit already filters via the DB query (`getItemsByLibrary`), but the criterion lives one layer down rather than next to the search code.
 
 ### 5.4 Performance characteristics
 
-| Workload                 | Zotero                                                                                                                              | ZotLit                                                                                       |
-| ------------------------ | ----------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
-| First query after start  | One SQL roundtrip (~10–80 ms typical).                                                                                              | Cold: load + build index (linear in item count); ≈100–500 ms for 10k items.                  |
-| Steady-state typing      | One SQL roundtrip per keystroke (debounced); LIKE scans grow with library size.                                                     | One in-process MiniSearch call (≈1–5 ms for 10k items); no DB hit.                           |
-| Memory                   | Per-search build cost, no resident index beyond SQLite caches.                                                                      | Holds all items + tokenized inverted index in memory (≈10–40 MB for 10k items, rough order). |
-| Behaviour during reload  | Search throws / blocks until DB is reachable.                                                                                       | Returns `[]` immediately; logs at `debug`; auto-recovers on next `db.on("changed")` tick.    |
+| Workload                | Zotero                                                                          | ZotLit                                                                                       |
+| ----------------------- | ------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
+| First query after start | One SQL roundtrip (~10–80 ms typical).                                          | Cold: load + build index (linear in item count); ≈100–500 ms for 10k items.                  |
+| Steady-state typing     | One SQL roundtrip per keystroke (debounced); LIKE scans grow with library size. | One in-process MiniSearch call (≈1–5 ms for 10k items); no DB hit.                           |
+| Memory                  | Per-search build cost, no resident index beyond SQLite caches.                  | Holds all items + tokenized inverted index in memory (≈10–40 MB for 10k items, rough order). |
+| Behaviour during reload | Search throws / blocks until DB is reachable.                                   | Returns `[]` immediately; logs at `debug`; auto-recovers on next `db.on("changed")` tick.    |
 
 ---
 

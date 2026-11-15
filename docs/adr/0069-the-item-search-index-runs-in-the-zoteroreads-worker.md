@@ -43,25 +43,25 @@ Four interface shapes were compared on depth, locality, and seam placement befor
 
 Measured in Obsidian 1.14.4 on a synthetic library with Zotero's indexes, production engine and reads, plain `postMessage` probes (idle floor 16.7–17.7 ms; details in the spec #1356 measurement ticket):
 
-| Metric | 10,000 items, renderer index | 10,000 items, worker index | 100,000 items, renderer index | 100,000 items, worker index |
-| --- | --- | --- | --- | --- |
-| Index build | 0.33 s, max gap 16.8 ms, 0 long tasks | 0.37 s (yield per 500), max gap 16.8 ms, 0 long tasks | 3.8 s, max gap 17.7 ms, 0 long tasks | 4.5 s (yield per 500), max gap 17.7 ms, 0 long tasks |
-| Typical query, end to end | 4–12 ms | 4–12 ms | 7–16 ms | 7–20 ms |
-| One-letter query | 12 ms | 12 ms | 180 ms, one 174 ms long task | 170 ms, renderer free |
-| Query during a rebuild | 11 ms median | 6–17 ms median by slice size | 18 ms median, 71 ms max | 13 ms median, 28 ms p95 (yield per 500) |
-| First keystroke, cold | 0.4 s | 0.4 s | 4.0–4.6 s | 3.8–4.7 s |
-| Index heap | +11 MB renderer | +10 MB worker, released on drop | +104 MB renderer | +97 MB worker, released on drop |
+| Metric                    | 10,000 items, renderer index          | 10,000 items, worker index                            | 100,000 items, renderer index        | 100,000 items, worker index                          |
+| ------------------------- | ------------------------------------- | ----------------------------------------------------- | ------------------------------------ | ---------------------------------------------------- |
+| Index build               | 0.33 s, max gap 16.8 ms, 0 long tasks | 0.37 s (yield per 500), max gap 16.8 ms, 0 long tasks | 3.8 s, max gap 17.7 ms, 0 long tasks | 4.5 s (yield per 500), max gap 17.7 ms, 0 long tasks |
+| Typical query, end to end | 4–12 ms                               | 4–12 ms                                               | 7–16 ms                              | 7–20 ms                                              |
+| One-letter query          | 12 ms                                 | 12 ms                                                 | 180 ms, one 174 ms long task         | 170 ms, renderer free                                |
+| Query during a rebuild    | 11 ms median                          | 6–17 ms median by slice size                          | 18 ms median, 71 ms max              | 13 ms median, 28 ms p95 (yield per 500)              |
+| First keystroke, cold     | 0.4 s                                 | 0.4 s                                                 | 4.0–4.6 s                            | 3.8–4.7 s                                            |
+| Index heap                | +11 MB renderer                       | +10 MB worker, released on drop                       | +104 MB renderer                     | +97 MB worker, released on drop                      |
 
 The build frame gap was already at the idle floor before this change, because the renderer slices cost 8–13 ms each. The gains are the index heap leaving the renderer, the worst-case query leaving the main thread, and one owner for the lifecycle. SQL hydration of 50 hits (about 4.5 ms, one statement per key) dominates a typical query in both variants.
 
 The shipped worker adapter, measured in Obsidian 1.14.4 by the End-to-end Run (`packages/e2e`, test "rebuilds the worker's Item Index off the renderer", which logs these figures) on the Fixture plus 10,000 synthetic journal articles (title, journal, one to three authors; this corpus makes a 21 MB index in Node), development build:
 
-| Metric | Shipped plugin, 10,000 items, worker index |
-| --- | --- |
-| Index rebuild after a Freshness Signal | 1.6 s from the signal to the first answer with the new Items, refresh included; max frame gap 18 ms, 0 long tasks |
-| Renderer heap after the rebuild | +0.3–0.5 MB after a forced garbage collection |
+| Metric                                                             | Shipped plugin, 10,000 items, worker index                                                                                   |
+| ------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------- |
+| Index rebuild after a Freshness Signal                             | 1.6 s from the signal to the first answer with the new Items, refresh included; max frame gap 18 ms, 0 long tasks            |
+| Renderer heap after the rebuild                                    | +0.3–0.5 MB after a forced garbage collection                                                                                |
 | Typical query, end to end (median / p95, 21 runs, 37–50 hits each) | 4–10 ms / 4–10 ms (an author 5.9 / 6.5, one title word 7.3 / 8.3, two title words 9.7 / 10.4, a unique title word 3.8 / 4.2) |
-| One-letter query (`k`) | 8.1 ms median, 13.9 ms p95 |
-| Query during a rebuild | 2.8 ms median, 4.6 ms max over 82 polls; every poll answered from the held index |
+| One-letter query (`k`)                                             | 8.1 ms median, 13.9 ms p95                                                                                                   |
+| Query during a rebuild                                             | 2.8 ms median, 4.6 ms max over 82 polls; every poll answered from the held index                                             |
 
 Inside a real `RpcServer` worker, `Effect.yieldNow` after each slice of 250–500 items gives a 5.5 ms median wait for a concurrent request and adds no build time. A worker-drained `Stream.mapEffect` without it does not yield; `scheduler.yield()` and no yield make a query wait for the whole build; `setTimeout(0)` works but adds 38–40 % build time. A single read of 100,000 ids overflows the call stack in the query builder, so the build reads in slices.

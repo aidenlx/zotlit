@@ -248,14 +248,14 @@ it.each([false, true])(
           if (changed) key = "renamed";
           yield* client.Refresh();
           const next = yield* client.CitationLookup(request);
-          if (changed) {
-            expect(next.revision).not.toBe(first.revision);
-            expect(next.citekeys.get("shared")).toEqual({ kind: "missing" });
-            expect(next.citekeys.get("renamed")).toMatchObject({
-              kind: "unique",
-              item: { indexedKey: "PERSONAL" },
-            });
-          } else expect(next.revision).toBe(first.revision);
+          expect(next.revision !== first.revision).toBe(changed);
+          expect(next.citekeys.get(key)).toMatchObject({
+            kind: "unique",
+            item: { indexedKey: "PERSONAL" },
+          });
+          expect(next.citekeys.get(changed ? "shared" : "renamed")).toEqual({
+            kind: "missing",
+          });
           expect(next.indexedKeys.get("PERSONAL")).toBe(key);
           expect(first.indexedKeys.get("PERSONAL")).toBe("shared");
         }),

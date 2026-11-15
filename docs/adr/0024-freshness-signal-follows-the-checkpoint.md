@@ -2,7 +2,7 @@
 
 The Obsidian plugin needs to know when the Zotero database changed. The companion used to push a semantic `item/update` event at write time, carrying per-item add/modify/trash ids. The receiver discarded the payload entirely (every refresh swaps in a whole new snapshot client, so invalidation is always total), the event's trigger set (`item` only) was narrower than the checkpoint's write-trigger list, and its pre-checkpoint timing forced a numeric contract across two apps: Obsidian's immutable-watch debounce had to outlast the companion's checkpoint delay so a refresh would not read the stale main file.
 
-We replaced it with the **Freshness Signal**: one payload-free `db/updated` event (protocol version 6) that the companion's freshness pipeline sends *after* its debounced run settles — checkpoint first where the database uses a WAL, then the signal. Receiving the signal therefore implies the main database file is already as current as the companion can make it: the ordering is causal, not temporal, and the cross-app debounce contract is gone.
+We replaced it with the **Freshness Signal**: one payload-free `db/updated` event (protocol version 6) that the companion's freshness pipeline sends _after_ its debounced run settles — checkpoint first where the database uses a WAL, then the signal. Receiving the signal therefore implies the main database file is already as current as the companion can make it: the ordering is causal, not temporal, and the cross-app debounce contract is gone.
 
 ## Consequences
 

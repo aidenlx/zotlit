@@ -4,9 +4,9 @@ The PDF in this directory is third-party content made available under the
 [Creative Commons CC0 public domain dedication](https://creativecommons.org/publicdomain/zero/1.0/).
 It is outside ZotLit's AGPL-3.0-or-later license grant.
 
-- Title: *Ten Simple Rules for Better Figures*
+- Title: _Ten Simple Rules for Better Figures_
 - Authors: Nicolas P. Rougier, Michael Droettboom, Philip E. Bourne
-- Journal: *PLOS Computational Biology* 10(9): e1003833
+- Journal: _PLOS Computational Biology_ 10(9): e1003833
 - Published: 2014-09-11
 - DOI: [10.1371/journal.pcbi.1003833](https://doi.org/10.1371/journal.pcbi.1003833)
 - Article source: [PLOS Computational Biology](https://journals.plos.org/ploscompbiol/article?id=10.1371/journal.pcbi.1003833)

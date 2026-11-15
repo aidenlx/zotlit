@@ -8,12 +8,12 @@ All development happens on `next`. The `main` branch receives stable graduations
 
 ## Guards
 
-| Guard | When | Effect |
-|---|---|---|
-| Ancestry check | Stable graduation from `next` | Aborts if `origin/main` is not an ancestor of `HEAD` — prevents regressing a hotfix. |
-| All-apps gate | Stable graduation from `next` | Requires both Obsidian and Zotero to be selected — apps graduate together. |
-| Mixed-version gate | Any release from `next` | Aborts if some apps get stable versions and others get pre-release — one PR cannot target two branches. |
-| Version-picker filtering | Always | On `main`: only `patch` + `custom`. On `next` with a prerelease current version: hides `patch` and `prepatch` (nonsensical from a prerelease base). |
+| Guard                    | When                          | Effect                                                                                                                                              |
+| ------------------------ | ----------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Ancestry check           | Stable graduation from `next` | Aborts if `origin/main` is not an ancestor of `HEAD` — prevents regressing a hotfix.                                                                |
+| All-apps gate            | Stable graduation from `next` | Requires both Obsidian and Zotero to be selected — apps graduate together.                                                                          |
+| Mixed-version gate       | Any release from `next`       | Aborts if some apps get stable versions and others get pre-release — one PR cannot target two branches.                                             |
+| Version-picker filtering | Always                        | On `main`: only `patch` + `custom`. On `next` with a prerelease current version: hides `patch` and `prepatch` (nonsensical from a prerelease base). |
 
 ## Considered Options
 

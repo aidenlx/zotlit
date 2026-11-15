@@ -25,10 +25,18 @@ export default defineConfig({
     "**/*.min.js",
     "**/__fixtures__/**",
     "**/__snapshots__/**",
-    "**/*.md",
     "pnpm-lock.yaml",
+    // Agent skills, most of them synced from upstream sources whose hashes
+    // skills-lock.json records.
     ".agents/**",
-    ".claude/**",
+  ],
+  overrides: [
+    {
+      // Code blocks in Markdown docs quote source and output as written,
+      // often with aligned comments.
+      files: ["**/*.md"],
+      options: { embeddedLanguageFormatting: "off" },
+    },
   ],
   sortImports: {
     newlinesBetween: true,

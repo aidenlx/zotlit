@@ -24,11 +24,7 @@ function notes(byKey: Record<string, Record<string, unknown>>) {
       reader.scans++;
       return Object.keys(byKey);
     },
-    read: (
-      itemKey: string,
-      name: string,
-      host: VaultHost | null,
-    ): VaultValue =>
+    read: (itemKey: string, name: string, host: VaultHost | null): VaultValue =>
       host?.itemKey === itemKey
         ? { note: true, value: `host ${host.path}` }
         : Object.hasOwn(byKey, itemKey)
