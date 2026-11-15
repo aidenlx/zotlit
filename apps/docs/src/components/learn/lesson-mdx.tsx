@@ -74,7 +74,7 @@ export const sectionClass = "text-[1.75rem] leading-[1.2] tracking-[-0.01em]";
 
 /** 38px, 34px in a narrow window: the page's H1. */
 export const displayClass =
-  "text-[2.125rem] leading-[1.12] tracking-[-0.01em] text-balance min-[561px]:text-[2.375rem]";
+  "text-[2.125rem] leading-[1.12] tracking-[-0.01em] text-balance min-[561px]:text-[2.375rem] zh:leading-[1.3] zh:tracking-normal zh:break-keep zh:wrap-anywhere";
 
 /** Marks inside step text: bold UI labels at the text's size, inline code at 15px. */
 const marksClass =

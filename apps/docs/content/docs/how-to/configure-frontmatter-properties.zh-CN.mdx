@@ -1,0 +1,172 @@
+---
+title: "配置 Frontmatter 属性"
+description: "使用模板表达式和合并策略为文献笔记添加自定义 YAML 属性字段。"
+---
+
+import { Steps, Step } from "fumadocs-ui/components/steps";
+import { Card, Cards } from "fumadocs-ui/components/card";
+import { Callout } from "@/components/callout";
+import { Command } from "@/components/command";
+import { SettingsPath } from "@/components/settings-path";
+import { UiLabel } from "@/components/ui-label";
+import { m } from "@/paraglide/messages.js";
+
+你可以将 Zotero 数据映射为显示在每篇文献笔记顶部的 YAML frontmatter 属性。ZotLit 预装了四个默认字段：`title`、`related`、`collections` 和 `citekey`。
+
+<Callout type="info" title="属性属于配置方案">
+  每个配置方案都将其属性规则保存在其配置方案文档的清单中。模板工作台视图会更改这些规则并自动保存文档。有关清单的说明，请参阅[配置方案文档](/docs/reference/templates/profile-document)；有关字段机制、合并策略和保留键的说明，请参阅[属性](/docs/reference/templates/frontmatter)。
+</Callout>
+
+## 添加 frontmatter 字段 [#add-a-frontmatter-field]
+
+<Steps>
+  <Step>
+    ### 打开模板工作台视图 [#open-the-template-workbench-view]
+
+    在 Obsidian 中，打开 <SettingsPath />。在 <UiLabel name={m.settings_profile_document_name()} /> 所在行，点击铅笔图标按钮（提示文字为 <UiLabel name={m.settings_profile_edit()} />）。
+
+    模板工作台视图将在默认配置方案下打开。选择 <UiLabel name={m.workbench_tab_properties()} /> 标签页。
+
+  </Step>
+  <Step>
+    ### 添加新字段 [#add-a-new-field]
+
+    选择 <UiLabel name={m.workbench_properties_add()} />。每个属性包含以下控制项：
+
+    - <UiLabel name={m.workbench_properties_name()} /> 是写入 frontmatter 的 YAML 属性名称。
+    - <UiLabel name={m.workbench_properties_format()} /> 用于选择 <UiLabel name={m.workbench_properties_format_value()} />、<UiLabel name={m.workbench_properties_format_text()} /> 或 <UiLabel name={m.workbench_properties_format_rule()} />。
+    - <UiLabel name={m.workbench_properties_expression()} /> 是字段值或规则。对于 Zotero 数据，使用 `zt.` 路径，如 `zt.title` 或 `zt.DOI`。
+    - <UiLabel name={m.workbench_properties_merge()} /> 控制 ZotLit 在更新笔记时如何应用该值。
+
+  </Step>
+  <Step>
+    ### 选择合并策略 [#choose-a-merge-strategy]
+
+    使用 <UiLabel name={m.workbench_properties_merge_replace()} /> 在每次更新时覆盖该字段；使用 <UiLabel name={m.workbench_properties_merge_append()} /> 添加新的数组项并保留笔记中已有的项；或使用 <UiLabel name={m.workbench_properties_merge_keep()} /> 仅在字段为空时写入。有关各策略的具体表现，请参阅[合并策略](/docs/reference/templates/frontmatter#merge-strategies)。
+
+  </Step>
+  <Step>
+    ### 检查结果 [#check-the-result]
+
+    模板工作台视图会自动保存该属性。查看预览以确认所选文献的值。
+
+  </Step>
+</Steps>
+
+## 将 Zotero 标签添加到笔记属性中 [#zotero-tags]
+
+使用 `obsidian_tag` 过滤器创建受管的 `tags` 字段。该过滤器从 `zt.tags` 读取 Zotero 标签对象，并返回 Obsidian 标签值数组。
+
+<Steps>
+  <Step>
+    ### 添加 `tags` 字段 [#add-the-tags-field]
+
+    在 <UiLabel name={m.workbench_tab_properties()} /> 标签页中，选择 <UiLabel name={m.workbench_properties_add()} /> 并输入以下值：
+
+    | 输入项 | 值 |
+    | ----- | ----- |
+    | <UiLabel name={m.workbench_properties_name()} /> | `tags` |
+    | <UiLabel name={m.workbench_properties_format()} /> | <UiLabel name={m.workbench_properties_format_value()} /> |
+    | <UiLabel name={m.workbench_properties_expression()} /> | `zt.tags \| obsidian_tag` |
+    | <UiLabel name={m.workbench_properties_merge()} /> | <UiLabel name={m.workbench_properties_merge_replace()} /> |
+
+    <UiLabel name={m.workbench_properties_merge_replace()} /> 策略可使笔记中的 Zotero 标签保持同步。若还想保留在 Obsidian 中手动添加的标签，请选择 <UiLabel name={m.workbench_properties_merge_append()} />。
+
+  </Step>
+  <Step>
+    ### 更新笔记 [#update-the-note]
+
+    在现有的文献笔记上运行 <Command inline name={m.command_update_note_metadata_name()} />。ZotLit 会计算字段值并将结果写入其 frontmatter 中。
+
+  </Step>
+</Steps>
+
+例如，名为 `Methodology` 和 `Open Access` 的 Zotero 标签会变为：
+
+```yaml
+tags:
+  - Methodology
+  - Open_Access
+```
+
+该过滤器会根据 Obsidian 的标签规则规范化空格及其他字符。frontmatter 中的标签值不需要以 `#` 开头。有关所有规范化规则，请参阅 [`obsidian_tag` 过滤器参考](/docs/reference/templates/syntax#obsidian-tag)。
+
+如需借助 Agent 完成配置，请安装 [ZotLit 模板 skill](/docs/install-skill)，并让 Agent 使用表达式 `zt.tags | obsidian_tag` 添加受管的 `tags` 字段。[模板工作台 CLI](/docs/reference/template-workbench-cli) 可供 Agent 配置该字段并测试渲染结果。
+
+## 编辑或移除字段 [#edit-or-remove-a-field]
+
+选择属性所在行即可进行编辑。点击 <UiLabel name={m.workbench_properties_remove()} /> 即可将其移除。
+
+## 重新排列字段 [#reorder-fields]
+
+模板工作台视图中属性的顺序决定了 ZotLit 创建新文献笔记时 frontmatter 键的顺序。
+
+拖动属性行开头的拖动手柄（<UiLabel name={m.workbench_drag_to_reorder()} />）即可上下移动属性。也可以选中该手柄并按 `Alt+Arrow Up` 或 `Alt+Arrow Down` 移动该行。
+
+### 现有笔记 [#existing-notes]
+
+重新排列字段不会更改现有笔记中的属性顺序。当 ZotLit 更新现有笔记时，该笔记 YAML 中已存在的键将保留其当前位置。
+
+要在单篇笔记中重新排列属性，请使用 Obsidian 的属性面板：拖动属性名称左侧的属性类型图标即可移动该行。Obsidian 会将新的键顺序写回笔记的 YAML 中。笔记必须包含两个或更多属性此操作才有效。
+
+## 验证规则 [#validation-rules]
+
+<UiLabel name={m.workbench_tab_properties()} /> 标签页会使用
+<UiLabel name={m.workbench_properties_row_problem()} /> 标记无法使用的行，
+<UiLabel name={m.workbench_problems_heading()} /> 区域会说明具体问题并提供
+<UiLabel name={m.workbench_problems_where_entry()} /> 以打开该行。
+
+有关 ZotLit 应用的规则，请参阅[验证](/docs/reference/templates/frontmatter#validation)；有关报告这些问题的区域，请参阅[以 Markdown 形式编辑配置方案](/docs/how-to/edit-a-profile-as-markdown#problems)。
+
+## 将更新后的字段应用到现有笔记 [#apply-updated-fields-to-existing-notes]
+
+更改 frontmatter 配置后，运行：
+
+<Command name={m.command_update_note_metadata_name()} />
+
+这会重新计算所有字段表达式，并根据每个字段的合并策略将结果写入当前笔记的 frontmatter。
+
+内置字段也是常规条目，因此你可以在此编辑或移除 `citekey`。有关默认配置方案声明的内容，请参阅[默认字段](/docs/reference/templates/frontmatter#default-fields)。
+
+## 基于 Agent 的配置 [#agent-based-configuration]
+
+配备 ZotLit 模板 skill 的 Agent 可以通过[模板工作台 CLI](/docs/reference/template-workbench-cli) 配置受管 frontmatter 字段模板。
+
+<Callout type="info" title="JavaScript 字段与功能开关">
+  属性通过单个成员声明其值。`expr` 保存一个 Liquid 表达式，`value` 保存一个
+  JSON-e 规则（固定文本即纯字符串规则），`js` 保存一个 JavaScript
+  表达式。当设备上的 <UiLabel name={m.settings_template_js_enable_name()} />{" "}
+  处于关闭状态时，`js` 属性处于未生效状态，ZotLit 会报告受影响的字段：{" "}
+  <UiLabel name={m.notice_frontmatter_js_inert({ fields: "…" })} /> 请参阅[启用
+  JavaScript 模板](/docs/how-to/enable-javascript-templates)。
+</Callout>
+
+## 参见 [#see-also]
+
+<Cards>
+  <Card
+    title="安装 ZotLit skill"
+    description="让 Agent 配置和测试受管 frontmatter 字段。"
+    href="/docs/install-skill"
+  />
+  <Card
+    title="模板工作原理"
+    description="模板类型、语言与数据模型。"
+    href="/docs/reference/templates/how-templates-work"
+  />
+  <Card
+    title="探索模板数据"
+    description="浏览可用的 zt.* 字段并复制路径。"
+    href="/docs/how-to/explore-template-data"
+  />
+  <Card
+    title="启用 JavaScript 模板"
+    description="开启功能开关以运行 frontmatter 中的 js 属性。"
+    href="/docs/how-to/enable-javascript-templates"
+  />
+  <Card
+    title="模板工作台 CLI"
+    description="通过 Obsidian CLI 配置受管 frontmatter 字段模板。"
+    href="/docs/reference/template-workbench-cli"
+  />
+</Cards>

@@ -1,0 +1,140 @@
+---
+title: "ZotLit 2：彻底重构的 Obsidian Zotero 插件"
+description: "专为 Obsidian 打造的 Zotero 集成迎来彻底重写：文献笔记、PDF 标注审阅、引文插入以及整库批量更新。"
+date: 2026-08-05
+---
+
+import { ActionLink } from "@/components/action-link";
+import { Callout } from "@/components/callout";
+
+ZotLit 是一款连接本地 Zotero 数据库的 Obsidian 插件。无需离开 Obsidian，即可创建文献笔记、审阅 PDF 标注并插入引用。v2 是一次从零开始的彻底重写，今天正式发布稳定版。
+
+<Callout title="内容速览">
+v2 修复了 Obsidian 安装程序更新后导致 v1 崩溃的问题。此外，新版还带来了标注工作区、面向整个文库的批量操作、Liquid 模板以及笔记增量更新。
+
+<ActionLink href="/docs/install-zotlit" kind="external">
+  安装 ZotLit
+</ActionLink>
+
+需要 Obsidian 1.13.4+ 桌面版。要从 v1 升级？[跳转至迁移指南](#upgrading-from-v1)。
+
+</Callout>
+
+## 为什么重构 [#why-a-rewrite]
+
+v1 依赖的原生 SQLite 绑定在 Obsidian 更新 Electron 运行时时屡屡失效，导致用户频繁遇到错误弹窗和黑屏。替换这一依赖意味着需要重构插件的大部分代码，因此 v2 也借此机会简化了内部架构。
+
+_关于完整的背景故事，请参阅[重构 ZotLit：v2 公开测试版](/blog/rebuilding-zotlit-v2-public-beta)；关于决定重构背后更详尽的个人经历，请参阅 [Reconnecting the Dots](https://aidenlx.site/blog/reconnecting-dots)。_
+
+## 标注工作区 [#annotation-workspace]
+
+如果你在 Zotero 中为 PDF 做标注，标注视图为你提供了一个在文献笔记旁审阅高亮、评论和标注的工作区。你可以在文本、评论、标签和页码间进行搜索，并通过颜色或标签进行筛选，无需切回 Zotero 即可快速定位重点。可以将标注逐条拖入笔记，也可以一次性全部导入。点击标注可在 Zotero 中打开源 PDF 并定位到对应位置，让你在两个应用之间无缝切换而不会迷失进度。
+
+![Obsidian 中的文献笔记，同时打开标注视图，展示了搜索、颜色与标签筛选器以及针对某一 Zotero 条目的标注卡片](/img/blog/annotation-view.webp)
+
+<ActionLink href="/docs/how-to/use-annotation-view" kind="external">
+  使用标注视图
+</ActionLink>
+
+## 批量操作 [#batch-operations]
+
+对于少数条目，逐个创建文献笔记十分顺手。但当你需要导入现有文库，或者刚检索出一大批文献参考时，这种方式便难以应对。v2 引入了批量操作来解决这一问题，支持一次性为多个条目创建或更新笔记。
+
+稳定版中的新增功能：你可以针对整个 Zotero 文库或特定分类（包含其所有子分类）执行操作。在 Zotero 侧边栏中右键点击文库或分类，即可创建或更新其下所有文献笔记，或者导入其下的所有笔记。相同的操作也可通过 Obsidian 的命令面板（Command palette）或协议链接调用。
+
+{/* TODO: replace with a new screenshot showing collection-scope batch operations */}
+
+<ActionLink href="/docs/how-to/create-and-open-notes#bulk" kind="external">
+  批量操作
+</ActionLink>
+
+## 模板与模板数据浏览器 [#templates-and-the-template-data-explorer]
+
+模板系统决定了文献笔记、标注和引文的排版格式。v2 默认采用 Liquid，相比 v1 的 Eta 语法更容易上手。如果需要完全控制，仍可使用 JavaScript 模板，该功能需要在各设备上单独确认启用。模板数据浏览器能够显示任意 Zotero 条目所提供的具体类型数据，让你基于真实数据编写模板，无需盲猜字段名称。
+
+![Obsidian 中的模板数据浏览器面板，展示了某个 Zotero 条目可用的带类型属性](/img/blog/beta-template-data-explorer.webp)
+
+<ActionLink href="/docs/reference/templates/how-templates-work" kind="external">
+  模板工作原理
+</ActionLink>
+<ActionLink href="/docs/how-to/explore-template-data" kind="external">
+  探索模板数据
+</ActionLink>
+
+## 受控区域 [#managed-region]
+
+文献笔记拥有由 `%%zt-managed%%` 和 `%%/zt-managed%%` 标记的受控区域。当你更新笔记时，v2 会重新渲染受控区域，并完整保留其他所有内容。你在标记上方和下方自行编写的内容在每次更新时都会完好保留。
+
+```markdown
+Personal notes and thoughts go here.
+They survive every update.
+
+%%zt-managed%%
+**Authors:** Jane Doe, John Smith
+**Abstract:** This paper examines the relationship...
+%%/zt-managed%%
+
+More notes below, also untouched.
+```
+
+<ActionLink href="/docs/reference/literature-notes" kind="external">
+  文献笔记与受控区域
+</ActionLink>
+
+## Zotero 笔记导入 [#zotero-note-import]
+
+部分研究人员习惯在 Zotero 内置的笔记编辑器中完成大部分写作。v2 可以将这些笔记导入为 Markdown 文件，并完整保留其内容与结构。高亮会转换为带有反向链接的行内标记，图片摘录会转换为嵌入内容，键入的评论也会一并保留。
+
+<ActionLink href="/docs/how-to/import-zotero-notes" kind="external">
+  导入 Zotero 笔记
+</ActionLink>
+
+## 模板工作台 [#template-workbench]
+
+如果你使用 Claude Code 或 Codex 等编程智能体（coding agent），模板工作台提供了相应的命令，让智能体可以直接检查模板状态、基于你的 Zotero 数据渲染预览，并直接管理属性字段。
+
+<ActionLink href="/docs/reference/template-workbench-cli" kind="external">
+  模板工作台
+</ActionLink>
+
+## 还有更多 [#and-more]
+
+- **`@` 引用触发符**。输入 `@` 打开引文建议器。按 Shift+Enter 可选择替代引文格式。
+- ZotLit Companion（Zotero 插件）新增了**笔记状态列**，显示文库中哪些条目已在你的 Obsidian 仓库中建有文献笔记。
+- **欢迎视图**。包含连接状态和快捷链接的设置屏幕。提示通知可直接跳转至相关设置页面。
+- **基于设备的 Zotero 路径**。路径按设备单独保存，在不同设备间同步仓库不会覆盖彼此的配置。
+- `zt.weblink` 是 Zotero 网页版文库的 URL；每个附件都包含一个能在 Zotero 阅读器中将其打开的 `backlink`。
+- **受控属性**。由模板表达式生成的属性字段会在每次更新笔记时重新计算。支持拖动以调整顺序。
+- 简体中文是第一个非英语**语言包**，作为与版本绑定的发布资源提供。
+
+## 从 v1 升级 [#upgrading-from-v1]
+
+v2 引入了不兼容的重大变更。如果你是从 v1 升级而来：
+
+1. 将模板文件重命名为 v2 的命名规范。
+2. 在 Eta 模板中将 `it.*` 引用替换为 `zt.*`。
+3. 如果使用 Eta，请在 ZotLit 设置中启用 **JavaScript 模板**。
+
+<ActionLink href="/docs/how-to/migrate-from-v1" kind="external">
+  迁移指南
+</ActionLink>
+
+v1 中的两项功能已被停用：标注合并和按主题导入。这两项功能带来的复杂度与其实际使用频率并不相称。
+
+## 值得注意的变更 [#notable-changes]
+
+ZotLit 现采用 **AGPL-3.0-or-later** 许可证，与 ZotLit 移植的代码所遵循的 Zotero 自身许可证保持一致。
+
+**Citation Key Links** 默认处于禁用状态。如果你在公测期间使用过或从 v1 迁移而来，现有设置会予以保留。
+
+## 后续计划 [#whats-next]
+
+接下来我正在推进两项工作：在 Obsidian 内部搜索与筛选 Zotero 文库，以及改进引用工作流。这两项功能目前都没有确切的时间表，但设计层面的基础工作已经就绪。敬请期待！
+
+## 反馈 [#feedback]
+
+如有疑问、想法或错误报告，欢迎通过社区页面与我们交流。
+
+<ActionLink href="/community" kind="external">
+  社区
+</ActionLink>

@@ -1,0 +1,70 @@
+---
+title: "ZotLit 支持的 Zotero 与 Obsidian 版本"
+description: "检查你的电脑、Zotero 和 Obsidian 版本是否支持 ZotLit 2.2、标注编辑功能以及可选的 ZotLit Companion 插件。"
+faq:
+  - question: ZotLit 能配合 Zotero 8 使用吗？
+    answer: ZotLit 仅针对 Zotero 9 和 10 进行过测试，且 Companion 插件无法安装在 Zotero 8 上。ZotLit 仍会尝试读取较旧的数据库，并会在日志中记录关于架构版本未经验证的警告，但这些读取结果未经验证。在正式使用 ZotLit 之前，你应该先将 Zotero 更新至版本 9 或 10。
+  - question: 关闭 Zotero 时 ZotLit 还能用吗？
+    answer: 可以。即使完全关闭 Zotero，你也可以浏览文库、搜索条目以及阅读 PDF 及其标注。仅当你想从 Obsidian 编辑标注或将写作草稿导出为 Word 时，才需要保持 Zotero 运行。
+  - question: 为什么在 Zotero 9 上无法编辑高亮？
+    answer: 从 Obsidian 保存标注更改依赖于 Zotero 10 中首次引入的本地连接功能。在 Zotero 9 上，ZotLit 会显示“Zotero version is not supported”（不支持该 Zotero 版本）并提示你更新 Zotero。你仍可以在 Zotero 9 上查看现有标注，但若要编辑它们，则需要更新至 Zotero 10。
+  - question: ZotLit 支持 iPad、iPhone 或 Android 吗？
+    answer: 不支持。ZotLit 无法在移动设备或平板电脑上运行。它仅作为桌面端插件支持运行 Windows、macOS 或 Linux 的电脑。
+  - question: 我需要哪个版本的 Companion？
+    answer: 你需要与已安装的 ZotLit 插件版本相匹配的 Companion 版本，即 ZotLit 2.2 需要 Companion 2.2。在更新 Companion 之前，实时更新和处理多个条目的操作将停止工作，ZotLit 会提示你进行更新。
+---
+
+import { LessonLink } from "@/components/lesson-link";
+
+ZotLit 2.2.3 支持 Zotero 9 和 Zotero 10，并需要运行在 Windows、macOS 或 Linux 上的 Obsidian 1.15.1 或更高版本。在 Obsidian 中编辑高亮和评论需要 Zotero 10；在 Zotero 9 上你可以阅读 PDF 及其标注，但无法进行编辑。
+
+| 组件                                   | Obsidian                                            | Zotero                    | 其他要求                                                                                                                                         |
+| -------------------------------------- | --------------------------------------------------- | ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| ZotLit 插件（读取文库、笔记、引用）    | 1.15.1 或更高版本，且安装包版本为 1.13.4 或更高版本 | 9 或 10                   | Windows、macOS 或 Linux。不支持手机或平板。                                                                                                      |
+| ZotLit Companion（可选的 Zotero 插件） | —                                                   | 9.0 至 10.x               | 版本必须与插件匹配：ZotLit 2.2 需要 Companion 2.2。                                                                                              |
+| 从 Obsidian 编辑标注                   | 1.15.1 或更高版本                                   | 10 或更高版本，且保持运行 | 在 Zotero 中开启“允许此计算机上的其他应用程序与 Zotero 通信”（**设置 > 高级**（Settings > Advanced）），并在 Zotero 提示时选择过一次“总是允许”。 |
+| 引用格式化与 Word 导出                 | 1.15.1 或更高版本                                   | 9 或 10；导出时保持运行   | Pandoc 引擎，需在每台电脑上通过 ZotLit 的引文设置安装一次，安装时需要联网。                                                                      |
+
+## 关闭 Zotero 时 [#with-zotero-closed]
+
+在关闭 Zotero 的情况下，你依然可以使用文库视图、搜索分类，以及在 Obsidian 中打开带有标注的 PDF。ZotLit 直接从磁盘读取 Zotero 的数据库文件，这项操作无需任何附加插件。
+
+当你从 Obsidian 编辑标注或将草稿导出为 Word 时，需要保持 Zotero 运行。在 Windows 上配合 Zotero 10 使用时，或者在 Linux 上使用 ext4 等文件系统时，ZotLit 显示你在 Zotero 中所作更改可能会有微小延迟。安装 Companion 可以解决此问题——它会让 Zotero 在每次更改后不久将最新的更改写入主数据库文件；而在 macOS 上则无需如此。
+
+## Zotero 8 及更旧版本 [#zotero-8-and-older]
+
+ZotLit 仅针对 Zotero 9 和 Zotero 10 的数据库进行过测试。若使用更旧或更新的 Zotero，ZotLit 仍会尝试读取数据库并在日志中写入警告：“Zotero schema version is outside the range ZotLit is verified against”（Zotero 架构版本不在 ZotLit 验证的范围内）。在此情况下读取的内容未经验证。
+
+Companion 无法安装在 Zotero 8 或更早版本上，因为它仅支持 Zotero 9.0 至 10.x。如果在 Zotero 8 或更早版本上，请在正式依赖 ZotLit 之前将 Zotero 更新至 9 或 10。
+
+## Obsidian 版本过旧时 [#when-obsidian-is-too-old]
+
+在低于 1.15.1 的 Obsidian 版本上，无法安装 ZotLit 2.2.3。在 Obsidian 1.14.5 至 1.15.0 上，已安装的版本会停留在 2.2.2；在更旧的版本上，则停留在 2.1.4。只有更新 Obsidian 后，它们才会更新。
+
+Obsidian 的应用内更新不会替换安装包。请在**设置 > 关于**（Settings > About）中检查安装包版本；如果版本低于 1.13.4，ZotLit 将无法加载。请参考[更新 Obsidian 安装包](/docs/how-to/update-obsidian-installer)指南以解决此问题。
+
+## 常见问题 [#questions]
+
+### ZotLit 能配合 Zotero 8 使用吗？ [#does-zotlit-work-with-zotero-8]
+
+ZotLit 仅针对 Zotero 9 和 10 进行过测试，且 Companion 插件无法安装在 Zotero 8 上。ZotLit 仍会尝试读取较旧的数据库，并会在日志中记录关于架构版本未经验证的警告，但这些读取结果未经验证。在正式使用 ZotLit 之前，你应该先将 Zotero 更新至版本 9 或 10。
+
+### 关闭 Zotero 时 ZotLit 还能用吗？ [#does-zotlit-work-with-zotero-closed]
+
+可以。即使完全关闭 Zotero，你也可以浏览文库、搜索条目以及阅读 PDF 及其标注。仅当你想从 Obsidian 编辑标注或将写作草稿导出为 Word 时，才需要保持 Zotero 运行。
+
+### 为什么在 Zotero 9 上无法编辑高亮？ [#why-can-i-not-edit-highlights-on-zotero-9]
+
+从 Obsidian 保存标注更改依赖于 Zotero 10 中首次引入的本地连接功能。在 Zotero 9 上，ZotLit 会显示“Zotero version is not supported”（不支持该 Zotero 版本）并提示你更新 Zotero。你仍可以在 Zotero 9 上查看现有标注，但若要编辑它们，则需要更新至 Zotero 10。
+
+### ZotLit 支持 iPad、iPhone 或 Android 吗？ [#does-zotlit-work-on-ipad-iphone-or-android]
+
+不支持。ZotLit 无法在移动设备或平板电脑上运行。它仅作为桌面端插件支持运行 Windows、macOS 或 Linux 的电脑。
+
+### 我需要哪个版本的 Companion？ [#which-companion-version-do-i-need]
+
+你需要与已安装的 ZotLit 插件版本相匹配的 Companion 版本，即 ZotLit 2.2 需要 Companion 2.2。在更新 Companion 之前，实时更新和处理多个条目的操作将停止工作，ZotLit 会提示你进行更新。
+
+## 后续操作 [#next-step]
+
+如果你刚开始使用 ZotLit，请先从 <LessonLink slug="connect-zotero-to-obsidian" /> 开始，或前往安装配置指南[安装 ZotLit](/docs/install-zotlit) 与[安装 Companion](/docs/install-companion)。

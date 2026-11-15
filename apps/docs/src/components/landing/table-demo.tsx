@@ -205,7 +205,7 @@ export function TableDemo() {
         <div className="max-w-2xl">
           <h2
             id="landing-table-title"
-            className="font-serif text-3xl leading-[1.2] font-medium text-balance sm:text-5xl sm:leading-[1.15]"
+            className="font-serif text-3xl leading-[1.2] font-medium text-balance sm:text-5xl sm:leading-[1.15] zh:leading-[1.3] zh:tracking-normal zh:wrap-anywhere zh:break-keep"
           >
             {m.docs_home_table_title()}
           </h2>

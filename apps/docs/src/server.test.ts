@@ -75,7 +75,8 @@ describe("global machine endpoint locale aliases", () => {
 // index it nor treat it as a page of its own; and a cache in front of a page
 // whose answer follows the Accept header must keep the two answers apart.
 describe("Markdown answers", () => {
-  const page = "/docs/how-to/insert-citations";
+  // A generated reference page: it has no Chinese edition, so its /zh-CN copy is a fallback.
+  const page = "/docs/reference/functions-and-methods";
   const canonical = `<https://zotlit.aidenlx.site${page}>; rel="canonical"`;
 
   beforeEach(() => {
@@ -84,7 +85,7 @@ describe("Markdown answers", () => {
       const markdown =
         pathname.endsWith(".md") || pathname.startsWith("/llms.mdx/");
       return Promise.resolve(
-        new Response(markdown ? "# Insert citations" : "<html></html>", {
+        new Response(markdown ? "# Functions and methods" : "<html></html>", {
           headers: {
             "content-type": markdown
               ? "text/markdown; charset=utf-8"

@@ -1,0 +1,216 @@
+---
+title: "在关系图谱中探索引用"
+description: "在 Obsidian 的关系图谱中将引用绘制为连线，控制显示内容，并从命令面板打开引用关系图谱。"
+---
+
+import { Steps, Step } from "fumadocs-ui/components/steps";
+import { Card, Cards } from "fumadocs-ui/components/card";
+import { Callout } from "@/components/callout";
+import { Command } from "@/components/command";
+import { SettingsPath } from "@/components/settings-path";
+import { UiLabel } from "@/components/ui-label";
+import { m } from "@/paraglide/messages.js";
+
+利用 Obsidian 原生的关系图谱与局部关系图谱，查看哪些笔记基于哪些著作展开。
+
+ZotLit 会从每篇笔记向其引用的文献绘制一条连线。连线指向该文献对应的文献笔记；若仓库中尚未创建该文献笔记，则指向一个**被引文献节点**（Cited Work Node）。
+
+Obsidian 原生功能全部保留：搜索、颜色分组、深度、出链与入链、箭头，以及跟随当前活动笔记的局部关系图谱。遍历深度同样适用于引用连线，因此从某篇文献笔记出发、深度设为 2 时，即可触及与其引用相同文献的其他笔记。
+
+![全局关系图谱视图，带有紫色的引用连线，连接着 Bush 1945、Nelson 1965 和 Luhmann 1981 等文献笔记（每个均标有作者、年份和标题）、三篇研究笔记，以及颜色变淡的被引文献节点 Engelbart 1962](/img/how-to/graph-view-citations.webp)
+
+## 开始之前 [#before-you-start]
+
+- 在**设置 > 核心插件**（Settings > Core plugins）中开启 Obsidian 的**关系图谱**（Graph view）核心插件。
+- 打开 <SettingsPath page={m.settings_page_citations()} /> 并确认已开启 <UiLabel name={m.settings_citation_graph_name()} />（默认开启）。
+- 在同一页面中至少保留一种引用来源处于开启状态：针对 `[@doe2024]` 引用开启 <UiLabel name={m.settings_citation_pandoc_citations_name()} />，针对无别名的文献笔记链接开启 <UiLabel name={m.settings_citation_wikilink_citations_name()} />。在此处关闭的语法不会在任何地方绘制引用连线。
+
+关闭 <UiLabel name={m.settings_citation_graph_name()} /> 会移除新增的引用连接、被引文献节点以及 ZotLit 控件。你的颜色分组和原生图谱设置将继续保留。
+
+## 控制图谱绘制的内容 [#control-what-the-graph-draws]
+
+ZotLit 会在图谱控制面板中添加六个选项。点击任意图谱右上角的设置图标即可打开该面板。
+
+| 分组 | 选项                                                             | 默认值 | 作用                                                             |
+| ---- | ---------------------------------------------------------------- | ------ | ---------------------------------------------------------------- |
+| 筛选 | <UiLabel name={m.graph_option_pandoc_citations_name()} />        | 开启   | 为每个 `[@doe2024]` 引用绘制一条连线。                           |
+| 筛选 | <UiLabel name={m.graph_option_wikilink_citations_name()} />      | 开启   | 为每个指向文献笔记的无别名链接绘制一条连线。                     |
+| 筛选 | <UiLabel name={m.graph_option_citation_connected_only_name()} /> | 关闭   | 隐藏除文献笔记、被引文献节点以及引用它们的笔记之外的所有节点。   |
+| 显示 | <UiLabel name={m.graph_option_author_title_labels_name()} />     | 关闭   | 在文献笔记和被引文献节点上显示作者、年份和简短标题。             |
+| 显示 | <UiLabel name={m.graph_option_color_citation_links_name()} />    | 关闭   | 为引用连线使用单独的颜色着色，包括被归类为引用的现有 Wiki 链接。 |
+| 显示 | <UiLabel name={m.graph_option_citation_popover_name()} />        | 关闭   | 为文献笔记和被引文献节点启用引用悬停预览。                       |
+
+仅当在 <SettingsPath page={m.settings_page_citations()} /> 中开启 <UiLabel name={m.settings_citation_wikilink_citations_name()} /> 时，才会显示 <UiLabel name={m.graph_option_wikilink_citations_name()} /> 选项。关闭该设置后，`[[wikilink]]` 不再视作引用，保留其原生含义。
+
+每个全局或局部关系图谱标签页各自保存其选项。全局关系图谱书签会恢复保存该视图时记录的选项。单独打开的普通图谱默认关闭作者和标题标签、引用连线着色以及引用弹出框。点击**恢复默认设置**（Restore default settings）会将这六个选项与所有原生选项一同重置为上述默认值。
+
+在启用 Obsidian **书签**（Bookmarks）核心插件的情况下，可使用全局关系图谱面板菜单中的**添加书签**（Bookmark）。
+
+Obsidian 的**仅现有文件**（Existing files only）会隐藏被引文献节点，因为尚未创建文献笔记的被引文献并不是仓库中的文件。
+
+### 在节点上阅读作者与标题 [#read-authors-and-titles-on-nodes]
+
+在**显示**中开启 <UiLabel name={m.graph_option_author_title_labels_name()} />，即可通过作者和标题辨别各部文献。文献笔记和被引文献节点使用相同的标签格式。节点颜色则用以区分哪些文献已建有文献笔记。
+
+第一行显示作者和年份，如 `Smith et al. 2020`。颜色较淡的第二行显示 Zotero 中的简短标题；若未填写简短标题，则显示完整标题。超出长度的行尾以省略号结尾。
+
+缩小图谱可阅读作者和年份；放大图谱可将标题完整显示。标题会在第一行之后渐显，遵循 Obsidian 的**文字淡出阈值**（Text fade threshold）。将鼠标悬停在节点上时，即使在任何缩放比例下（甚至关闭 <UiLabel name={m.graph_option_citation_popover_name()} /> 时）也能显示第二行。
+
+若文献没有创作者，标题会移至第一行，年份显示在下方。缺少年份时仅保留作者；缺少标题时只显示一行。
+
+若 ZotLit 无法读取文献信息，文献笔记会保留其文件名。文献引用标识缺失或存在歧义的被引文献节点则保留该标识。
+
+图谱的搜索框仅匹配仓库文件，不匹配这些显示的标签。节点上显示的作者名只有在你的文件中已包含该文字时才能被搜出。ZotLit 不会将标签文本写入笔记中。
+
+### 节点与连线颜色 [#node-and-edge-colors]
+
+文献笔记使用原生节点颜色。你可以添加一个颜色分组为它们分配统一的颜色。被引文献节点使用柔和的暗色，除非有原生分组与之匹配。
+
+开启 <UiLabel name={m.graph_option_color_citation_links_name()} /> 可为引用连线单独着色。关闭时，所有连线均采用原生颜色。悬停在连接的节点上时，连线保持 Obsidian 的高亮颜色。
+
+有关分组起始颜色、被引文献节点颜色以及引用连线颜色的详细说明，请参阅[主题 Hook](/docs/reference/theme-hooks#graph)。
+
+## 将文献笔记作为一个分组着色 [#color-your-literature-notes-as-a-group]
+
+<Steps>
+  <Step>
+    ### 打开分组区域 [#open-the-groups-section]
+
+    打开图谱控制面板并展开**分组**（Groups）。
+
+  </Step>
+  <Step>
+    ### 添加分组 [#add-the-group]
+
+    在原生的**新建分组**（New group）控件下方，点击 <UiLabel name={m.graph_citations_add_literature_notes_group()} />。
+
+    ZotLit 会插入一个颜色分组，其搜索查询能够匹配所有带有 `zotero-key` 属性的笔记，即所有文献笔记。
+
+  </Step>
+</Steps>
+
+新建的分组默认使用 ZotLit 橙色：浅色模式下为 `#E8622C`，深色模式下为 `#F0793F`。主题和 CSS 代码片段可以[覆盖其起始颜色](/docs/reference/theme-hooks#graph)。
+
+你可以使用原生控件重新着色、调整顺序或删除该分组。更改主题时，保存的颜色保持不变。已存在的匹配分组会保留其原有的颜色和位置。再次点击该按钮仅在之前删除了分组时才会重新添加。
+
+点击**恢复默认设置**会清除所有颜色分组（包括此分组）。该按钮仍然可见，再次点击即可恢复该分组。
+
+## 打开引用关系图谱 [#open-a-citation-graph]
+
+**引用关系图谱**是在原生关系图谱基础上应用了 ZotLit 预设的视图，打开即为研究知识图谱，而非整个仓库的全貌。
+
+<Steps>
+  <Step>
+    ### 运行命令 [#run-the-command]
+
+    打开命令面板（Windows 和 Linux 上按 `Ctrl+P`，macOS 上按 `Cmd+P`），运行以下命令之一：
+
+    <Command name={m.command_open_citation_graph_name()} />
+
+    <Command name={m.command_open_local_citation_graph_name()} />
+
+    全局命令会在 Obsidian 原生**打开关系图谱**（Open graph view）所在位置打开图谱。局部命令会在当前阅读的笔记旁打开垂直分栏并跟随该面板，类似于 Obsidian 的**打开局部关系图谱**（Open local graph）。该命令仅在有笔记处于活动状态时才会出现在命令面板中。
+
+    两个命令均未设置默认快捷键。可在**设置 > 快捷键**（Settings > Hotkeys）中进行绑定。
+
+  </Step>
+  <Step>
+    ### 查看预设配置 [#read-the-preset]
+
+    打开的图谱带有以下预设：
+
+    - <UiLabel name={m.graph_option_pandoc_citations_name()} /> 开启，且在存在该选项时 <UiLabel name={m.graph_option_wikilink_citations_name()} /> 也开启。
+    - <UiLabel name={m.graph_option_citation_connected_only_name()} /> 开启，使图谱仅保留文献笔记与引用结构。
+    - <UiLabel name={m.graph_option_author_title_labels_name()} />、<UiLabel name={m.graph_option_color_citation_links_name()} /> 和 <UiLabel name={m.graph_option_citation_popover_name()} /> 开启。
+    - **标签**（Tags）、**附件**（Attachments）和**孤立节点**（Orphans）关闭，**箭头**（Arrows）开启，**仅现有文件**（Existing files only）关闭以保持被引文献节点可见。
+    - 包含一个文献笔记分组（除非已有分组使用了该查询）。
+
+    引力设置及其他原生选项保持原有状态。再次运行任一命令不会重复添加颜色分组。
+
+  </Step>
+</Steps>
+
+该预设仅作用于由该命令打开的图谱标签页。单独打开的普通图谱保持其自身默认值。将图谱加入书签可在日后恢复所选选项。若删除了文献笔记分组，再次运行该命令会重新恢复它。
+
+在加入作者和标题标签之前保存或收藏的图谱会保留旧版标签。再次运行引用关系图谱命令即可应用当前预设，或者在该图谱中直接开启 <UiLabel name={m.graph_option_author_title_labels_name()} />。
+
+<Callout type="info">
+  局部引用关系图谱不会隐藏孤立节点。Obsidian 的局部关系图谱面板根本没有
+  **孤立节点**（Orphans）这一项，因此预设无法进行设置。在开启{" "}
+  <UiLabel name={m.graph_option_citation_connected_only_name()} />{" "}
+  时，孤立节点几乎不会保留在图谱中。
+</Callout>
+
+### 命令未打开任何内容时 [#when-a-command-opens-nothing]
+
+在以下两种情况下，运行命令会弹出提示而非打开图谱。
+
+- <UiLabel name={m.graph_citations_core_plugin_disabled()} /> 关系图谱视图由
+  Obsidian 提供，因此必须开启对应的核心插件后才能打开图谱。
+- <UiLabel name={m.graph_citations_disabled()} />
+  否则该预设打开的图谱中将不包含任何引用，因此命令会直接停止执行。
+
+## 处理被引文献 [#act-on-a-cited-work]
+
+点击被引文献节点可补全其代表的文献笔记。
+
+| 文献引用标识         | 点击后的操作                                     |
+| -------------------- | ------------------------------------------------ |
+| 匹配单个 Zotero 条目 | 根据配置方案创建文献笔记并将其打开。             |
+| 匹配多个 Zotero 条目 | 弹出候选列表供你选择正确条目。                   |
+| 未匹配到 Zotero 条目 | 弹出提示说明原因，以便你在笔记中更正该引用标识。 |
+
+匹配单个 Zotero 条目的引用标识在笔记创建后便不再显示被引文献节点。图谱重新绘制，由文献笔记节点取而代之，并保留原有的连线。
+
+匹配多个条目的引用标识会继续保留被引文献节点。选择候选条目会创建并打开该笔记，但引用标识本身仍存在歧义，因此图谱依然无法确定连线终点的唯一笔记。请先消除标识歧义，参阅[匹配多个条目的引用标识](/docs/reference/citation-links#ambiguous-key)。
+
+右键点击被引文献节点可执行与其引用标识相关的操作。
+
+| 文献引用标识         | 菜单项                                                                                                                                                                                                                   |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 匹配单个 Zotero 条目 | <UiLabel name={m.graph_citations_menu_create_note()} />、<UiLabel name={m.references_open_in_zotero()} />、<UiLabel name={m.library_view_show_in_library()} />、<UiLabel name={m.graph_citations_menu_copy_citekey()} /> |
+| 匹配多个 Zotero 条目 | <UiLabel name={m.graph_citations_menu_create_note()} />、<UiLabel name={m.graph_citations_menu_copy_citekey()} />                                                                                                        |
+| 未匹配到 Zotero 条目 | <UiLabel name={m.graph_citations_menu_copy_citekey()} />                                                                                                                                                                 |
+
+其余所有节点保留 Obsidian 原生的右键菜单。
+
+## 悬停在节点上 [#hover-a-node]
+
+在图谱的**显示**区域开启 <UiLabel name={m.graph_option_citation_popover_name()} /> 可启用引用悬停预览。关闭时，文献笔记保留原生悬停效果，被引文献节点不显示弹出框。
+
+开启后，悬停在文献笔记或被引文献节点上的行为遵循 <SettingsPath page={m.settings_page_citations()} /> 下的 <UiLabel name={m.settings_citation_hover_action_name()} />，该设置同样控制编辑器内的悬停行为。
+
+| <UiLabel name={m.settings_citation_hover_action_name()} />         | 在文献笔记上           | 在被引文献节点上 |
+| ------------------------------------------------------------------ | ---------------------- | ---------------- |
+| <UiLabel name={m.settings_citation_hover_action_popover()} />      | 显示排版后的文献条目。 | 显示文献条目。   |
+| <UiLabel name={m.settings_citation_hover_action_page_preview()} /> | 显示笔记预览。         | 无动作。         |
+| <UiLabel name={m.settings_citation_hover_action_off()} />          | 原生悬停。             | 无动作。         |
+
+其余所有节点保持 Obsidian 原生的悬停效果。
+
+若要设置按住 Ctrl（Windows）或 Command（macOS）键时才触发图谱弹出框，请在 <SettingsPath page={m.settings_page_citations()} setting={m.settings_citation_hover_mod_page_name()} /> 下开启 <UiLabel name={m.settings_citation_hover_mod_graph_name()} />。
+
+<Callout type="info">
+  在 <UiLabel name={m.settings_citation_hover_action_popover()} />{" "}
+  下，图谱弹出框使用仓库的引文样式和语言，对未被引用的文献笔记同样生效。条目显示时不带编号。如果样式没有参考文献列表或排版不可用，弹出框将显示条目的摘要。其操作针对所显示的条目生效。
+</Callout>
+
+## 另请参阅 [#see-also]
+
+<Cards>
+  <Card
+    title="插入引用"
+    description="编写图谱所绘制的引用。"
+    href="/docs/how-to/insert-citations"
+  />
+  <Card
+    title="文内引用渲染与跳转机制"
+    description="文献引用标识的解析规则，以及存在多项匹配时的处理方式。"
+    href="/docs/reference/citation-links"
+  />
+  <Card
+    title="主题 Hook"
+    description="通过主题或 CSS 代码片段重新定义图谱的节点和连线颜色。"
+    href="/docs/reference/theme-hooks#graph"
+  />
+</Cards>

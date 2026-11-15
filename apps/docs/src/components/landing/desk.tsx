@@ -25,6 +25,7 @@ import {
 import type { LucideIcon } from "lucide-react";
 import type { CSSProperties, ReactNode } from "react";
 
+import { Message } from "@/components/message";
 import { cn } from "@/lib/cn";
 import { m } from "@/paraglide/messages.js";
 import { getLocale } from "@/paraglide/runtime.js";
@@ -57,7 +58,7 @@ function Tape({
 }) {
   return (
     <span
-      className="absolute -top-3 z-10 px-3 py-[5px] font-mono text-[10.5px] leading-none font-medium tracking-[0.12em] whitespace-nowrap text-fd-foreground/80 uppercase"
+      className="absolute -top-3 z-10 px-3 py-[5px] font-mono text-[10.5px] leading-none font-medium tracking-[0.12em] whitespace-nowrap text-fd-foreground/80 uppercase zh:text-xs zh:leading-none zh:tracking-normal"
       style={{
         [side]: inset,
         background: "var(--desk-tape)",
@@ -285,9 +286,11 @@ function LibrarySheet({ compact = false }: { compact?: boolean }) {
 
 /** The query file as a table: the rating column is the reader's own, filled in as they read. */
 function TableSheet({ compact = false }: { compact?: boolean }) {
+  // The Chinese rating header ("rating（笔记）") needs a little more room.
+  const chinese = getLocale() === "zh-CN";
   const cols = compact
-    ? "minmax(0,1fr) 48px 84px"
-    : "minmax(0,1fr) 50px 104px 96px";
+    ? `minmax(0,1fr) 48px ${chinese ? 92 : 84}px`
+    : `minmax(0,1fr) 50px 104px ${chinese ? 100 : 96}px`;
   const cell = compact ? "truncate px-2 py-[6px]" : "truncate px-2 py-[10px]";
   const own = "bg-(--desk-own)";
   const tool = "inline-flex items-center gap-1";
@@ -517,29 +520,38 @@ function DraftSheet() {
         "rounded-md border border-fd-border bg-fd-card px-5 pt-4 pb-5",
       )}
     >
-      <p className="font-mono text-[10px] tracking-[0.12em] text-fd-muted-foreground uppercase">
-        Chapter 3 – Presenting the results
+      <p className="font-mono text-[10px] tracking-[0.12em] text-fd-muted-foreground uppercase zh:font-sans zh:text-[11px] zh:tracking-normal">
+        {m.docs_home_desk_draft_chapter()}
       </p>
       <p className="mt-2 font-serif text-[16px] font-semibold text-fd-foreground">
-        3.3 Keeping each figure reproducible
+        {m.docs_home_desk_draft_heading()}
       </p>
       <div className="relative mt-1.5 text-[13px] leading-[1.65] text-fd-foreground">
+        {/* The draft is in the reader's language; the citations stay as the references give them. */}
         <p>
-          Every figure in this chapter is rebuilt from its raw data by one
-          script <span className={CITATION}>(Sandve et al., 2013)</span>. Their
-          layout follows{" "}
-          {/* The typed key and the citation that replaces it share one cell. */}
-          <span className="inline-grid">
-            <span className="opacity-0 [grid-area:1/1] motion-safe:animate-desk-typed">
-              <span className="inline-block overflow-hidden align-bottom font-mono text-[12px] whitespace-nowrap text-fd-primary motion-safe:animate-desk-type">
-                [@ten
-              </span>
-              <span className="ms-px inline-block h-[15px] w-[1.5px] translate-y-[3px] bg-fd-foreground motion-safe:animate-desk-blink" />
-            </span>
-            <span className="-mx-0.5 rounded-[3px] px-0.5 [grid-area:1/1] motion-safe:animate-desk-cited">
-              <span className={CITATION}>(Rougier et al., 2014)</span>.
-            </span>
-          </span>
+          <Message
+            text={m.docs_home_desk_draft_body({
+              sandve: "{sandve}",
+              rougier: "{rougier}",
+            })}
+            slots={{
+              sandve: <span className={CITATION}>(Sandve et al., 2013)</span>,
+              // The typed key and the citation that replaces it share one cell.
+              rougier: (
+                <span className="inline-grid">
+                  <span className="opacity-0 [grid-area:1/1] motion-safe:animate-desk-typed">
+                    <span className="inline-block overflow-hidden align-bottom font-mono text-[12px] whitespace-nowrap text-fd-primary motion-safe:animate-desk-type">
+                      [@ten
+                    </span>
+                    <span className="ms-px inline-block h-[15px] w-[1.5px] translate-y-[3px] bg-fd-foreground motion-safe:animate-desk-blink" />
+                  </span>
+                  <span className="-mx-0.5 rounded-[3px] px-0.5 [grid-area:1/1] motion-safe:animate-desk-cited">
+                    <span className={CITATION}>(Rougier et al., 2014)</span>
+                  </span>
+                </span>
+              ),
+            }}
+          />
         </p>
         <div className="absolute top-full left-[6%] z-10 mt-1.5 w-[268px] origin-[12%_0] overflow-hidden rounded-md border border-fd-border bg-fd-card opacity-0 [box-shadow:var(--desk-shadow)] motion-safe:animate-desk-suggest">
           <div className="bg-fd-muted px-3 py-2 motion-safe:animate-desk-pick">
@@ -562,8 +574,8 @@ function DraftSheet() {
       </div>
       {/* The reference list takes the new entry as the citation lands. */}
       <div className="mt-3 border-t border-fd-border pt-2">
-        <p className="font-mono text-[10px] tracking-[0.12em] text-fd-muted-foreground uppercase">
-          References
+        <p className="font-mono text-[10px] tracking-[0.12em] text-fd-muted-foreground uppercase zh:font-sans zh:text-[11px] zh:tracking-normal">
+          {m.docs_home_desk_draft_references()}
         </p>
         <ul className="mt-1 font-serif text-[11px] leading-[1.5] text-fd-foreground/90">
           <li className="-mx-1 overflow-hidden rounded-[3px] px-1 motion-safe:animate-desk-ref">
@@ -595,7 +607,7 @@ function WordPage() {
       <span className={cn(corner, "start-5 top-5 border-e border-b")} />
       <span className={cn(corner, "end-5 top-5 border-s border-b")} />
       <p className="text-center font-serif text-[15px] font-bold text-fd-foreground">
-        References
+        {m.docs_home_desk_draft_references()}
       </p>
       <ul className="mt-2.5 grid gap-1.5 font-serif text-[11.5px] leading-[1.6] text-fd-foreground/90">
         <li className="ps-6 -indent-6">

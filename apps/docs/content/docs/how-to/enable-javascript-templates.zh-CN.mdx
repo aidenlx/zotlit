@@ -1,0 +1,89 @@
+---
+title: "启用 JavaScript 模板"
+description: "开启 JavaScript 模板开关，以便在此设备上运行 Eta 模板文档与 `js` 属性条目。"
+---
+
+import { Steps, Step } from "fumadocs-ui/components/steps";
+import { Card, Cards } from "fumadocs-ui/components/card";
+import { Callout } from "@/components/callout";
+import { SettingsPath } from "@/components/settings-path";
+import { UiLabel } from "@/components/ui-label";
+import { m } from "@/paraglide/messages.js";
+
+<UiLabel name={m.settings_template_js_enable_name()} />
+是一项按设备生效的安全开关，允许在模板中运行
+JavaScript。该开关默认处于关闭状态。
+
+在 ZotLit 2.1 中，语言直接体现在文件名中：`zotlit-note.eta.md` 是 Eta 模板，而 `zotlit-note.liquid.md` 是 Liquid 模板。2.2 版本的模板文档则改在自身的清单（manifest）中声明语言，对应的键为 `language: eta`。
+
+受管属性条目通过其值成员声明语言：`expr`（Liquid）、`value`（JSON-e）或 `js`（JavaScript）。关于清单键与三种条目成员的详细说明，请参阅[配置方案文档](/docs/reference/templates/profile-document)。
+
+## 开关的作用范围 [#what-the-gate-covers]
+
+- **Eta 模板文档。** 清单中设置了 `language: eta` 的配置方案文档、引文文本或片段。
+- **`js` 属性条目。** 值成员为 `js` 的受管属性条目。
+
+无论开关开启还是关闭，`expr` 和 `value` 成员始终有效。当开关处于关闭状态时，Eta 文档永远不会被编译，`js` 条目也永远不会被执行求值。
+
+<Callout type="info" title="请先了解相关影响">
+  Eta 模板运行 JavaScript 时拥有与 ZotLit
+  本身相同的权限：它们可以读取并修改你的仓库、连接互联网，并在桌面端访问你的系统。在开启之前，请完整阅读
+  [JavaScript
+  模板](/docs/reference/templates/how-templates-work#javascript-templates)中的详细说明。
+</Callout>
+
+## 开启 [#turn-on]
+
+<Steps>
+  <Step>
+    ### 打开模板引擎设置 [#open-the-template-engine-settings]
+
+    在 Obsidian 中，打开 <SettingsPath page={m.settings_page_advanced()} />。找到 <UiLabel name={m.settings_advanced_template_engine_heading()} /> 分组及其中的 <UiLabel name={m.settings_template_js_enable_name()} /> 行。
+
+  </Step>
+  <Step>
+    ### 点击打开 [#click-turn-on]
+
+    点击 <UiLabel name={m.settings_template_js_turn_on()} /> 按钮。此时会出现标题为 <UiLabel name={m.settings_template_js_confirm_title()} /> 的确认弹窗，并显示以下警告：
+
+    > <UiLabel name={m.settings_template_js_confirm_body()} />
+
+    点击 <UiLabel name={m.settings_template_js_confirm_action()} /> 确认。
+
+  </Step>
+</Steps>
+
+该开关立即生效。ZotLit 会就地重新编译模板文件夹。无需重新加载插件。
+
+## 关闭 [#turn-off]
+
+在同一个 <UiLabel name={m.settings_template_js_enable_name()} /> 分组中，点击 <UiLabel name={m.settings_template_js_turn_off()} />。该开关会立即关闭，无需确认弹窗。所有声明了 `language: eta` 的模板文档都将失效，所有使用 `js` 声明的受管属性条目也会停止求值，直到你重新开启该开关。
+
+## 按设备生效 [#per-device-scope]
+
+此设置保存在本地设备上，不包含在同步的插件数据中。在一台设备上开启并不会在另一台设备上自动开启。每台需要运行 Eta 文档和 `js` 条目的设备都必须单独手动开启。
+
+## 另请参阅 [#see-also]
+
+<Cards>
+  <Card
+    title="JavaScript 模板"
+    description="开关启用的内容、安全风险以及关闭时的行为。"
+    href="/docs/reference/templates/how-templates-work#javascript-templates"
+  />
+  <Card
+    title="配置方案文档"
+    description="清单键、笔记源码与标注分节。"
+    href="/docs/reference/templates/profile-document"
+  />
+  <Card
+    title="自定义模板"
+    description="编辑模板文档并将语言切换为 Eta。"
+    href="/docs/how-to/customize-a-template"
+  />
+  <Card
+    title="模板工作原理"
+    description="三种模板文档类型、文件名以及两种支持的语言。"
+    href="/docs/reference/templates/how-templates-work"
+  />
+</Cards>

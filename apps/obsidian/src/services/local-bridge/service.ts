@@ -24,6 +24,7 @@ import {
 import type { ProfileBindingDefaults } from "@zotlit/workbench/bridge";
 
 import { DOCS_SITE_URL } from "@/lib/constants";
+import { docsUrl } from "@/lib/docs-url";
 import { instantClock } from "@/lib/effect-clock";
 import { withLogCategory } from "@/lib/effect-log";
 import { forkEach } from "@/lib/effect-stream";
@@ -238,7 +239,7 @@ export const layerLocalBridge = (options: {
             Effect.annotateLogs({ port }),
             withLogCategory("local-bridge"),
           );
-          return `${DOCS_SITE_URL}${WORKBENCH_PATH}${connectFragment(code, port)}`;
+          return `${docsUrl(WORKBENCH_PATH)}${connectFragment(code, port)}`;
         }),
         disconnect: Effect.gen(function* () {
           const connection = sessions.connection;

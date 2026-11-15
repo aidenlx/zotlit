@@ -59,7 +59,7 @@ function BlogIndex() {
             className="grid grid-cols-1 gap-2 border-b border-fd-border/60 py-6 last:border-b-0 md:grid-cols-[190px_1fr] md:gap-6.5"
           >
             <div className="text-left md:text-right">
-              <time className="block font-mono text-xs font-medium tracking-widest text-fd-muted-foreground uppercase">
+              <time className="block font-mono text-xs font-medium tracking-widest text-fd-muted-foreground uppercase zh:tracking-normal">
                 {formatReleaseDate(post.date, { locale: getLocale() })}
               </time>
               <p className="text-[14.5px] text-fd-muted-foreground italic">

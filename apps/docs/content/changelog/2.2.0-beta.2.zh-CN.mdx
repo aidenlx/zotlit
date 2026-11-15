@@ -1,0 +1,75 @@
+---
+version: "2.2.0-beta.2"
+date: "2026-10-02"
+description: "集中管理笔记路径、保留用户输入的配置方案、Word 导出问题修复"
+---
+
+import { Command } from "@/components/command";
+import { SettingsPath } from "@/components/settings-path";
+import { UiLabel } from "@/components/ui-label";
+import { m } from "@/paraglide/messages.js";
+
+此测试版在编辑配置方案时显示文献笔记的完整路径，并修复了模板工作台、引文和 Word 导出中的诸多问题。
+
+## 新增功能 [#whats-new]
+
+### 笔记路径 [#note-path]
+
+模板工作台的 <UiLabel name={m.workbench_tab_name_and_folder()} /> 标签页现在包含一个独立的 <UiLabel name={m.workbench_name_path_heading()} /> 分组。其中汇集了 <UiLabel name={m.workbench_name_binding_folder()} />、<UiLabel name={m.workbench_name_filename_label()} />，以及笔记在仓库中所分配完整路径的 <UiLabel name={m.workbench_name_filename_result()} />。在笔记名称中使用斜杠（`/`）可以创建子文件夹。参见[模板工作台视图](/docs/reference/template-workbench-view)和[自定义模板](/docs/how-to/customize-a-template)。
+
+<SettingsPath page={m.settings_page_profiles()} /> 上的
+<UiLabel name={m.settings_profile_add()} />
+现在只需提供一个未被其他配置方案占用的有效名称即可。文件夹为选填项；留空则使用默认配置方案的文件夹。此前，除非文件夹、引文样式或笔记外观有所不同，否则
+ZotLit
+会拒绝创建新配置方案。参见[为不同笔记使用不同模板](/docs/how-to/use-different-templates)。
+
+当将笔记切换到其他配置方案，或删除配置方案导致笔记迁移时，各笔记现在会在新文件夹下保留其原有的子文件夹结构。例如，`literatures/2024/Smith2020.md` 会移动至 `books/2024/Smith2020.md`。此前，笔记会被直接移动到新文件夹的根目录。
+
+### 其他改进 [#other-improvements]
+
+- <Command inline name={m.command_open_lit_note_name()} />
+  的搜索框现在显示占位提示
+  <UiLabel name={m.modal_literature_search_placeholder()} />
+  ，以便明确可搜索的内容。
+- 确认已开启 Zotero 编辑的提示现在会在 3 秒后自动关闭。此前该提示会遮挡标注视图顶部达 10 秒之久。
+- 导出对话框现在以更易读的格式显示目标路径。位于仓库内的目标会显示其在仓库中的路径及仓库名称；位于主目录的目标会显示简短路径。
+
+## 问题修复 [#bug-fixes]
+
+### 模板工作台 [#template-workbench]
+
+- 在工作台面板中输入诸如 `zt.creators | map: "fullName"` 的属性规则，或包含引号、`: `、`- ` 以及开头带 `*`、`&`、`!` 的笔记名称时，可能会导致含义改变，甚至破坏配置方案使其无法运行。现在输入的内容会完全按原样保存。
+- 当配置方案存在错误时，<UiLabel name={m.workbench_tab_properties()} /> 标签页上的 <UiLabel name={m.workbench_properties_remove()} /> 和 <UiLabel name={m.workbench_properties_format_reset()} /> 看似生效却未作任何更改。现在该标签页会提示先修复错误，并在修复前禁止列表更改。你仍可通过直接编辑规则来完成修复。<UiLabel name={m.workbench_problem_show()} /> 会跳转到错误处，执行撤销操作可恢复到上一个可用版本。参见[配置 Frontmatter 属性](/docs/how-to/configure-frontmatter-properties)。
+- 在使用 Windows 换行符保存的配置方案中，<UiLabel name={m.workbench_tab_properties()} /> 标签页上的折叠行曾出现摘要显示损坏的问题。现在能够正常显示规则。
+- <Command inline>ZotLit: 自定义此笔记的模板</Command>
+  此前会先在主窗口中短暂显示工作台，然后再移至独立窗口。现在会直接在独立窗口中打开。
+- 重新打开工作台时此前总会回到 <UiLabel name={m.workbench_tab_note()} /> 标签页。现在会恢复到上次停留的标签页，如 <UiLabel name={m.workbench_tab_annotation()} />、<UiLabel name={m.workbench_tab_name_and_folder()} /> 或 <UiLabel name={m.workbench_advanced()} />。
+
+### 引文 [#citations]
+
+- 当关闭 <UiLabel name={m.settings_citation_open_as_links_name()} /> 时，直接点击格式化引文此前无法将光标置于其中。现在点击后会显示引文的源码文本，并将光标放置在点击位置。按住 `Ctrl` 或 `Command` 点击仍会打开被引用的文献笔记。
+- 在编辑器和笔记的参考文献中，`[[@key]]` 此前均被解析为引文。现在会被当作普通的 Wiki 链接处理。
+- 插入括号形式的引文（如 `[@key]`）后此前会自动附带空格，导致后续标点符号无法紧接其后。现在插入后不再添加空格。
+- 在文献引用标识后编辑定位符（如 `[@key, p. 5]`）时此前会触发引文建议器，且选择结果后会替换掉定位符。现在编辑定位符时建议器会保持关闭。
+
+### 笔记与标注 [#notes-and-annotations]
+
+- 笔记实时更新此前会导致阅读位置发生跳动。现在笔记会停留在原先的阅读位置。
+- 当光标位于笔记标题或属性（Properties）中时，此前无法使用 <Command inline name={m.command_update_note_name()} /> 和 <Command inline name={m.command_update_note_metadata_name()} />。现在可以在笔记中的任意位置执行。
+- 将标注拖拽至句末放置时此前会与该行合并。现在会作为独立的块插入。拖放至笔记末尾的空行时现在会插入该标注，若拖放时未指定目标笔记则会给出相应提示。参见[使用标注视图](/docs/how-to/use-annotation-view)。
+- 在实时预览中，`%%/zt-managed%%` 结束标记此前会被隐藏在笔记的最后一个 callout 内部。现在会保持在 callout 外部。
+- 未打开文献笔记时，<UiLabel name={m.cited_by_view_name()} /> 视图此前会显示计数为零。现在仅在打开文献笔记时才显示计数。
+
+### 导出 [#export]
+
+- 导出至 Word 现在能正确处理以下三项内容。参见[导出带引文的笔记](/docs/how-to/export-note-with-citations)。
+  - Callout 此前会显示原始的 `[!type]` 文本。现在会转换为带有粗体标题的引用块。
+  - 紧随单行文本下方的引用块此前会变为纯文本。现在会保留为引用块。
+  - 参考文献列表此前没有标题。现在会根据引文样式的语言自动添加标题。可以通过笔记的 `reference-section-title` 属性自定义其他标题。
+
+### 欢迎视图 [#welcome-view]
+
+- 文件夹设置、ZotLit Companion 安装以及首篇笔记创建步骤在完成后此前仍显示为待办。现在会正常标记为已完成，且在安装 Companion 后，相应步骤不再提示安装。
+- <Command inline name={m.command_open_welcome_name()} />
+  此前会直接替换当前活动笔记打开，导致后退时跳过了该笔记。现在会在其旁侧的新标签页中打开。
+- 在欢迎视图的文献笔记搜索中选择结果时，此前会重复打开已在其他标签页中打开的笔记副本。现在会直接切换至已打开的笔记。按住修饰键仍可在新面板中打开笔记。

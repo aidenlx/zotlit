@@ -1,7 +1,7 @@
 // Which edition a requested page serves, and the canonical and alternate URLs that follow.
 
 import type { SiteLocale } from "./i18n";
-import { localizedPath } from "./i18n";
+import { chineseCatalogPages, localizedPath } from "./i18n";
 import { htmlPagePath } from "./markdown-routes";
 
 export interface PageLocaleState {
@@ -14,10 +14,7 @@ export interface PageLocaleState {
   }[];
 }
 
-// The Workbench draws its whole UI from the locale catalogs. The landing,
-// community and listing pages show English copy until their catalog strings
-// are translated, so their `/zh-CN` URLs are English fallbacks.
-const catalogPages = new Set(["/workbench"]);
+const catalogPages: ReadonlySet<string> = new Set(chineseCatalogPages);
 const chinesePages = new Set(__DOCS_CHINESE_PAGES__);
 
 /** Normalize the two published locales while keeping unsupported input English. */

@@ -81,6 +81,7 @@ describe("lessonArticleSchema", () => {
       description: "Type [@ and pick a paper.",
       datePublished: "2026-10-02",
       dateModified: "2026-11-12",
+      inLanguage: "en",
       author: publisher,
       publisher,
       url: "https://zotlit.aidenlx.site/learn/cite-in-obsidian-with-zotero",
@@ -91,23 +92,25 @@ describe("lessonArticleSchema", () => {
 });
 
 describe("changelogArticleSchema", () => {
-  it("names the release's author and social card", () => {
+  it("names the release's language, author and social card", () => {
     expect(
       changelogArticleSchema({
         version: "2.2.2",
         date: "2026-10-30",
-        url: "/changelog/2.2.2",
-        image: "/og/changelog/2.2.2/image.webp",
+        url: "/zh-CN/changelog/2.2.2",
+        inLanguage: "zh-CN",
+        image: "/og/zh-CN/changelog/2.2.2/image.webp",
       }),
     ).toEqual({
       "@context": "https://schema.org",
       "@type": "Article",
       headline: "ZotLit v2.2.2",
       datePublished: "2026-10-30",
+      inLanguage: "zh-CN",
       author: publisher,
       publisher,
-      url: "https://zotlit.aidenlx.site/changelog/2.2.2",
-      image: "https://zotlit.aidenlx.site/og/changelog/2.2.2/image.webp",
+      url: "https://zotlit.aidenlx.site/zh-CN/changelog/2.2.2",
+      image: "https://zotlit.aidenlx.site/og/zh-CN/changelog/2.2.2/image.webp",
     });
   });
 });
@@ -128,6 +131,7 @@ describe("faqPageSchema", () => {
       "@context": "https://schema.org",
       "@type": "FAQPage",
       url: "https://zotlit.aidenlx.site/docs/answers/zotero-and-obsidian-versions",
+      inLanguage: "en",
       mainEntity: [
         {
           "@type": "Question",

@@ -1,0 +1,108 @@
+---
+version: "2.2.0-beta.5"
+date: "2026-10-29"
+description: "默认笔记正文一次性写入、标注链接预览、各处支持在文库中显示"
+---
+
+import { Command } from "@/components/command";
+import { SettingsPath } from "@/components/settings-path";
+import { UiLabel } from "@/components/ui-label";
+import { m } from "@/paraglide/messages.js";
+
+ZotLit 仅在你明确要求时才会将文本从 Zotero 复制到 Obsidian。双向均不会进行自动同步。
+
+## 不兼容变更 [#breaking-changes]
+
+### 默认文献笔记正文在创建后归你完全掌控 [#the-default-literature-note-body-is-yours-after-creation]
+
+使用默认模板创建的新文献笔记仅写入一次，即创建时 Zotero 内容的一份副本。正文包含标题、Zotero 链接、附件链接以及带有查询块的标注分节。此后，正文由你随意编辑。你对正文的编辑永远不会同步回 Zotero，而 Zotero 之后发生的变化也只有在你覆盖笔记时才会反映进来。
+
+<Command inline name={m.command_update_note_name()} />
+现在仅刷新笔记的属性，正文仍保留为你编辑的样子。标注查询块会实时读取
+Zotero，因此无需更新即可直接显示新的高亮。它是 Zotero
+的动态视图，而非静态副本。请参阅[保持笔记最新](/docs/how-to/keep-notes-updated)。
+
+默认模板不再添加 `%%zt-managed%%` 标记，也不再在“Notes”标题下列出该文献的 Zotero 子笔记。<Command inline name={m.command_overwrite_note_name()} /> 仍会在你确认后替换整个正文。
+
+### 子笔记仅在你明确要求时导入 [#child-notes-import-only-when-you-ask]
+
+创建、更新或覆盖文献笔记时，不再将 Zotero 子笔记导入你的仓库。在此之前，使用 `noteLink` 的模板会在处理过程中为每个子笔记创建一个 Markdown 文件。
+
+现在，只有在导入时子笔记才会成为一个文件。运行 <Command inline name={m.command_import_child_notes_name()} /> 或 <Command inline name={m.command_import_all_notes_name()} />，或者从 Zotero 发起导入。导入的文件是一份副本。你对它的编辑永远不会同步回 Zotero，而 Zotero 笔记随后的编辑也只有在你重新导入该笔记时才会反映过来。
+
+在模板中，如果存在已导入的文件，`noteLink` 会链接到该文件；否则会提供一个在 Zotero 中打开该笔记的链接。请参阅[导入 Zotero 笔记](/docs/how-to/import-zotero-notes)。
+
+### 现有笔记保持原样 [#existing-notes-stay-as-they-are]
+
+你现有的笔记不会发生变化。带有受管标记的笔记将保留这些标记，更新操作仍会刷新标记之间的文本。如果想停止该行为，请删除这两行标记。请参阅[文献笔记与受管区域](/docs/reference/literature-notes)。
+
+如果你自定义或复制了默认配置方案，其文档现在不包含受管块。此时更新带有标记的旧笔记会显示 <UiLabel name={m.notice_updated_note_no_managed_block()} /> 若要继续刷新该区域，请在配置方案文档中添加 `{% managed %}` 块。
+
+## 新增功能 [#whats-new]
+
+### 标注链接可在任意电脑上打开对应标注 [#annotation-links-open-the-annotation-on-any-computer]
+
+ZotLit 写入笔记中的每个标注现在均使用指定该标注的 `zotero://open` 链接指向 Zotero。该链接在你打开仓库的每一台电脑上均可正常工作。在此之前，链接指向本地文件，仅在存在该文件路径的设备上有效。请参阅 [Zotero 打开链接](/docs/reference/protocol-links#zotero-open-links)。
+
+在存放有对应 PDF 的电脑上点击链接时，PDF 会在 Obsidian 的 PDF 阅读器中打开并选中该标注；否则将由 Zotero 打开。如果希望始终由 Zotero 打开此类链接，请关闭 <SettingsPath page={m.settings_page_reader()} /> 下的 <UiLabel name={m.settings_reader_open_annotation_links_name()} />。该选项默认开启。请参阅[通过笔记中的链接打开 PDF](/docs/how-to/open-pdf-in-obsidian#file-links)。
+
+在实时预览、源码模式或阅读视图中将鼠标悬停在标注链接上，会弹出浮窗。它会显示引用内容、你的评论、页码和高亮颜色。对于图片或墨迹标注，它会显示图片。<SettingsPath page={m.settings_page_citations()} /> 下的 <UiLabel name={m.settings_citation_hover_action_name()} /> 设置用于控制该弹出浮窗。将其设为 <UiLabel name={m.settings_citation_hover_action_off()} /> 即可关闭。
+
+默认标注模板采用了全新布局。文献引用现在紧随引用文本之后，而页码标签即为链接。当标注没有页码标签时，链接文字显示为“[Zotero]”。如果你使用的是默认模板，从现在起插入的标注外观将与以往不同。自定义模板的输出格式保持不变。请参阅[默认模板](/docs/reference/templates/defaults)。
+
+![一份采用全新默认布局的文献笔记，包含两条标注，每条标注均包含引用文本、随后的文献引用以及作为链接的页码，鼠标悬停在第二个链接上方显示弹出浮窗，内容包括引用文本、评论、第 1 页和绿色高亮条](/img/changelog/annotation-link-popover.webp)
+
+<SettingsPath page={m.settings_page_citations()} /> 下新增了
+<UiLabel name={m.settings_citation_annotation_citations_name()} />
+设置项，默认关闭。开启后，标注链接将被视为对其所属文献的引用。该文献随后会出现在
+<UiLabel name={m.references_view_name()} />
+侧边栏及其他引用功能中。请参阅[文内引用渲染与导航的工作原理](/docs/reference/citation-links)。
+
+### 在 Zotero 文库视图中显示任意文献 [#show-any-paper-in-the-zotero-library-view]
+
+<UiLabel name={m.library_view_show_in_library()} /> 现在会出现在 ZotLit
+显示文献的每个地方。你可以在 <UiLabel name={m.references_view_name()} />
+侧边栏的各行中以及 <UiLabel name={m.cited_by_view_name()} />
+工具栏中找到它。它还出现在引用悬停弹出框、被引作品的关系图谱菜单以及文献笔记的文件菜单中。新增的
+<Command inline name={m.command_show_in_library_name()} />
+命令具有同样的作用。此前，只有在快速切换器中按下 `Alt+Enter`
+才能实现此操作。请参阅[在文库中显示文献](/docs/how-to/use-library-view#show-in-library)。
+
+![一篇学位论文章节，在 Rougier 等人的引文上方打开了引用弹出框，其文库按钮上带有“在 Zotero 文库中显示”悬停提示，旁边是文库视图，选中了该文献所在行，列表下方显示其详细信息](/img/changelog/show-in-library.webp)
+
+文库视图会清除当前的搜索和筛选条件，确保文献不被隐藏，然后高亮闪烁该文献所在的行。当该文献不存在于你的任何文库中时，视图会保留搜索和筛选条件，并显示 <UiLabel name={m.library_view_reveal_not_found()} />
+
+模板新增了 `zt.librarylink` 变量。它提供一个 `obsidian://zotlit/show-in-library` 链接，可在你同步仓库的每一台设备上使用。该变量可用于笔记对应的条目、其所属条目以及相关条目。请参阅[模板数据](/docs/reference/templates/data)。
+
+### 其他改进 [#other-improvements]
+
+- 文库视图中的条目详情现在支持按需显示与隐藏。点击搜索行末尾的 <UiLabel name={m.library_view_details_toggle()} /> 按钮、在某行上按 `Space` 键，或在卡片上选择 <UiLabel name={m.library_view_card_close()} /> 即可。ZotLit 会记住你的选择。现在点击或按方向键仅选中该行，让选区响应更加即时。未选中任何文献时，详情区域会显示文库或分类的条目数量统计。在较窄的面板中，详情将以全宽显示在列表下方，并且可以调整大小。你可以折叠和调整文库树的大小，在较宽的面板中详情将以双列排版。请参阅[阅读文献的阅读卡片](/docs/how-to/use-library-view#reading-card)。
+- 筛选表达式编辑器现在支持代码高亮，并在错误处添加波浪下划线。这涵盖了查询视图筛选、公式字段以及配置方案匹配。编辑器还支持自动补全字段名和函数名（按 `Tab` 或 `Enter` 确认）。输入时还会显示函数的参数提示。请参阅[筛选行](/docs/how-to/use-query-files#filter)。
+- 在未输入任何内容时，引文建议器与 <Command inline name={m.command_insert_citation_name()} /> 会优先列出笔记中已引用的文献。这些行会显示 <UiLabel name={m.citation_suggester_cited_in_note()} />。请参阅[插入引用](/docs/how-to/insert-citations)。
+- 欢迎检查清单中增加了一个可选的推荐步骤：<UiLabel name={m.welcome_step_companion_title()} />。在 Zotero 中安装 Companion 后，该步骤将显示 <UiLabel name={m.welcome_step_companion_installed()} />。请参阅[安装 ZotLit Companion](/docs/install-companion)。
+- 当本台电脑上存在对应文件时，<UiLabel name={m.annot_view_name()} /> 视图中卡片上的页码标签会在 Obsidian 中打开 PDF；否则在 Zotero 中打开。在此之前，它始终在 Zotero 中打开。请参阅[在 Obsidian 中打开条目的 PDF](/docs/how-to/open-pdf-in-obsidian)。
+- 从 <UiLabel name={m.annot_view_name()} /> 视图中（通过卡片菜单或拖动）插入的标注现在具备正确的空格处理：在单词后插入会有前置空格，在下一个单词前会有后置空格；在闭合标点前则不会添加空格。单行引用内容周围多余的换行符也会被清除。
+- <Command inline name={m.command_update_all_notes_name()} />
+  在大型文库中的速度显著提升。对于 10,000 篇新笔记，确认对话框在约 1
+  秒内即可出现，而之前需要约 10 秒。
+- 包含大量引用的笔记在打开和更新时速度更快。
+
+![学位论文章节旁窄面板中的文库视图，所选文献的详情以全宽显示在列表下方，搜索行末尾的开关上带有“显示条目详情”悬停提示](/img/changelog/library-view-details-toggle.webp)
+
+![以表达式形式编写的查询视图筛选器，字段名、函数、数字和文本以不同颜色显示，“year”下方带有波浪下划线和错误提示，补全列表展开且“tags”排在顶部](/img/changelog/filter-expression-editor.webp)
+
+## 错误修复 [#bug-fixes]
+
+- 在选择器中输入内容后立即按 `Enter` 键或点击，选择器可能会响应较早的搜索结果。这影响了快速切换器、<Command inline name={m.command_insert_citation_name()} />、条目选择器以及引文建议器，可能导致插入错误的引文或创建错误的笔记。现在 `Enter` 键会等待当前输入内容的搜索结果完成后再执行操作。
+- 搜索包含 8 个字母的单词（例如“thinking”或“kahneman”）时搜不到任何内容。现在可以正常找到匹配项。
+- 切换到标注加载较慢的文献后，<UiLabel name={m.annot_view_name()} /> 视图可能会一直停留在 <UiLabel name={m.annot_view_loading()} /> 状态，直到点击进去才恢复。现在卡片能正常加载。
+- 位于另一引文的前缀或后缀内部的引用（例如 `[@a with [[Note]]]`）会导致外层引用的 Pandoc 导出损坏。现在内层引用会作为纯文本导出，其作品仍会显示在参考文献列表中。请参阅[导出带引文的笔记](/docs/how-to/export-note-with-citations)。
+- 重新加载后，恢复的 PDF 标签页即使没有翻页也可能被计为已读，导致文献在“最近”和 Zotero 的“最近阅读”列表中被提前。现在只有实际翻页才会被计入。请参阅[在 Zotero 中记录阅读时间](/docs/how-to/open-pdf-in-obsidian#recently-read)。
+- 如果快速关闭并重新开启 ZotLit，命令可能会丢失或出现启动错误提示。现在 ZotLit 可以正常启动。
+- 在查询视图筛选器中，属性名称曾缩略为图标或被截断，标签卡片也会在词中换行。现在均能完整显示。
+- 键盘相关修复：
+  - 按 `Escape` 取消调整大小时不再清除当前选区。
+  - 在列表单元格的条目菜单中，按 `Delete` 不再删除条目，按 `Escape` 仅关闭该菜单。
+  - 按 `Escape` 可关闭标签编辑器。
+  - 匹配表达式字段支持撤销操作。
+- 在筛选表达式中快速输入可能导致焦点移开并丢字。现在所有按键均能正确输入到字段中。

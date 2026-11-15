@@ -26,6 +26,9 @@ export const ztProse = [
   "prose-code:rounded-none",
   "prose-ul:my-[0.75em] prose-ol:my-[0.75em] prose-li:my-[0.25em] prose-li:leading-[1.6]",
   "[&_li_p]:my-[0.375em] [&_li_ul]:my-[0.25em] [&_li_ol]:my-[0.25em]",
+  // Chinese glyphs fill the em box, so Chinese text takes looser leading and
+  // no tracking. The body paragraphs already sit at 1.75.
+  "zh:prose-h1:leading-[1.35] zh:prose-h4:tracking-normal zh:prose-blockquote:leading-[1.8] zh:prose-li:leading-[1.75]",
 ].join(" ");
 
 /**
@@ -39,7 +42,7 @@ export const ztProse = [
 export const changelogProseRoles = [
   "prose max-w-none font-sans prose-sm text-fd-muted-foreground",
   "prose-code:rounded-none",
-  "prose-h2:font-mono prose-h2:font-semibold prose-h2:text-fd-foreground prose-h2:uppercase",
+  "prose-h2:font-mono prose-h2:font-semibold prose-h2:text-fd-foreground prose-h2:uppercase zh:prose-h2:tracking-normal",
   "prose-h2:before:inline-block prose-h2:before:w-0.5 prose-h2:before:translate-y-px prose-h2:before:bg-fd-primary prose-h2:before:align-middle prose-h2:before:content-['']",
   "prose-h3:font-serif prose-h3:font-medium",
 ].join(" ");

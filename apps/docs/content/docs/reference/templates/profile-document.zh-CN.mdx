@@ -1,0 +1,182 @@
+---
+title: "配置方案文档"
+description: "配置方案文档的格式：其清单键、笔记源码、托管块与标注分节。"
+---
+
+import { Card, Cards } from "fumadocs-ui/components/card";
+import { SettingsPath } from "@/components/settings-path";
+import { UiLabel } from "@/components/ui-label";
+import { m } from "@/paraglide/messages.js";
+
+本文介绍配置方案文档：用于完整保存单个配置方案的文件、其清单键以及固定的文档结构。
+
+## 什么是配置方案文档 [#what-a-profile-document-is]
+
+一个配置方案对应一个文件。ZotLit 通过扫描模板文件夹来查找配置方案，其中的每个 `zotlit-profile.<slug>.md` 一旦存在即为一个配置方案。无需安装、注册或额外指向该文档。
+
+| 属性     | 值                         |
+| -------- | -------------------------- |
+| 文件名   | `zotlit-profile.<slug>.md` |
+| 位置     | 模板文件夹的直接子级       |
+| 标识符   | 清单中的 `id` 键           |
+| 写入目标 | 创建时标记该 `id` 的笔记   |
+
+模板文件夹由 <SettingsPath page={m.settings_page_advanced()} setting={m.settings_template_folder_name()} /> 指定。扫描是扁平的，因此子文件夹中的 `zotlit-` 文件只会被视为普通笔记。
+
+`<slug>` 是为了便于阅读：ZotLit 在创建文件时会根据配置方案名称生成它，且后续不会再读取它。重命名文件不会影响配置方案、其设置以及相关笔记，因为唯一标识符保存在清单中。
+
+清单校验失败的文档以及共享同一 `id` 的文档会被排除在配置方案注册表之外。它们的配置方案匹配不会生效，<SettingsPath page={m.settings_page_profiles()} /> 会将它们列在 <UiLabel name={m.settings_profile_excluded_heading()} /> 下。
+
+默认配置方案是唯一的例外。在你为其创建文档之前，它是一条设置记录而非文件。
+
+主设置页面中的 <UiLabel name={m.settings_profile_document_name()} /> 栏包含两个操作。<UiLabel name={m.settings_profile_edit()} /> 会在模板文件夹中写入 `zotlit-profile.default.md` 并将其打开。该文件带有 `id: default`，且不得包含绑定与 `match`。<UiLabel name={m.settings_profile_document_restore()} /> 会将该文件移至 Obsidian 的回收站，使配置方案恢复为内置模板。
+
+## 文档结构 [#document-structure]
+
+配置方案文档按顺序包含四个部分：清单、笔记源码、可选的托管块以及标注分节。
+
+```markdown
+---
+id: V1StGXR8Z5jd
+name: Books
+version: 1.0.0
+contract: 3
+filename: "Books - {{ zt.title }}"
+---
+
+# {{ zt.title }}
+
+{% managed %}
+Citation key: {{ zt.citationKey }}
+{% endmanaged %}
+
+--- zotlit:annotation ---
+{% bq %}
+{{ zt.text }}
+{% endbq %}
+```
+
+| 部分     | 必填 | 边界                                          |
+| -------- | ---- | --------------------------------------------- |
+| 清单     | 是   | 起始 `---` 行与下一个 `---` 行之间的 YAML。   |
+| 笔记源码 | 否   | 清单与标注分节标头之间的所有内容。            |
+| 托管块   | 否   | 笔记源码内部的零个或一个 `{% managed %}` 块。 |
+| 标注分节 | 是   | 从标头行到文件末尾。                          |
+
+各部分遵循以下规则：
+
+- 文件的第一行为 `---`，后续由 `---` 构成的行用于闭合清单。没有清单或清单未闭合的文档均视为错误。重复的 YAML 键会被拒绝。
+- 当 ZotLit 创建或覆盖笔记时，笔记源码会完整渲染。
+- 标注分节标头是完全独立的单行文本 `--- zotlit:annotation ---`：位于行首，且该行不包含其他内容。
+- 标注分节一直延伸到文件末尾，该分节为空也是有效的。它会针对每个标注渲染一次，并将标注作为 `zt` 传入；参见[数据参考](/docs/reference/templates/data)。
+- 该标头是在读取 Markdown 或模板语法之前逐行查找的。即使该行位于围栏代码块内部、或者位于 raw 或注释区域内，依然会开启该分节。
+- 缺少标头、出现第二个标头，或者包含任何其他以 `--- zotlit:` 开头的行（包括显式的笔记标头）均视为错误。
+- 清单中的 `language` 适用于笔记源码、托管块、标注分节以及 `filename` 模板。标注分节使用该配置方案的语言进行渲染。携带的片段则会声明其自身的语言。
+
+## 清单键 [#manifest-keys]
+
+清单是一个严格的映射。凡是未在此表中列出的键均会导致校验失败。下方列出的每个键都会被加载器接受并校验；`Read by` 说明了什么会作用于该值。
+
+- **Notes**：笔记流水线或配置方案注册表会读取它。它会改变 ZotLit 写入笔记的内容，或笔记解析到哪个配置方案。
+- **Editor**：模板工作台、配置方案分享面板或配置方案导入面板会读取或编辑它。没有笔记操作会查阅它。
+- **Web Workbench**：仅网页版工作台会对其进行操作。桌面端应用以只读方式显示该值，且没有笔记操作会查阅它。此版本发布时网页版工作台处于禁用状态。
+
+| 键                            | 类型                         | 必填 | Read by       | 含义                                                                                              |
+| ----------------------------- | ---------------------------- | ---- | ------------- | ------------------------------------------------------------------------------------------------- |
+| `id`                          | 字符串                       | 是   | Notes         | 配置方案的标识符：12 位字母或数字，默认配置方案为 `default`。                                     |
+| `name`                        | 字符串                       | 是   | Notes         | 配置方案的名称：显示在配置方案列表中，并写入笔记的配置方案标记中。                                |
+| `version`                     | 字符串                       | 是   | Editor        | 文档自身的版本。由分享面板写入。                                                                  |
+| `author`                      | 字符串                       | 否   | Editor        | 分享配置方案时携带的元数据。                                                                      |
+| `description`                 | 字符串                       | 否   | Editor        | 分享配置方案时携带的元数据。                                                                      |
+| `contract`                    | 整数，1 或更大               | 是   | Web Workbench | 文档面向的模板契约（Template Contract）版本。当前版本为 3，网页版工作台会拒绝面向其他版本的文档。 |
+| `minAppVersion`               | 字符串                       | 否   | Web Workbench | 文档所需的最低 ZotLit 版本。较低版本无法在网页版工作台打开或保存该文档。                          |
+| `sampleItemType`              | 字符串                       | 否   | Editor        | 工作台用于预览的 Zotero 条目类型。桌面端工作台可编辑该值；仅网页版工作台按类型选取示例条目。      |
+| `filename`                    | 模板源码                     | 是   | Notes         | 笔记名称模板。其输出将作为新文献笔记的文件名。                                                    |
+| `match`                       | 字符串，或 `and` / `or` 列表 | 否   | Notes         | 配置方案匹配条件。参见[配置方案匹配](/docs/reference/templates/profile-match)。                   |
+| `folder`                      | 字符串                       | 否   | Notes         | 绑定：文献笔记文件夹。                                                                            |
+| `citationStyle`               | 字符串或 `null`              | 否   | Notes         | 绑定：CSL 样式 ID。`null` 会选择 ZotLit 的内置样式。                                              |
+| `importFolder`                | 字符串                       | 否   | Notes         | 绑定：导入的 Zotero 笔记文件夹。                                                                  |
+| `importColoredHighlights`     | 布尔值                       | 否   | Notes         | 绑定：导入的高亮是否使用彩色语法。                                                                |
+| `importAnnotationsAsTemplate` | 布尔值                       | 否   | Notes         | 绑定：导入的标注段落是否使用配置方案的标注分节渲染。                                              |
+| `language`                    | `liquid` 或 `eta`            | 否   | Notes         | 文档自身源码的渲染语言。默认为 `liquid`。                                                         |
+| `partials`                    | 包含名称、语言、源码的列表   | 否   | Notes         | 文档内部携带的片段源码。它们随文档一起渲染，并在导入时解包为片段文件。                            |
+| `frontmatter`                 | 条目列表                     | 否   | Notes         | 托管属性，按写入顺序排列。                                                                        |
+
+这些限制条件适用：
+
+- 默认配置方案文档（`id: default`）不包含任何绑定和 `match`。二者都会导致校验错误。
+- `partials` 中的名称在单个文档内必须唯一，且不能使用 `annotation`，因为每个配置方案的标注分节均对应此名称。
+- 静态 `frontmatter` 键在单个文档内必须唯一，且不能是 ZotLit 的保留键。
+
+## 绑定 [#bindings]
+
+五个清单键将配置方案与仓库级别的行为绑定在一起。每个键写入的记录与对应的设置项相同。
+
+| 键                            | 设置                                                                  | 值                                                |
+| ----------------------------- | --------------------------------------------------------------------- | ------------------------------------------------- |
+| `folder`                      | <UiLabel name={m.settings_profile_folder_name()} />                   | 文件夹路径。                                      |
+| `citationStyle`               | <UiLabel name={m.settings_citation_references_style_name()} />        | CSL 样式 ID，或填 `null` 使用 ZotLit 的内置样式。 |
+| `importFolder`                | <UiLabel name={m.settings_note_import_folder_name()} />               | 文件夹路径。                                      |
+| `importColoredHighlights`     | <UiLabel name={m.settings_note_import_colored_highlights_name()} />   | `true` 或 `false`。                               |
+| `importAnnotationsAsTemplate` | <UiLabel name={m.settings_note_import_annotations_template_name()} /> | `true` 或 `false`。                               |
+
+绑定是对默认配置方案记录的稀疏覆盖（sparse）。省略某个键的文档会从设置中继承对应的值；设置了某个键的文档则会为使用该配置方案的笔记覆盖该值。继承的值即为主设置页面中的各个选项，详见[设置](/docs/reference/settings)。
+
+## 托管属性条目 [#managed-frontmatter-entries]
+
+`frontmatter` 列表按写入顺序为 ZotLit 写入文献笔记 YAML 属性的每个字段保存一个条目。每个条目声明一个值成员，且该成员的名称即为其求值所用的语言。
+
+| 成员    | 值                                                         |
+| ------- | ---------------------------------------------------------- |
+| `expr`  | 一个 Liquid 值表达式。                                     |
+| `value` | 一个 JSON-e 模板。                                         |
+| `js`    | 一个 JavaScript 表达式。在 JavaScript 开关关闭时不起作用。 |
+
+条目还包含属性名称 `key`，以及合并策略 `merge`（可选值为 `replace`（默认）、`append` 或 `keep`）。没有 `key` 的条目为展开条目（spread entry）：其值必须生成一个以字符串为键的映射，生成的每个键都将作为该位置的属性。展开条目不能使用 `expr`。
+
+有关条目形式、合并策略及保留键的详细信息，请参阅 [Frontmatter](/docs/reference/templates/frontmatter)。
+
+## 托管块 [#the-managed-block]
+
+笔记源码可以包含一个由 `{% endmanaged %}` 闭合的 `{% managed %}` 块。这两个标签在 Liquid 和 Eta 中完全相同。
+
+该块是隔离渲染的：在块外部赋值的变量在块内部不可见。正是这一点确保了更新时的渲染能产生与创建时相同的文本。在创建笔记时，该块在正文的原位渲染；在更新笔记时，仅该块重新渲染，其输出将重新填充笔记的托管区域。
+
+不包含任何块也是有效的。自定义或复制默认配置方案所生成的文档就没有托管块。没有托管块的笔记正文是静态的，对这类笔记的更新仅会修改属性。即使笔记中仍保留有来自早期默认模板的托管区域标记也是如此：ZotLit 会提示 <UiLabel name={m.notice_updated_note_no_managed_block()} />。若希望重新渲染该区域，请在文档中添加 `{% managed %}` 块。两个托管块、未闭合的块或未匹配的 `{% endmanaged %}` 均会导致校验失败。
+
+ZotLit 在笔记中围绕块输出写入的标记 `%%zt-managed%%` 和 `%%/zt-managed%%` 属于笔记本身，而非属于配置方案文档。请参阅[文献笔记与托管区域](/docs/reference/literature-notes)。
+
+## 文件命名与分类 [#file-naming-and-classification]
+
+模板文件夹仅根据文件名对其中的每个 `zotlit-` Markdown 文件进行分类。`zotlit-profile.<slug>.md` 为配置方案文档，`zotlit-citation.md` 为引文文本，`zotlit-partial.<name>.md` 为片段。完整规则请参阅[模板文档命名](/docs/reference/templates/syntax#template-document-naming)。
+
+不符合这三种命名模式的 `zotlit-` Markdown 文件不会注册任何内容。设置中会为其显示一行标记为 <UiLabel name={m.settings_template_unrecognized_name()} /> 的条目并列出其路径。不带 `zotlit-` 前缀的文件则会被完全忽略。
+
+在执行转换之前，2.1 版本的插槽文件（`zotlit-<name>.liquid.md` 和 `zotlit-<name>.eta.md`）仍会作为默认配置方案的后备文件。请参阅[从 2.1 模板迁移](/docs/how-to/migrate-from-2.1-templates)。
+
+关于模板文件夹的发现机制以及这三种文件之间的关系，请参阅[模板工作原理](/docs/reference/templates/how-templates-work)。
+
+## 另请参阅 [#see-also]
+
+<Cards>
+  <Card
+    title="Frontmatter"
+    description="托管属性的条目形式、合并策略及保留键。"
+    href="/docs/reference/templates/frontmatter"
+  />
+  <Card
+    title="配置方案匹配"
+    description="match 键所支持的条件语言。"
+    href="/docs/reference/templates/profile-match"
+  />
+  <Card
+    title="以 Markdown 编辑配置方案"
+    description="手动编辑清单、笔记源码与标注分节。"
+    href="/docs/how-to/edit-a-profile-as-markdown"
+  />
+  <Card
+    title="配置方案"
+    description="配置方案决定的内容以及 ZotLit 如何选择配置方案。"
+    href="/docs/reference/templates/how-templates-work#profiles"
+  />
+</Cards>

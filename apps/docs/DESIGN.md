@@ -148,6 +148,59 @@ font fallback, so a mark set in accent orange paints as a color emoji in Safari.
 Lucide strokes track the text beside them: 1.5px beside regular text, 2.25px
 beside semibold button text.
 
+### Simplified Chinese
+
+A page whose content is Chinese (`<html lang="zh-CN">`) gives each role a
+Chinese face in the same voice. The Latin face stays first in every stack, so
+Latin words, numerals and code inside Chinese text keep Gelasio, Inter and Plex
+Mono; the Chinese face sets the Chinese characters.
+
+| Role | Chinese face |
+| --- | --- |
+| Serif (display, ledes, quotes) | **LXGW WenKai GB Screen** (霞鹜文楷 GB Screen: Kai style, mainland GB glyph forms, the screen cut, one weight 400, webfont) |
+| Sans (prose body, chrome) | **Noto Sans SC** (思源黑体, variable 100–900, webfont); an installed Source Han Sans SC or Noto Sans CJK SC takes its place |
+| Mono (Machine voice) | IBM Plex Mono for Latin, then Noto Sans SC |
+| Wordmark | Archivo, unchanged |
+
+Chinese text follows these rules:
+
+- **Weights.** Display headings stay at 500 and ledes at 400; the variable
+  serif carries every weight the serif surfaces set.
+- **No slant.** Chinese has no italic. An italic run (a lede, a caption, a
+  quote) sets upright as a whole, its Latin words included, so no slanted
+  Latin word sits inside upright Chinese (`:lang(zh) :is(.italic, figcaption,
+  blockquote)` in `src/styles.css`). The run keeps its voice through face,
+  size and color. `<i>` in bibliographic data, such as a journal title in a
+  reference list, keeps its italic.
+- **Emphasis.** `<em>` takes emphasis dots under the text, the Chinese
+  convention; `<strong>` takes the bold weight.
+- **Leading.** Body paragraphs and list items sit at 1.75, blockquotes at
+  1.8, the docs title at 1.3 and the prose h1 at 1.35 (`zh:` modifiers in
+  `src/lib/prose.ts` and `src/components/docs-page.tsx`).
+- **Tracking.** Chinese text in content sets at zero tracking; the prose h4
+  label, the changelog category h2 and the TOC title drop their tracking
+  under `zh:`.
+- **Labels.** Han has no case, so the label voice's uppercase and wide
+  tracking carry no meaning in Chinese: a Chinese label (nav link, washi tape,
+  sheet label) sets at zero tracking under `zh:tracking-normal`, a sheet label
+  in the Chinese sans, and a tape at 12px (`zh:text-xs`) so its strokes stay
+  legible on the scaled desk.
+- **Display headings.** Landing headings, the blog post title and the
+  course and lesson titles set at 1.3 leading and zero tracking,
+  and break only between words (`zh:leading-[1.3] zh:tracking-normal
+  zh:break-keep zh:wrap-anywhere`), so `text-balance` never splits a word or a
+  highlighted term. Chinese headings and short leads end without a full stop.
+- **Landing body.** The landing root sets the text-base and text-lg leading to
+  1.75 and text-xl to 1.7 under `zh:`.
+- **Punctuation.** Double quotation marks, the dash and the ellipsis take the
+  Chinese face's glyphs: a punctuation-only face leads each Chinese stack,
+  because the Latin faces also cover these code points; it reuses the slices
+  of WenKai (serif) or Noto Sans SC (sans) that hold them. Single quotation marks stay Latin,
+  because U+2019 is also the apostrophe in a Latin word. Line breaks follow strict kinsoku
+  (`line-break: strict`); `text-autospace` spaces Chinese from Latin and
+  digits, and `text-spacing-trim` closes adjacent full-width punctuation where
+  the engine supports them.
+
 ## The label voice
 
 Apparatus **labels** — short text that names a thing rather than saying a
@@ -336,6 +389,17 @@ and every `var(--font-mono)` reference onto it in one lever.
 The Archivo wordmark subset needs no preload — it sits under Vite's
 `assetsInlineLimit`, so the build inlines it into the stylesheet.
 
+The Chinese faces live in their own stylesheet, `src/fonts-zh-cn.css`, which
+`src/routes/__root.tsx` links only when the page's content locale is
+`zh-CN`; an English page downloads nothing for them. Both faces load as
+unicode-range slices with `font-display: swap` and no preload: WenKai from the
+`lxgw-wenkai-screen-web` package (259 slices), Noto Sans SC from Fontsource
+(about 100). A page fetches only the slices that hold its characters, and the
+slices of the most common characters are shared, so the next page reuses most
+of them. While a WenKai slice loads, `LXGW WenKai Fallback` sets a local Kai
+face on WenKai's vertical metrics, so the line boxes do not move at the swap.
+The OG cards read the same WenKai slices from disk.
+
 ## Per-surface
 
 ### Template Workbench (`/workbench`)
@@ -479,9 +543,11 @@ closing call. Sections run 1152px wide (`max-w-6xl`) with 32px side gutters
   site tokens; the Zotero annotation colours and Obsidian's purple
   (`--desk-purple`, with `--desk-selected` and `--desk-own` for the
   selected row and the note-property column) appear only there. Sample
-  research data — titles, authors, citation keys, the chapter text, the
+  research data — titles, authors, citation keys, the citations, the
   references — stays as data in `papers.ts` and the components, not as
-  messages.
+  messages. The draft sheet's own writing (its chapter label, heading and
+  sentences) is a message, so a Chinese reader sees a Chinese draft that
+  cites English sources; each citation is a named slot in that message.
 - **Actions.** **Start the tutorial** (to Lesson 1,
   `/learn/connect-zotero-to-obsidian`, whose first step installs ZotLit)
   comes first, fills with the accent text tone and carries the
@@ -748,7 +814,13 @@ Structural chrome overrides live in the owned layout slots. CSS in
 `src/styles.css` is reduced to what CSS alone must do:
 
 - **Tokens** — the `--color-fd-*` palette, the brand inks, the shadow ring,
-  and the `@theme inline` font wiring.
+  and the `@theme inline` font wiring. The font roles read the `--zt-font-*`
+  stacks, which `:root:lang(zh)` swaps for the Chinese stacks.
+- **Chinese text** — one `:lang(zh)` rule for the inherited Chinese settings
+  (no synthetic slant, strict line breaks, autospace, punctuation trim) and the
+  `:lang(zh) em` emphasis dots. `src/fonts-zh-cn.css` holds the Chinese
+  `@font-face` rules alone. Element-level Chinese adjustments use the `zh:`
+  variant inline, like any other modifier.
 - **`#toc-title`** — the one accepted Fumadocs-shipped anchor (ships with this
   exact id, no className hook). Re-check on bumps.
 

@@ -1,0 +1,174 @@
+---
+title: "使用原生 Pandoc 导出"
+searchTitle: "在 Obsidian 中使用自己的 Pandoc 和 Zotero 导出"
+description: "配合已安装的 Pandoc CLI、Better CSL JSON 参考文献库和文献笔记引用，使用 ZotLit 的集成文件对进行导出。"
+---
+
+import { Steps, Step } from "fumadocs-ui/components/steps";
+import { Card, Cards } from "fumadocs-ui/components/card";
+import { Callout } from "@/components/callout";
+import { Command } from "@/components/command";
+import { LessonLink } from "@/components/lesson-link";
+import { SettingsPath } from "@/components/settings-path";
+import { UiLabel } from "@/components/ui-label";
+import { m } from "@/paraglide/messages.js";
+
+在配置自己的 Pandoc 安装之前，可以先尝试引导式教程 <LessonLink slug="export-obsidian-to-word-with-citations" />。
+
+当你需要使用自己安装的 Pandoc、参考文献文件、CSL 选项或命令行工作流时，请参阅本指南。
+
+要通过同一篇示例笔记了解两种导出路径，请参阅[构建 Pandoc 引文工作流](/docs/how-to/pandoc-citation-workflow)。
+
+## 环境要求 [#requirements]
+
+你需要：
+
+- Pandoc 3.1.1 或更高版本。
+- Obsidian 1.15.1 或更高版本。
+- Obsidian 安装包（installer）1.13.4 或更高版本，并已启用**命令行界面**（Command line interface）。
+- Zotero 9 或更高版本。
+- Obsidian 处于运行状态，且已打开输入仓库并加载 ZotLit。
+- `obsidian` 启动器对 Pandoc 可用。
+
+此工作流使用你自行安装的 Pandoc CLI。它独立于 ZotLit 托管的 Pandoc 引擎和内置导出命令。
+
+## 配置工作流 [#set-up-the-workflow]
+
+<Steps>
+  <Step>
+    ### 保存 ZotLit 集成文件对 [#save-the-zotlit-integration-pair]
+
+    打开 <SettingsPath page={m.settings_page_citations()} setting={m.settings_citation_native_pandoc_heading()} />。在该分组中找到 <UiLabel name={m.settings_citation_pandoc_files_name()} /> 并选择 <UiLabel name={m.settings_citation_pandoc_files_save()} />。
+
+    选择一个用户专用的工作流文件夹。ZotLit 会在该文件夹中保存 `zotlit-cite.lua` 和 `zotlit.yaml`。
+
+    请将这两个文件保留在同一目录下且不要重命名。每次更新 ZotLit 后，请重新保存一份最新的文件对。从 ZotLit 2.2.0 之前的版本保存的文件无法在 2.2.0 或更高版本中使用。
+
+  </Step>
+  <Step>
+    ### 创建参考文献库 [#create-a-bibliography]
+
+    推荐使用 [Better BibTeX](https://retorque.re/zotero-better-bibtex/installation/) 来管理文献引用标识并自动更新参考文献库。
+
+    在 Zotero 中，右键点击包含你所引用条目的文库、群组文库或分类。选择**导出**（Export），然后选择 **Better CSL JSON**。勾选**保持更新**（Keep updated），保存为 `references.json`。
+
+    导出文件会在其源文库或分类发生更改后自动更新。有关更新控制选项，请参阅 [Better BibTeX 自动导出指南](https://retorque.re/zotero-better-bibtex/exporting/auto/)。
+
+    若未安装 Better BibTeX，请右键点击文库或分类，选择**导出**，选择 **CSL JSON**，保存为 `references.json`。每当引用的 Zotero 数据发生更改时，需要重新导出。
+
+    同时支持 BibLaTeX 和 BibTeX。下面的命令使用 CSL JSON。
+
+  </Step>
+  <Step>
+    ### 准备文献笔记引用 [#prepare-a-literature-note-citation]
+
+    确认所引用的 Zotero 条目具有文献引用标识以及对应的 ZotLit 文献笔记。在你的输入笔记中，添加一个指向该文献笔记且不带别名的链接，并附带引文片段（Citation Fragment）：
+
+    ```md
+    This result follows the earlier analysis [[Doe 2020#cite:locator=33]].
+    ```
+
+    将 `Doe 2020` 替换为你文献笔记的实际链接目标。定位符片段（locator fragment）将在 Pandoc 引文中转换为页码定位符。
+
+  </Step>
+  <Step>
+    ### 设置文档样式与语言 [#set-the-document-style-and-language]
+
+    如果没有样式属性，笔记将使用 ZotLit 在 Obsidian 中为其选定的样式进行引用。对于导入的笔记，该样式为其配置方案中的样式；对于其他所有笔记，则为你的 <UiLabel name={m.settings_citation_references_style_name()} />。仅当此笔记需要使用不同样式时，才在此处设置样式。
+
+    打开输入笔记并运行：
+
+    <Command name={m.command_set_citation_presentation_name()} />
+
+    选择已在 Zotero 中安装的 CSL 样式，或选择 <UiLabel name={m.citation_presentation_style_inherited({ style: "…" })} />。输入整篇文档的语言，然后选择 <UiLabel name={m.citation_presentation_confirm()} />。
+
+    选择具体样式后，笔记属性（frontmatter）中会包含其 Zotero 样式 ID 和 Pandoc 语言标签：
+
+    ```yaml
+    ---
+    zotlit-csl: http://www.zotero.org/styles/nature
+    lang: en-US
+    ---
+    ```
+
+    在此路径下，笔记不得同时包含 `csl` 或 `citation-style`。<UiLabel name={m.citation_presentation_style_inherited({ style: "…" })} /> 会移除 `zotlit-csl`，使笔记恢复使用仓库或配置方案的样式。
+
+    <Callout type="info" title="改用 Pandoc 独立管理的样式">
+      文档可以仅保留单个标准的 `csl` 或 `citation-style` 输入，并且你可以在命令行中传递 `--csl`。此时请移除 `zotlit-csl`。如果文档同时包含 `csl` 和 `zotlit-csl`，ZotLit 过滤器将报错 `csl-ambiguous`。
+    </Callout>
+
+  </Step>
+  <Step>
+    ### 使用绝对路径运行 Pandoc [#run-pandoc-with-absolute-paths]
+
+    保持 Obsidian 处于运行状态，并已打开输入仓库且加载 ZotLit。使用绝对路径运行标准命令：
+
+    ```sh
+    pandoc "/absolute/path/to/input.md" --defaults "/absolute/path/to/workflow/zotlit.yaml" --bibliography "/absolute/path/to/references.json" --fail-if-warnings --output "/absolute/path/to/output.docx"
+    ```
+
+    替换其中的示例路径。保留 `--fail-if-warnings`，以便在出现警告时终止运行，避免生成未经验证的文档。
+
+    <Callout type="info" title="在 ZotLit 之后添加自定义 Lua 过滤器">
+      要运行自定义 Lua 过滤器，请将 `--lua-filter` 选项放在 `--defaults` 之后。由于 ZotLit 过滤器会直接从输入文件中重新读取笔记属性，因此它会覆盖在其之前运行的过滤器所做的更改。
+    </Callout>
+
+  </Step>
+  <Step>
+    ### 验证结果 [#verify-the-result]
+
+    确认输出的 `.docx` 文件已生成且可以正常打开。
+
+    Pandoc 会在终端中输出一行来自 ZotLit 的信息，说明所使用的样式及其来源：
+
+    ```text
+    ZotLit: citations use APA Style 7th edition (from your vault settings).
+    ```
+
+    检查该行是否为你预期的样式。来源可能显示为 `from this note`、`from the Research profile`、`from your vault settings` 或 `from the csl field or the --csl option`。当仓库设置为默认值时，该行会显示 Pandoc 默认样式 Chicago author-date。此行不是警告，因此 `--fail-if-warnings` 不会终止运行。
+
+    检查 `[[Doe 2020#cite:locator=33]]` 是否已转换为带有定位符 `33` 的格式化引文。确认文档中包含对应的格式化参考文献条目。
+
+  </Step>
+</Steps>
+
+## 排除运行故障 [#fix-a-failed-run]
+
+打开 <SettingsPath page={m.settings_page_citations()} setting={m.settings_citation_native_pandoc_heading()} /> 下的 <UiLabel name={m.settings_citation_pandoc_guide_name()} />，查看完整的错误参考。
+
+| 错误代码                     | 解决办法                                                                                                          |
+| ---------------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| `file-not-found`             | 使用已打开仓库内 Markdown 文件的绝对路径。                                                                        |
+| `database-unavailable`       | 在 ZotLit 中修复 Zotero 数据库连接。                                                                              |
+| `item-not-found`             | 修正文献笔记的 `zotero-key`，或恢复该条目。                                                                       |
+| `citation-key-missing`       | 为解析出的 Zotero 条目分配文献引用标识。                                                                          |
+| `duplicate-citation-key`     | 为被引用的条目指定互不相同的文献引用标识。                                                                        |
+| `unresolved-citation-intent` | 将 `#cite:` 链接指向有效的文献笔记。                                                                              |
+| `style-missing`              | 在 Zotero 中安装指定的样式，或者在设置样式的地方更改样式：`zotlit-csl`、ZotLit 设置或配置方案。                   |
+| `style-property-invalid`     | 将 `zotlit-csl` 设置为已在 Zotero 中安装的样式 ID，或者将其移除。                                                 |
+| `language-property-invalid`  | 将 `lang` 设置为语言标签（如 `en-US`），或将其移除。ZotLit 仅在笔记没有 `zotlit-csl` 或 `csl` 时才会检查 `lang`。 |
+| `profile-unavailable`        | 在 Obsidian 中将笔记切换至可用的配置方案。                                                                        |
+| `parent-missing`             | 在 Zotero 中安装从属样式（dependent style）对应的独立父样式。                                                     |
+| `csl-ambiguous`              | 仅保留标准 `csl` 或 `zotlit-csl` 其中之一。                                                                       |
+
+如果保存的集成文件对来自较早的 ZotLit 版本，请重新生成这两个文件。在 ZotLit 2.2.0 之前保存的文件对无法在 2.2.0 或更高版本中使用。移动工作流文件夹时，请将这两个文件保留在同一目录下。
+
+## 另请参阅 [#see-also]
+
+<Cards>
+  <Card
+    title="导出带引文的笔记"
+    description="无需自行安装 Pandoc CLI，直接使用 ZotLit 内置的 DOCX 或 HTML 导出功能。"
+    href="/docs/how-to/export-note-with-citations"
+  />
+  <Card
+    title="插入引用"
+    description="插入原生 Pandoc 引用与文献笔记引用。"
+    href="/docs/how-to/insert-citations"
+  />
+  <Card
+    title="设置"
+    description="查看原生集成控制选项与引文呈现方式字段。"
+    href="/docs/reference/settings#native-pandoc"
+  />
+</Cards>

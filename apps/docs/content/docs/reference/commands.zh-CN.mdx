@@ -1,0 +1,817 @@
+---
+title: "命令"
+description: "ZotLit 的所有命令、入口点及其 Obsidian CLI 参数。"
+---
+
+import { Card, Cards } from "fumadocs-ui/components/card";
+import { Callout } from "@/components/callout";
+import { Command } from "@/components/command";
+import { SettingsPath } from "@/components/settings-path";
+import { UiLabel } from "@/components/ui-label";
+import { m } from "@/paraglide/messages.js";
+
+本参考列出了 ZotLit 的所有命令、入口点、可用性以及 Obsidian CLI 参数。
+
+<Callout type="info">
+  ZotLit 仅支持桌面端。这些命令在 Obsidian 移动端不可用。
+</Callout>
+
+## 数据库 [#database]
+
+<Command name={m.command_refresh_db_name()} />
+
+从磁盘重新加载 Zotero 数据库。当禁用自动监视更改时，在 Zotero 中修改内容后可使用此命令。
+
+| 入口点                      | 详情     |
+| --------------------------- | -------- |
+| 命令面板（Command palette） | 始终可用 |
+
+## 更新笔记 [#update-notes]
+
+<Command name={m.command_update_notes_name()} />
+
+打开 <UiLabel name={m.modal_update_notes_title()} /> 对话框，这是推荐的更新起点。<UiLabel name={m.modal_update_notes_active()} /> 用于更新当前活动的文献笔记，仅在活动笔记存在时显示。<UiLabel name={m.modal_update_notes_all()} /> 会更新[文库范围](/docs/reference/settings#library-scope)内所有已有的文献笔记。复选框 <UiLabel name={m.modal_update_notes_create()} /> 默认关闭；勾选后还会为尚无笔记的条目创建笔记。
+
+| 入口点   | 详情     |
+| -------- | -------- |
+| 命令面板 | 始终可用 |
+
+以下命令始终可供设置快捷键。<Command inline name={m.command_update_note_name()} /> 和 <Command inline name={m.command_update_note_metadata_name()} /> 执行时无需确认弹窗。<Command inline name={m.command_overwrite_note_name()} /> 和 <Command inline name={m.command_update_all_notes_name()} /> 仍会请求确认。若某次运行未创建任何内容，会提示 <UiLabel name={m.batch_update_existing_confirm_intro({ count: "…" })} />，并在 <UiLabel name={m.batch_update_group_no_note({ count: "…" })} /> 下列出尚无笔记的条目。批量更新 Zotero 元数据的运作方式与此相同。
+
+## 全文库更新 [#library-wide-update]
+
+<Command name={m.command_update_all_notes_name()} />
+
+为你[文库范围](/docs/reference/settings#library-scope)内每个文库的每个条目创建或更新文献笔记。打开的批量确认弹窗与在 Zotero 中多选条目更新时相同。
+
+| 入口点   | 详情                                                                                                                                         |
+| -------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| 命令面板 | 始终可用                                                                                                                                     |
+| Zotero   | 右键点击文库或分类 > <UiLabel name={m["zotero.menu_submenu.label"]()} /> > <UiLabel name={m["zotero.menu_collection_update_all.label"]()} /> |
+
+Zotero 入口将批量操作范围限制在你右键点击的行：文库涵盖其中的每个条目，分类涵盖该分类及其子分类。该目标是精确指定的，因此无论该行是否在你的文库范围内均会执行。
+
+## 全文库笔记导入 [#library-wide-note-import]
+
+<Command name={m.command_import_all_notes_name()} />
+
+导入你[文库范围](/docs/reference/settings#library-scope)内每个文库中附加到常规条目的所有子笔记以及所有独立笔记。打开的批量确认弹窗与在 Zotero 中多选笔记导入时相同。
+
+| 入口点   | 详情                                                                                                                                               |
+| -------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 命令面板 | 始终可用                                                                                                                                           |
+| Zotero   | 右键点击文库或分类 > <UiLabel name={m["zotero.menu_submenu.label"]()} /> > <UiLabel name={m["zotero.menu_collection_import_all_notes.label"]()} /> |
+
+Zotero 入口将导入范围限制在你右键点击的行（包含子分类）。该目标是精确指定的，因此无论该行是否在你的文库范围内均会执行。
+
+## 文库视图 [#library-view]
+
+<Command name={m.command_open_library_view_name()} />
+
+打开文库视图（标题为 <UiLabel name={m.library_view_name()} /> 的标签页），列出你的 Zotero 文库，并将光标置于搜索框中。若该标签页已打开，命令会将其置于前台。参见[在文库视图中浏览文库](/docs/how-to/use-library-view)。
+
+| 入口点           | 详情                                                                                                   |
+| ---------------- | ------------------------------------------------------------------------------------------------------ |
+| 命令面板         | 始终可用                                                                                               |
+| 侧边栏（Ribbon） | ZotLit 图标                                                                                            |
+| 快速切换         | 在结果上按 `Alt+Enter`（macOS 上为 `Option+Enter`）可在该条目上打开视图。参见[下文](#quick-switcher)。 |
+| 自动             | 首次安装以及从 v1 升级到 v2 后会自动打开一次，上方显示设置提示横幅                                     |
+
+在视图中选中的行可响应下方的快速切换快捷键，其右键菜单列出了对该条目的所有可用操作。参见[从表格行打开、撰写笔记和引用](/docs/how-to/use-library-view#rows)。
+
+<Command name={m.command_show_in_library_name()} />
+
+在文库视图中定位当前活动文献笔记对应的条目。若文库视图已关闭则将其打开，清除所有活动搜索文本和筛选器以防文献被隐藏，并闪烁文献所在行以突出显示。
+
+| 入口点     | 详情                                                                                  |
+| ---------- | ------------------------------------------------------------------------------------- |
+| 命令面板   | 在文献笔记中处于活动状态                                                              |
+| 文件菜单   | 在文献笔记中处于活动状态（<UiLabel name={m.library_view_show_in_library()} />）       |
+| 标签页菜单 | 在文献笔记标签页上处于活动状态（<UiLabel name={m.library_view_show_in_library()} />） |
+
+## 文献笔记快速切换 [#quick-switcher]
+
+<Command name={m.command_open_lit_note_name()} />
+
+打开弹窗以搜索[文库范围](/docs/reference/settings#library-scope)内的所有文库，并跳转到（或创建）对应的文献笔记。
+
+| 入口点   | 详情     |
+| -------- | -------- |
+| 命令面板 | 始终可用 |
+
+搜索结果支持 5 种快捷键组合，列在弹窗底部：
+
+| 快捷键                                             | 结果                                                      |
+| -------------------------------------------------- | --------------------------------------------------------- |
+| `Enter`                                            | 打开文献笔记；若不存在则先创建。                          |
+| `Ctrl+Enter`（macOS 上为 `Cmd+Enter`）             | 同上，但在新分栏中打开。                                  |
+| `Shift+Enter`                                      | 在 Obsidian 的 PDF 阅读器中打开该条目的 PDF，不打开笔记。 |
+| `Ctrl+Shift+Enter`（macOS 上为 `Cmd+Shift+Enter`） | 同上，但在新分栏中打开。                                  |
+| `Alt+Enter`（macOS 上为 `Option+Enter`）           | 在[文库视图](#library-view)中显示该条目。                 |
+
+`Alt+Enter` 会在条目的第一个分类中（若不属于任何分类则在其文库中）打开文库视图，并选中其所在行。它会清除视图中的搜索并关闭阅读状态筛选，确保该行不会被隐藏。当条目超出视图 1000 篇文献的限制时，不会选中任何条目并会显示相应提示。
+
+两个 PDF 快捷键会对选中的结果执行 <UiLabel name={m.command_open_pdf_name()} />，该命令列在[文献笔记操作](#literature-note-actions)下。
+
+## 引用 [#citations]
+
+<Command name={m.command_insert_citation_name()} />
+
+打开弹窗以搜索[文库范围](/docs/reference/settings#library-scope)内的所有文库，并在光标处插入 Markdown 引用。
+
+引用的插入不受 <UiLabel name={m.settings_citation_pandoc_citations_name()} />、<UiLabel name={m.settings_citation_wikilink_citations_name()} />、<UiLabel name={m.settings_citation_show_formatted_name()} /> 和 <UiLabel name={m.settings_citation_open_as_links_name()} /> 状态的影响，始终可用。
+
+| 入口点       | 详情                                                                                                                                            |
+| ------------ | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| 命令面板     | 打开编辑器时处于活动状态                                                                                                                        |
+| 编辑器建议器 | 在编辑器中键入 `[@` 触发，或在开启 **`@` 触发** 时在单词边界键入 `@` 触发。两项设置均位于 <SettingsPath page={m.settings_page_citations()} />。 |
+
+### 引文搜索如何对文献排序 [#citation-search-order]
+
+两个入口点均会同时搜索[文库范围](/docs/reference/settings#library-scope)内的所有文库，并按统一的相关度排序。当有多个文库提供结果时，每个建议项都会标明条目所属的文库。若范围内只有一个文库，则省略该标签。
+
+在输入搜索词之前，两个列表都会将当前笔记中已引用的文献排在最前。每个分组按“最近活动时间”倒序排列（最新的排在前面）。这与[文库视图中的 <UiLabel name={m.library_view_recent()} />](/docs/how-to/use-library-view#recent) 顺序一致。
+
+键入搜索内容时，两个列表均按相关度对所有结果进行排序。
+
+当前笔记已引用的文献无论是否进行搜索，都会显示 <UiLabel name={m.citation_suggester_cited_in_note()} /> 标签。
+
+### 建议器触发方式与查询语法 [#suggester-queries]
+
+在编辑器中键入 `[@`（或 `【@`）时会打开引文建议器。下拉菜单中会显示来自 Zotero 文库的条目。
+
+启用 <UiLabel name={m.settings_citation_at_trigger_name()} /> 后，在单词边界键入 `@` 也会起到相同的作用。单词中间的 `@`（例如电子邮件地址中）会被忽略。
+
+`@` 查询会在遇到第一个空格时结束。如需在搜索中加入空格，请用 `_` 代替：例如 `@machine_learning` 可搜索 “machine learning”。方括号触发查询（`[@`）支持直接输入真实空格。
+
+弹窗中没有末尾 `/` 的快捷方式；在此处只能通过 `Shift+Enter` 请求替代引文。
+
+- `alt` 形式可通过两者的 `Shift+Enter` 获取，或通过建议器查询末尾的 `/` 获取。在不按 `Shift` 的情况下末尾的 `/` 优先，并且 `/` 会从搜索词中剥离。
+
+### 引文导航 [#citation-navigation]
+
+以下命令用于打开光标下已识别的 Pandoc 引用。默认未分配快捷键。
+
+| 入口点   | 详情                                                                                                                                                                                  |
+| -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 命令面板 | 当开启 <UiLabel name={m.settings_citation_pandoc_citations_name()} /> 和 <UiLabel name={m.settings_citation_open_as_links_name()} /> 且光标停留在已识别的文献引用标识上时处于活动状态 |
+| 快捷键   | 默认无；可在**设置 > 快捷键**（Settings > Hotkeys）中分配                                                                                                                             |
+
+<Command name={m.command_open_citekey_name()} />
+
+在当前标签页中打开或创建文献笔记。
+
+<Command name={m.command_open_citekey_new_tab_name()} />
+
+在新标签页中打开或创建文献笔记。
+
+<Command name={m.command_open_citekey_right_name()} />
+
+在右侧分栏中打开或创建文献笔记。
+
+<Command name={m.command_open_citekey_window_name()} />
+
+在新窗口中打开或创建文献笔记。
+
+### 参考文献与导出 [#references-and-export]
+
+<Command name={m.command_open_references_view_name()} />
+
+为当前活动笔记打开 <UiLabel name={m.references_view_name()} /> 侧边栏。
+
+| 入口点   | 详情     |
+| -------- | -------- |
+| 命令面板 | 始终可用 |
+
+<Command name={m.command_show_cited_by_name()} />
+
+打开 <UiLabel name={m.cited_by_view_name()} /> 侧边栏，其中列出了仓库中引用当前活动文献笔记的所有笔记。每个结果按源文件分组，并链接到其中的引用位置。侧边栏会跟随活动笔记，因此在显示结果前需要先处于文献笔记中。
+
+| 入口点   | 详情     |
+| -------- | -------- |
+| 命令面板 | 始终可用 |
+
+<Command name={m.command_set_citation_presentation_name()} />
+
+打开弹窗以设置当前活动 Markdown 笔记的参考文献样式和文档语言。确认后将同时写入该笔记的 `zotlit-csl` 和 `lang` 属性。选择仓库样式或重置语言将移除对应属性。
+
+| 入口点   | 详情                           |
+| -------- | ------------------------------ |
+| 命令面板 | 在 Markdown 笔记中处于活动状态 |
+| 更多选项 | 笔记的**更多选项**菜单（⋮）    |
+
+<Command name={m.command_pandoc_export_name()} />
+
+为当前活动 Markdown 笔记打开内置导出弹窗。运行该命令时需要已安装 <UiLabel name={m.settings_citation_engine_name()} />。
+
+导出使用独立的引文判定机制。引用来源、呈现方式和导航设置不会改变导出的内容。
+
+| 入口点   | 详情                           |
+| -------- | ------------------------------ |
+| 命令面板 | 在 Markdown 笔记中处于活动状态 |
+
+#### “被引用”侧边栏 [#cited-by]
+
+<UiLabel name={m.cited_by_view_name()} />
+侧边栏会跟随活动文献笔记。它按来源笔记对引用出现的位置进行分组，并在周围文本的上下文中显示该引用。
+
+使用侧边栏工具栏可缩小范围和整理结果：
+
+- <UiLabel name={m.cited_by_show_search_filter()} />
+  ：按来源笔记路径或显示的引用上下文进行筛选。
+- <UiLabel name={m.cited_by_show_more_context()} />
+  ：将每个结果从紧凑摘录展开为其所在的完整 Markdown 块。
+- <UiLabel name={m.cited_by_change_sort_order()} />
+  ：按文件名、修改时间或创建时间对来源笔记进行双向排序。
+- <UiLabel name={m.cited_by_collapse_results()} />
+  ：折叠或展开可见的来源笔记分组。
+
+选择引用摘录可在对应的出现位置打开其来源笔记。选择分组上的 <UiLabel name={m.cited_by_open_source()} /> 可直接打开笔记而不定位到特定出现位置。在 Windows 或 Linux 上按住 Ctrl，或在 macOS 上按住 Command，可在另一分栏中打开。
+
+### 引文文本 [#citation-text]
+
+<Command name={m.command_customize_citation_text_name()} />
+
+在模板工作台视图中打开引文文本。当仓库中没有引文文档时，该命令会首先根据内置引文文本创建 `zotlit-citation.md`。
+
+| 入口点         | 详情                                                                                                                                                                        |
+| -------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 命令面板       | 始终可用                                                                                                                                                                    |
+| 设置           | 位于 <SettingsPath page={m.settings_page_citations()} /> 中 <UiLabel name={m.settings_citation_text_name()} /> 行的 <UiLabel name={m.settings_citation_text_open()} /> 按钮 |
+| 模板工作台视图 | 面板菜单中的 <UiLabel name={m.command_customize_citation_text_name()} /> 项                                                                                                 |
+
+## 关系图谱 [#graph-view]
+
+<Command name={m.command_open_citation_graph_name()} />
+
+应用“引用关系图谱”预设打开 Obsidian 的关系图谱，打开位置与 Obsidian 自身的**打开关系图谱**（Open graph view）一致：当前标签页，或按住修饰键时请求的新标签页、分栏或新窗口。关于预设配置的详情，请参见[在关系图谱中探索引用](/docs/how-to/explore-citations-in-graph)。
+
+| 入口点   | 详情     |
+| -------- | -------- |
+| 命令面板 | 始终可用 |
+
+<Command name={m.command_open_local_citation_graph_name()} />
+
+在垂直分栏中为活动笔记打开局部引用关系图谱，并与打开它的面板绑定，以便图谱跟随该面板的文件。
+
+| 入口点   | 详情                 |
+| -------- | -------------------- |
+| 命令面板 | 在笔记中处于活动状态 |
+
+两个命令默认均未分配快捷键。当无法打开引用关系图谱时，命令会显示提示，指出需要调整的唯一事项：关系图谱核心插件、<UiLabel name={m.settings_citation_graph_name()} /> 设置或引用关系图谱的可用性。
+
+## 文献笔记操作 [#literature-note-actions]
+
+以下命令对文献笔记进行操作：当前在编辑器中打开的文件必须是 ZotLit 文献笔记。它们还会出现在 **zotlit** 分组下的**文件菜单**中（右键点击标签页或使用文件菜单图标）。模板工作台视图也会在其面板菜单中提供相同的 **zotlit** 分组。在显示预览面板时，面板菜单还会增加用于调整预览的选项，例如 <UiLabel name={m.workbench_preview_auto_refresh()} /> 和 <UiLabel name={m.workbench_show_markdown()} />。
+
+<Command name={m.command_update_note_name()} />
+
+根据当前 Zotero 数据重新渲染完整文献笔记（属性和受管正文区域）。
+
+| 入口点   | 详情                     |
+| -------- | ------------------------ |
+| 命令面板 | 在文献笔记中处于活动状态 |
+| 文件菜单 | 是                       |
+
+<Command name={m.command_update_note_metadata_name()} />
+
+仅根据当前 Zotero 数据重新渲染文献笔记的属性。正文内容保持不变。
+
+| 入口点   | 详情                     |
+| -------- | ------------------------ |
+| 命令面板 | 在文献笔记中处于活动状态 |
+| 文件菜单 | 是                       |
+
+<Command name={m.command_overwrite_note_name()} />
+
+通过全新渲染破坏性覆盖整篇文献笔记。在继续操作前会出现确认弹窗。
+
+| 入口点   | 详情                     |
+| -------- | ------------------------ |
+| 命令面板 | 在文献笔记中处于活动状态 |
+| 文件菜单 | 是                       |
+
+<Command name={m.command_import_child_notes_name()} />
+
+将附加到当前条目的 Zotero 笔记导入到仓库中。
+
+| 入口点   | 详情                     |
+| -------- | ------------------------ |
+| 命令面板 | 在文献笔记中处于活动状态 |
+| 文件菜单 | 是                       |
+
+<Command name={m.command_copy_item_key_name()} />
+
+将笔记的 Zotero 标识符复制到剪贴板。
+
+| 入口点   | 详情                                                                    |
+| -------- | ----------------------------------------------------------------------- |
+| 命令面板 | 在带有 Zotero 标识符的文件中处于活动状态                                |
+| 文件菜单 | 标签：<UiLabel name={m.command_copy_item_key_name()} />。仅限单个文件。 |
+
+要编辑文献笔记使用的配置方案，请从笔记中运行 <Command inline name={m.template_workbench_open_layout()} />。参见[模板与配置方案](#templates-and-profiles)。
+
+<Command name={m.command_switch_literature_note_profile_name()} />
+
+为笔记打开配置方案选择器，并在写入任何内容前请求确认。切换操作会使用所选配置方案重新渲染笔记。对话框还会提供将笔记移动到该配置方案文件夹的选项。复选框会显示笔记将移动到的目标文件夹，例如 <UiLabel name={m.modal_profile_switch_move({ folder: "books/2024/" })} />。移动会保留笔记在当前配置方案文件夹下的子文件夹结构：`literatures/2024/Smith2020.md` 将移动到 `books/2024/Smith2020.md`。位于配置方案文件夹之外的笔记，或配置方案无法被 ZotLit 识别的笔记，仅根据文件名移动。
+
+| 入口点   | 详情                     |
+| -------- | ------------------------ |
+| 命令面板 | 在文献笔记中处于活动状态 |
+
+<Command name={m.command_open_pdf_name()} />
+
+在 Obsidian 自身的 PDF 阅读器中打开该条目的 PDF 附件，无论该文件位于仓库内还是 Zotero 的存储文件夹中。若只有一个 PDF 则直接打开；若有多个则会打开选择器，其搜索框提示为 <UiLabel name={m.modal_select_pdf_placeholder()} />。
+
+仅提供 PDF 附件。若条目没有 PDF 附件，则显示 <UiLabel name={m.notice_no_pdf_attachment()} />；若 PDF 文件已不在磁盘上，则显示 <UiLabel name={m.notice_pdf_file_missing()} />。这两种情况均不会回退到 Zotero 自身的阅读器。参见[在 Obsidian 中打开条目的 PDF](/docs/how-to/open-pdf-in-obsidian)。
+
+| 入口点        | 详情                                                                                                        |
+| ------------- | ----------------------------------------------------------------------------------------------------------- |
+| 命令面板      | 在文献笔记中处于活动状态                                                                                    |
+| 文件菜单      | 是                                                                                                          |
+| 快速切换      | 在结果上按 `Shift+Enter`。参见[文献笔记快速切换](#quick-switcher)。                                         |
+| Zotero        | 右键点击 PDF 附件或包含 PDF 的条目 > 顶层菜单中的 <UiLabel name={m["zotero.menu_item_open_pdf.label"]()} /> |
+| Zotero 阅读器 | 在正在阅读的 PDF 内部右键点击 > <UiLabel name={m["zotero.menu_reader_page_open_pdf"]()} />                  |
+| 标注视图      | 面板菜单 > <UiLabel name={m.command_open_pdf_name()} />。当 Obsidian PDF 视图已显示该附件时不会出现。       |
+| 文件链接      | 开启 <UiLabel name={m.settings_reader_open_file_links_name()} /> 时，点击 Zotero 文库中指向 PDF 的链接      |
+
+## 导入笔记操作 [#imported-note-actions]
+
+<Command name={m.command_reimport_note_name()} />
+
+使用来自 Zotero 的最新内容覆盖导入的笔记。该文件会被替换，因此本地编辑将丢失。首先会出现确认弹窗，其按钮文本为 <UiLabel name={m.modal_reimport_note_confirm()} />。
+
+| 入口点   | 详情                                                       |
+| -------- | ---------------------------------------------------------- |
+| 命令面板 | 在导入的笔记（带有 Zotero 笔记标识符的文件）中处于活动状态 |
+| 文件菜单 | 是                                                         |
+
+## 标注 [#annotations]
+
+<Command name={m.command_open_annot_view_name()} />
+
+在右侧边栏中打开标注视图，若已打开则将其置于前台。视图会保持上次选择的跟随模式。新视图以 <UiLabel name={m.annot_view_mode_active_tab()} /> 启动。
+
+| 入口点           | 详情                                                                  |
+| ---------------- | --------------------------------------------------------------------- |
+| 命令面板         | 始终可用                                                              |
+| 侧边栏（Ribbon） | 是（工具提示：“<UiLabel name={m.command_open_annot_view_name()} />”） |
+
+<Command name={m.command_annot_view_follow_active_tab_name()} />
+
+<Command name={m.command_annot_view_follow_zotero_reader_name()} />
+
+<Command name={m.command_annot_view_pin_current_item_name()} />
+
+<Command name={m.command_annot_view_pin_item_name()} />
+
+<Command name={m.command_annot_view_unpin_name()} />
+
+这 5 个命令用于更改标注视图的跟随目标。每个命令均对当前打开的标注视图生效，且命令面板仅在适用时才会提供——因此视图当前已处于的模式，或没有条目可固定的情况，命令会被隐藏而非置灰失效。参见[使用标注视图](/docs/how-to/use-annotation-view)。
+
+| 入口点   | 详情                                           |
+| -------- | ---------------------------------------------- |
+| 命令面板 | 在打开标注视图且该模式适用的情况下处于活动状态 |
+| 面板菜单 | 相同的 3 个切换选项，外加条目选择器            |
+
+<Command name={m.command_undo_annotation_change_name()} />
+
+<Command name={m.command_redo_annotation_change_name()} />
+
+撤销可撤回 ZotLit 为当前打开的 PDF 保存到 Zotero 的上一次标注更改。重做则会再次应用已撤销的更改。命令面板仅在有相应步骤可执行时才会提供。参见[撤销与重做更改](/docs/how-to/edit-pdf-annotations#undo-and-redo-a-change)。
+
+| 入口点   | 详情                                                                        |
+| -------- | --------------------------------------------------------------------------- |
+| 命令面板 | 在 Zotero 附件的 PDF 视图中，或在标注视图中，且有步骤可执行时处于活动状态   |
+| 更多选项 | PDF 视图的**更多选项**菜单（⋮）。两个条目均会出现，无可用步骤时呈灰色禁用。 |
+| 快捷键   | 默认无；可在**设置 > 快捷键**中分配                                         |
+
+### 跟随模式 [#follow-modes]
+
+| 模式                                                      | 行为                                                           |
+| --------------------------------------------------------- | -------------------------------------------------------------- |
+| <UiLabel name={m.annot_view_mode_active_tab()} />（默认） | 跟随当前活动标签页：文献笔记对应的条目，或 Zotero PDF 的附件。 |
+| <UiLabel name={m.annot_view_mode_zotero_reader()} />      | 跟随 Zotero 阅读器中打开的附件。需要开启实时更新。             |
+| <UiLabel name={m.annot_view_mode_pinned()} />             | 固定在你选定的单个条目上，并记住其附件。                       |
+
+如需切换，请打开视图顶部的菜单（带有向下箭头的条目标题）；其第一个分组标题为 <UiLabel name={m.annot_view_header_menu_label()} />。视图面板菜单中也提供相同的 3 个切换选项，且各自拥有独立的命令。
+
+视图会保持你选择的模式，直到切换为其他模式。当数据源无法响应时，视图会就地显示提示而非自动替你切换。
+
+<UiLabel name={m.annot_view_mode_zotero_reader()} />
+需要开启实时更新，它能将阅读器的位置从 Zotero 传递到
+Obsidian。在实时更新关闭时，视图会在列表位置显示
+<UiLabel name={m.annot_view_enable_live_updates()} />
+。参见[设置实时更新](/docs/how-to/set-up-live-updates)。
+
+在 Zotero 中关闭阅读器后，屏幕上会保留最后一个附件，并显示 <UiLabel name={m.annot_view_reader_closed()} />。
+
+从 Zotero PDF 标签页执行固定操作会解除该标签页对附件的独占，以便在保持固定的同时在该条目的各个附件之间切换。
+
+选择 <UiLabel name={m.annot_view_mode_unpin()} /> 可返回固定之前的模式。
+
+Zotero 中没有所属父条目的 PDF 无法被固定；菜单不会为其提供固定选项。
+
+### 附件选择器 [#attachments]
+
+当条目拥有多个附件时，工具栏下方的选择器会显示屏幕当前展示的附件名称及其标注数量，并按条目记住你的选择。
+
+Zotero PDF 标签页和 Zotero 阅读器各自会自行选择附件，因此当其中之一生效时选择器会暂停生效。
+
+如需在 Obsidian 中阅读当前屏幕上的附件，请打开视图顶部的菜单，然后选择 <UiLabel name={m.command_open_pdf_name()} />。视图面板菜单中也包含相同条目。当 Obsidian PDF 标签页已显示该附件时不会显示。
+
+### 排序、分组与保存视图 [#more-options]
+
+视图的 <UiLabel name={m.annot_view_more_tooltip()} /> 菜单（⋮）提供了针对卡片的 <UiLabel name={m.annot_view_sort()} />、<UiLabel name={m.annot_view_group_by()} /> 和 <UiLabel name={m.annot_view_filter()} /> 功能。<UiLabel name={m.annot_view_save_as_query_file()} /> 可将视图展示的内容保存为查询文件，以便在标签页中打开或嵌入笔记中。参见[将标注侧边栏另存为查询文件](/docs/how-to/use-query-files#save-sidebar)。
+
+### 锁定的标注 [#locked]
+
+卡片页码旁的锁图标表示 ZotLit 无法更改该标注。指向该图标可查看原因。例如，该标注是由 Zotero 从 PDF 文件中导入的，或是群组文库的其他成员创建的。关于锁定标注仍可执行的操作，请参见[如何在 Obsidian 中编辑 PDF 标注](/docs/how-to/edit-pdf-annotations)。
+
+### 插入到笔记 [#insert]
+
+ZotLit 会使用标注条目对应文献笔记的[配置方案](/docs/reference/templates/how-templates-work#profiles)，若该条目没有笔记则使用默认配置方案。等待期间进行的编辑会使插入位置随文本一起移动。按 Escape 可取消挂起的插入。插入完成后，执行一次撤销即可移除插入的内容。
+
+### 卡片菜单 [#card-menu]
+
+右键点击标注行，或打开其 <UiLabel name={m.annot_view_more_tooltip()} /> 菜单，可获得更多选项：
+
+- <UiLabel name={m.annot_view_menu_edit_text()} />
+  ：为高亮或下划线的引用文本打开编辑器。参见[编辑引用文本](/docs/how-to/edit-pdf-annotations#edit-the-quoted-text)。
+- <UiLabel name={m.annot_view_menu_copy_backlink()} />
+  ：复制跳回 PDF 中标注位置的反向链接。
+- <UiLabel name={m.annot_view_menu_copy_text()} />
+  ：复制引用文本，若标注没有引用文本则复制评论。
+- <UiLabel name={m.annot_view_menu_copy_citation()} />
+  ：为标注的所属条目复制格式化引文。
+- <UiLabel name={m.indexed_key_menu_copy_annotation()} />
+  ：复制标注的 Zotero 标识符。
+- <UiLabel name={m.annot_view_menu_insert()} />
+  ：在活动笔记的光标处插入标注，效果与拖拽相同。
+- <UiLabel name={m.template_data_explorer_menu_explore()} />
+  ：使用该标注的数据打开模板数据浏览器。
+- <UiLabel name={m.annot_view_menu_delete()} />
+  ：确认后从 Zotero
+  中删除该标注。参见[删除标注](/docs/how-to/edit-pdf-annotations#delete-an-annotation)。
+
+多选卡片时，菜单中仅显示可同时作用于所有卡片的条目。参见[选择多张卡片](/docs/how-to/use-annotation-view#select-several)。
+
+## 查询文件 [#query-files]
+
+<Command name={m.command_new_query_file_name()} />
+
+创建名为 `Untitled.zotquery` 的查询文件并在标签页中打开。该文件有两个视图。默认视图 Items 是整个文库文献的表格，按修改日期倒序排列，限制 100 行。第二个视图 Annotations 显示整个文库的标注，按文献分组，限制 100 行。参见[使用查询文件和查询块](/docs/how-to/use-query-files)。
+
+| 入口点                    | 详情                                                                                                                                                               |
+| ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 命令面板                  | 始终可用。文件存放在新笔记文件夹中。                                                                                                                               |
+| 文件列表（File explorer） | 右键点击文件夹或其中的文件 > <UiLabel name={m.query_file_new()} />。文件存放在该文件夹中。按住 `Ctrl`（Windows 和 Linux）或 `Command`（macOS）可在新标签页中打开。 |
+
+<UiLabel name={m.annot_view_save_as_query_file()} />
+位于标注视图的**更多选项**菜单中，也可以创建查询文件。参见[将标注侧边栏另存为查询文件](/docs/how-to/use-query-files#save-sidebar)。文库视图的视图菜单中也有相同的条目。参见[将视图另存为查询文件](/docs/how-to/use-library-view#save-as-query-file)。
+
+## 模板数据浏览器 [#template-data-explorer]
+
+<Command name={m.command_open_template_data_explorer_name()} />
+
+打开模板数据浏览器，显示当前条目提供给模板的完整数据对象。该浏览器是一个独立视图，拥有自己的条目选择，不会改变任何模板工作台视图。
+
+| 入口点   | 详情                                                                                             |
+| -------- | ------------------------------------------------------------------------------------------------ |
+| 命令面板 | 始终可用                                                                                         |
+| 文件菜单 | 标签：<UiLabel name={m.template_data_explorer_menu_explore()} />。出现在带有条目标识符的文件上。 |
+
+## 模板与配置方案 [#templates-and-profiles]
+
+这些命令用于在模板工作台打开模板文档，以及导入他人与你分享的配置方案。
+
+<Command name={m.template_workbench_open_layout()} />
+
+在工作台自己的窗口中为当前文档打开模板工作台视图，并显示预览面板。配置方案文档、片段或引文文本可直接打开。文献笔记会打开其解析对应的配置方案文档，并选中该笔记的条目，随后工作台便可更新该笔记。未标记配置方案的笔记会根据默认配置方案解析。仓库无法解析的配置方案会显示提示。关于配置方案决定的具体内容，请参见[配置方案](/docs/reference/templates/how-templates-work#profiles)。
+
+当工作台窗口已显示该文档时，命令会将其置于前台。在视图内部调用时，它会将视图所在的窗口置于前台。如需将视图移动到其他窗口，请使用 Obsidian 的**移动到新窗口**（Move to new window）。
+
+| 入口点     | 详情                                                                                        |
+| ---------- | ------------------------------------------------------------------------------------------- |
+| 命令面板   | 在配置方案文档、片段、引文文本或文献笔记中，以及在工作台视图中处于活动状态                  |
+| 文件菜单   | 标签：<UiLabel name={m.template_workbench_open_layout()} />。与命令面板适用的文件相同。     |
+| 视图标题栏 | 作为 Markdown 打开的模板文档上的 <UiLabel name={m.template_workbench_open_layout()} /> 操作 |
+
+<Command name={m.command_import_profile_name()} />
+
+从剪贴板或文件中导入他人与你分享的配置方案。导入面板在写入任何内容前会预览其携带的片段、引文样式和配置方案匹配条件。
+
+| 入口点   | 详情                                                                          |
+| -------- | ----------------------------------------------------------------------------- |
+| 命令面板 | 始终可用                                                                      |
+| 设置     | <SettingsPath page={m.settings_page_profiles()} /> 中配置方案列表上的导入按钮 |
+
+### 模板工作台面板菜单 [#template-workbench-pane-menu]
+
+工作台视图的面板菜单是大多数模板工作的起点。这些条目位于 **zotlit** 分组中：
+
+| 菜单项                                                      | 功能                                                                                                                                                                                                    |
+| ----------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| <UiLabel name={m.workbench_choose_item()} />                | 选择标签页、字段面板和预览面板读取的 Zotero 条目。                                                                                                                                                      |
+| <UiLabel name={m.workbench_choose_annotation()} />          | 选择要渲染的标注。引文文本不提供此项。                                                                                                                                                                  |
+| <UiLabel name={m.template_workbench_partials()} />          | 在工作台窗口的新标签页中打开另一个片段，通过 <UiLabel name={m.workbench_partial_new()} /> 创建片段，或通过 <UiLabel name={m.workbench_problem_bundled_partial_unpack()} /> 解包共享配置方案附带的片段。 |
+| <UiLabel name={m.command_customize_citation_text_name()} /> | 在工作台窗口的新标签页中打开引文文本 `zotlit-citation.md`。                                                                                                                                             |
+
+<UiLabel name={m.workbench_show_fields()} />
+用于打开或关闭视图的[字段面板](/docs/reference/template-workbench-view#fields-panel)：即字段弹出框或编辑器旁固定的面板。
+<UiLabel name={m.workbench_show_preview()} />
+用于显示或隐藏[预览面板](/docs/reference/template-workbench-view#panels)。启用时均显示勾选标记。两者也是视图标题栏中的视图操作，其中字段面板的操作名称为
+<UiLabel name={m.workbench_view_fields()} />
+。当字段面板固定在编辑器旁时，菜单还会包含
+<UiLabel name={m.workbench_fields_resize()} />
+。在视图标题栏中它们旁边，
+<UiLabel name={m.workbench_help()} />
+会打开一个包含模板指南、语法与数据参考以及社区链接的菜单。
+<UiLabel name={m.workbench_choose_item()} />
+也是面板上方一行中的按钮，显示所选条目的名称。
+在显示预览面板时，菜单还会包含[预览选项](/docs/reference/template-workbench-view#preview-panel)。
+
+**zotlit** 分组之外还有 4 个面板菜单项。<UiLabel name={m.template_workbench_change_language()} /> 可在 <UiLabel name={m.workbench_name_language_liquid()} /> 与 <UiLabel name={m.workbench_name_language_eta()} /> 之间切换文档语言，配置方案文档不提供此项。<UiLabel name={m.template_data_explorer_menu_export_json()} /> 将当前模板数据保存为 JSON 文件，字段面板打开时针对其显示的根节点，否则针对编辑器的根节点；选中标注根节点时，若能够导出整篇文献，该条目会变为 <UiLabel name={m.template_data_explorer_export_selected_paper()} />。<UiLabel name={m.template_workbench_open_markdown()} /> 将文档作为 Markdown 打开。<UiLabel name={m.settings_profile_document_restore()} /> 将默认配置方案的自定义文档移至回收站，重新应用内置配置方案，仅在该文档上提供。
+
+## 入门引导与版本发布 [#onboarding--release]
+
+<Command name={m.command_open_welcome_name()} />
+
+打开[文库视图](#library-view)并在其上方显示设置提示横幅，即使此前已忽略或已完成设置也是如此。横幅中包含设置步骤，在 v1 升级到 v2 后包含迁移指南链接，在 ZotLit 更新后包含发行说明链接。
+
+| 入口点   | 详情                                                                                                   |
+| -------- | ------------------------------------------------------------------------------------------------------ |
+| 命令面板 | 始终可用                                                                                               |
+| 自动     | 全新安装、从 v1 升级到 v2 以及 ZotLit 更新后，横幅会显示在文库视图上方，直到你将其关闭或按提示完成设置 |
+
+<Command name={m.command_open_release_note_name()} />
+
+打开当前安装的 ZotLit 版本的发行说明。
+
+| 入口点   | 详情                                                                                                                                                       |
+| -------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 命令面板 | 始终可用                                                                                                                                                   |
+| 设置     | 设置选项卡中 <UiLabel name={m.settings_resources_whats_new_name({ version: "…" })} /> 行的 <UiLabel name={m.settings_resources_whats_new_button()} /> 按钮 |
+| 欢迎横幅 | ZotLit 更新后显示在文库视图上方的横幅中的 <UiLabel name={m.welcome_update_action()} /> 按钮                                                                |
+
+## Zotero 中的 ZotLit 菜单 [#zotero-menu]
+
+当在 Zotero 文库中恰好选中一个常规条目时，顶层右键菜单会显示 <UiLabel name={m["zotero.menu_item_open.label"]()} />。若笔记不存在则会创建，若已存在则直接打开。该行为与快速切换一致。
+
+选中条目上的 <UiLabel name={m["zotero.menu_submenu.label"]()} /> 子菜单包含更新操作：
+
+- <UiLabel name={m["zotero.menu_item_update.label"]({ count: 2 })} />
+  ：为尚未拥有笔记的每个条目创建笔记，并使用当前 Zotero 数据刷新现有笔记。
+- <UiLabel name={m["zotero.menu_item_update_metadata.label"]()} />
+  ：仅刷新现有笔记的属性，笔记正文保持不变。跳过没有现有文献笔记的条目。
+
+<UiLabel name={m["zotero.menu_item_import_notes.label"]({ count: 2 })} />
+在所选内容包含笔记条目时显示。如果所选的是常规条目， 菜单则会显示
+<UiLabel name={m["zotero.menu_item_import_child_notes.label"]()} />
+，这将触发不同的导入路径。
+
+## 入口点汇总 [#entry-point-summary]
+
+| 命令                                                                | 命令面板 | 侧边栏 | 文件菜单 | 可用条件                         |
+| ------------------------------------------------------------------- | :------: | :----: | :------: | -------------------------------- |
+| <UiLabel name={m.command_refresh_db_name()} />                      |    是    |   否   |    否    | 始终                             |
+| <UiLabel name={m.command_update_notes_name()} />                    |    是    |   否   |    否    | 始终                             |
+| <UiLabel name={m.command_update_all_notes_name()} />                |    是    |   否   |    否    | 始终                             |
+| <UiLabel name={m.command_import_all_notes_name()} />                |    是    |   否   |    否    | 始终                             |
+| <UiLabel name={m.command_open_library_view_name()} />               |    是    |   是   |    否    | 始终                             |
+| <UiLabel name={m.command_show_in_library_name()} />                 |    是    |   否   |    是    | 在文献笔记中活动                 |
+| <UiLabel name={m.command_open_lit_note_name()} />                   |    是    |   否   |    否    | 始终                             |
+| <UiLabel name={m.command_insert_citation_name()} />                 |    是    |   否   |    否    | 打开编辑器时                     |
+| <UiLabel name={m.command_open_citekey_name()} />                    |    是    |   否   |    否    | 光标位于已识别的文献引用标识上   |
+| <UiLabel name={m.command_open_citekey_new_tab_name()} />            |    是    |   否   |    否    | 光标位于已识别的文献引用标识上   |
+| <UiLabel name={m.command_open_citekey_right_name()} />              |    是    |   否   |    否    | 光标位于已识别的文献引用标识上   |
+| <UiLabel name={m.command_open_citekey_window_name()} />             |    是    |   否   |    否    | 光标位于已识别的文献引用标识上   |
+| <UiLabel name={m.command_open_references_view_name()} />            |    是    |   否   |    否    | 始终                             |
+| <UiLabel name={m.command_show_cited_by_name()} />                   |    是    |   否   |    否    | 始终                             |
+| <UiLabel name={m.command_set_citation_presentation_name()} />       |    是    |   否   | 更多选项 | 活动 Markdown 笔记               |
+| <UiLabel name={m.command_pandoc_export_name()} />                   |    是    |   否   |    否    | 活动 Markdown 笔记               |
+| <UiLabel name={m.command_customize_citation_text_name()} />         |    是    |   否   |    否    | 始终                             |
+| <UiLabel name={m.command_open_citation_graph_name()} />             |    是    |   否   |    否    | 始终                             |
+| <UiLabel name={m.command_open_local_citation_graph_name()} />       |    是    |   否   |    否    | 在笔记中活动                     |
+| <UiLabel name={m.command_update_note_name()} />                     |    是    |   否   |    是    | 在文献笔记中活动                 |
+| <UiLabel name={m.command_update_note_metadata_name()} />            |    是    |   否   |    是    | 在文献笔记中活动                 |
+| <UiLabel name={m.command_overwrite_note_name()} />                  |    是    |   否   |    是    | 在文献笔记中活动                 |
+| <UiLabel name={m.command_import_child_notes_name()} />              |    是    |   否   |    是    | 在文献笔记中活动                 |
+| <UiLabel name={m.command_copy_item_key_name()} />                   |    是    |   否   |    是    | 在带有 Zotero 标识符的文件中活动 |
+| <UiLabel name={m.command_switch_literature_note_profile_name()} />  |    是    |   否   |    否    | 在文献笔记中活动                 |
+| <UiLabel name={m.command_open_pdf_name()} />                        |    是    |   否   |    是    | 在文献笔记中活动                 |
+| <UiLabel name={m.command_reimport_note_name()} />                   |    是    |   否   |    是    | 在导入的笔记中活动               |
+| <UiLabel name={m.command_open_annot_view_name()} />                 |    是    |   是   |    否    | 始终                             |
+| <UiLabel name={m.command_annot_view_follow_active_tab_name()} />    |    是    |   否   |    否    | 标注视图已打开，且处于其他模式   |
+| <UiLabel name={m.command_annot_view_follow_zotero_reader_name()} /> |    是    |   否   |    否    | 标注视图已打开，且处于其他模式   |
+| <UiLabel name={m.command_annot_view_pin_current_item_name()} />     |    是    |   否   |    否    | 标注视图在条目上打开，且尚未固定 |
+| <UiLabel name={m.command_annot_view_pin_item_name()} />             |    是    |   否   |    否    | 标注视图已打开                   |
+| <UiLabel name={m.command_annot_view_unpin_name()} />                |    是    |   否   |    否    | 标注视图已打开且已固定           |
+| <UiLabel name={m.command_new_query_file_name()} />                  |    是    |   否   | 文件列表 | 始终                             |
+| <UiLabel name={m.command_open_template_data_explorer_name()} />     |    是    |   否   |    是    | 始终                             |
+| <UiLabel name={m.template_workbench_open_layout()} />               |    是    |   否   |    是    | 在模板文档或文献笔记中活动       |
+| <UiLabel name={m.command_import_profile_name()} />                  |    是    |   否   |    否    | 始终                             |
+| <UiLabel name={m.command_open_welcome_name()} />                    |    是    |   否   |    否    | 始终                             |
+| <UiLabel name={m.command_open_release_note_name()} />               |    是    |   否   |    否    | 始终                             |
+
+## 查询 CLI [#query-cli]
+
+查询 CLI 为 Agent 和脚本提供读取文献、文件和阅读标记的能力。通过一条 `zotlit:query` 命令并搭配 `from` 选择查询数据集。[ZotLit 查询工作原理](/docs/reference/how-queries-work#zotlit-query)详细解释了数据集、筛选器和分组。
+
+| 命令                      | 参数                                                                                                                        | 结果                                          |
+| ------------------------- | --------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------- |
+| `zotlit:query`            | `from`, `filter`, `fields`, `formulas`, `sort`, `group`, `limit`, `library`, `output`, `id`, `this-item`, `this-attachment` | 每个匹配的条目、附件或标注对应一个查询结果行  |
+| `zotlit:query-schema`     | `from`                                                                                                                      | 架构 URL、源自定义字段、数据集字段及默认值    |
+| `zotlit:query-values`     | `kind`, `library`, `match`, `limit`                                                                                         | 各文库的精确分类路径或标签名称                |
+| `zotlit:query-guide`      | `topic`                                                                                                                     | 单个主题的说明，省略 `topic` 时输出完整指南   |
+| `zotlit:annotation-image` | `key`                                                                                                                       | 图片或手绘标注的本地 PNG 路径、格式和来源信息 |
+| `zotlit:query-cancel`     | `id`                                                                                                                        | ZotLit 是否找到指定查询并请求了取消           |
+
+`zotlit:query` 支持以下参数：
+
+| 参数              | 值                                                                                                                                                                     |
+| ----------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `from`            | `items`、`attachments` 或 `annotations`。默认为 `items`。                                                                                                              |
+| `filter`          | 针对选定数据集及其关联记录的筛选表达式。                                                                                                                               |
+| `fields`          | 逗号分隔的投影路径列表或 JSON 数组。`fields=[]` 仅返回身份标识行。                                                                                                     |
+| `formulas`        | 从公式名称到筛选表达式的 JSON 对象。在 `fields`、`filter` 或其他公式中以 `formula.<name>` 读取公式。参见[使用公式计算值](/docs/how-to/query-zotero-library#formulas)。 |
+| `sort`            | 逗号分隔的列表或 `{ "field", "direction" }` 对象的 JSON 数组。使用 `-field` 表示降序，使用 `field` 或 `+field` 表示升序。                                              |
+| `group`           | 单个标量投影路径，或包含单个 `[]` 的路径（如 `tags[].name`）。结果为每个值包含一个分组。                                                                               |
+| `limit`           | 正整数或 `all`。默认为 100。在分组查询中，限制应用于每个分组内部。                                                                                                     |
+| `library`         | `personal`、`group:<groupID>`、逗号分隔列表、JSON 数组或 `all`。默认值来自文库范围设置。                                                                               |
+| `output`          | 用于写入完整 JSON 结果的新绝对文件路径。                                                                                                                               |
+| `id`              | 供 `zotlit:query-cancel` 使用的查询 ID。                                                                                                                               |
+| `this-item`       | 条目的索引标识符（Indexed Key）。筛选器将其作为 `this.item` 读取。参见[查询上下文](#query-context)。                                                                   |
+| `this-attachment` | 附件的索引标识符。筛选器将其作为 `this.attachment` 读取。参见[查询上下文](#query-context)。                                                                            |
+
+ZotLit 会在引号和括号之外的逗号处拆分 `fields` 和 `sort`。
+
+### 查询数据集 [#query-datasets]
+
+选择代表单行结果的数据集：
+
+| `from` 值     | 单行代表       | 数据集内容                                         | 关联记录                              |
+| ------------- | -------------- | -------------------------------------------------- | ------------------------------------- |
+| `items`       | 一篇文献       | 回收站之外的顶层条目                               | `attachments`、`annotations`、`notes` |
+| `attachments` | 一个文件或 URL | 回收站之外的顶层条目的非回收站附件                 | `item`、`annotations`                 |
+| `annotations` | 一个阅读标记   | 回收站之外的顶层条目的非回收站附件上的非回收站标注 | `item`、`attachment`                  |
+
+独立附件不在这些数据集之内。关联列表包含来自同一数据集全集的记录。在筛选器中使用列表方法，在投影路径中使用显式的 `[]`。
+
+`notes` 列出回收站之外的条目子笔记，按笔记标识符排序。笔记记录包含 `indexedKey`、`key`、`title`、`dateAdded`、`dateModified`、`library` 及其所属的父 `item`。没有数据集将笔记作为行来读取。以下查询查找含有子笔记的文献并列出笔记标题：
+
+```bash
+obsidian zotlit:query filter='!notes.isEmpty()' fields='title,notes[].title'
+```
+
+例如，以下查询查找在此计算机上没有可被 ZotLit 打开的 PDF 的文献：
+
+```bash
+obsidian zotlit:query filter='attachments.filter(value.contentType == "application/pdf" && value.exists).isEmpty()' fields=title,citationKey
+```
+
+当每个文件必须单独成行时，请从 Attachments 出发。以下查询查找缺失的链接文件：
+
+```bash
+obsidian zotlit:query from=attachments filter='linkMode == "linked_file" && !exists' fields=item.title,path
+```
+
+在筛选器中通过索引标识符（Indexed Key）选择记录。行记录使用 `indexedKey`，其所属父条目使用 `item.indexedKey`，标注所属的父附件使用 `attachment.indexedKey`。超出目标文库范围的标识符会产生查询警告，但目标文库保持不变。
+
+### 查询上下文 [#query-context]
+
+`this-item` 和 `this-attachment` 用于设置查询的“查询上下文”：即筛选器作为 `this.item` 和 `this.attachment` 读取的条目和附件。查询文件和查询块会根据显示它们的笔记设置相同的上下文。参见[`this`：笔记对应的文献](/docs/reference/how-queries-work#this)。
+
+| 数据集        | 绑定条目的记录                       | 绑定附件的记录                             |
+| ------------- | ------------------------------------ | ------------------------------------------ |
+| `items`       | `indexedKey == this.item.indexedKey` |                                            |
+| `attachments` | `item == this.item`                  | `indexedKey == this.attachment.indexedKey` |
+| `annotations` | `item == this.item`                  | `attachment == this.attachment`            |
+
+```bash
+obsidian zotlit:query from=annotations filter='item == this.item' this-item=ABCD2345 limit=all
+```
+
+若筛选器在未提供对应参数的情况下读取 `this.item` 或 `this.attachment`，会失败并报错 `unbound-context`。
+
+### 投影与分组 [#projection-and-grouping]
+
+类似于 `attachments[].path` 的路径会为每个附件返回一个值。它会保持源顺序，并将 `null` 保留在其原始位置。完整的关联记录包含固定的摘要信息：
+
+| 记录               | 摘要字段                                                           |
+| ------------------ | ------------------------------------------------------------------ |
+| 条目（Item）       | `indexedKey`, `title`, `citationKey`                               |
+| 附件（Attachment） | `indexedKey`, `title`, `contentType`, `linkMode`, `path`, `exists` |
+| 标注（Annotation） | `indexedKey`, `type`, `text`, `comment`, `pageLabel`, `pageIndex`  |
+| 笔记（Note）       | `indexedKey`, `title`                                              |
+
+`group` 接受单个标量路径。以下命令按 `fileType`（值为 `pdf`、`epub`、`web` 或 `other`）统计附件：
+
+```bash
+obsidian zotlit:query from=attachments group=fileType
+```
+
+每个分组包含 `value`、`count` 和 `rows`。`count` 是应用每组限制之前的匹配数。`totalCount` 统计所有匹配的记录数，`returnedCount` 统计跨所有分组返回的行条目总数。
+
+包含单个 `[]` 的路径会按列表的每个元素进行分组。以下命令统计每个标签下的文献数：
+
+```bash
+obsidian zotlit:query group='tags[].name' fields='[]' limit=1
+```
+
+文献会根据其拥有的每个标签分别加入对应分组，没有标签的文献则归入 `null` 分组。分组可能重叠，因此各分组数量相加可能大于 `totalCount`。使用 `collections[]` 可按分类统计文献，使用 `attachments[].fileType` 可按文件类型统计文献。
+
+以下命令为每篇文献返回最新的 3 个标注标记：
+
+```bash
+obsidian zotlit:query from=annotations group=item.indexedKey sort=-dateModified limit=3 fields=text,item.title
+```
+
+### 分类与标签值 [#query-values]
+
+`zotlit:query-values` 列出筛选器完全匹配的名称。在按分类或标签筛选之前可先运行此命令。
+
+| 参数      | 值                                                               |
+| --------- | ---------------------------------------------------------------- |
+| `kind`    | `collections` 或 `tags`。必填。                                  |
+| `library` | `personal`、`group:<groupID>` 或 `all`。默认值来自文库范围设置。 |
+| `match`   | 保留包含此文本的名称（忽略大小写）。                             |
+| `limit`   | 正整数或 `all`，应用于每个文库。默认为 100。                     |
+
+分类值为以 `/` 连接的完整路径，包括空分类。标签值为 `{ name, type }`，其中 `type` 为 `manual`、`auto` 或 `unknown`。每个文库会报告其 `library` 选择器、`name`、`values`、`totalCount`、`returnedCount` 和 `truncated`。
+
+```bash
+obsidian zotlit:query-values kind=collections match=thesis
+```
+
+在 `collections.contains` 或 `collections.within` 中指定的分类路径若不存在于任何目标文库中，会产生 `unknown-collection` 查询警告。其 `suggestions` 会列出最接近的路径，并在其他文库包含该路径时提供 `library` 值。
+
+### 架构、指南与结果 [#schema-guide-and-results]
+
+统一的 `query.schema.json` 目录包含 `datasets.items`、`datasets.attachments` 和 `datasets.annotations`。它还包含共享的函数、方法、属性和类型。`zotlit:query-schema` 按数据集返回目录 URL、源自定义字段以及默认值。添加 `from=items`、`from=attachments` 或 `from=annotations` 可缩小实时响应范围。
+
+`zotlit:query-guide` 接受 `datasets`、`filter`、`fields`、`sort`、`group`、`results`、`schema`、`values` 或 `cancel` 作为主题参数。省略 `topic` 则输出完整指南。
+
+查询结果遵循 CLI 契约版本 3（CLI Contract version 3）。JSON 外层包含 `command: "zotlit:query"`；`request.from` 标明数据集，`request.library` 标明其文库。顶层的 `libraries` 字段描述了 ZotLit 读取的文库。
+
+在报告空结果前请先查看 `warnings`。发生失败时，请阅读 `diagnostic.report` 并按照其最终的恢复操作指引进行处理。
+
+每个附件行均包含该附件及其父条目的索引标识符。每个标注行还包含其所属父附件的索引标识符。标注的默认值包括 `pageLabel`、`pageIndex`、`hasExcerptImage`、附件详情、条目标题和文献引用标识。若需要原始几何坐标，请在 `fields` 中请求 `position`。当 `attachment.exists` 为 true 时，可读取 `attachment.path` 以打开源文档。
+
+当 `hasExcerptImage` 为 true 时，可将标注索引标识符作为 `key` 传递给 `zotlit:annotation-image`。该命令将返回文件路径而非图片原始字节。
+
+`zotlit-query` Agent Skill 在构建查询前会先读取 `zotlit:query-guide` 和 `zotlit:query-schema`。参见[向 AI Agent 提问](/docs/how-to/query-zotero-library#agent)。
+
+## 模板工作台 CLI [#template-workbench-cli]
+
+模板工作台向 Obsidian CLI 注册了专有命令，主要供 Agent 和脚本使用而非命令面板。目前有 5 个命令可用：
+
+- `zotlit:template-inspect`：检查单个模板文档并验证其保存的源码是否为最新。
+- `zotlit:template-check`：检查每个配置方案的所有已保存组件。
+- `zotlit:template-status`：报告仓库的工作台状态。
+- `zotlit:template-data`：返回单个根节点的模板数据。
+- `zotlit:template-guide`：输出工作台指南。
+
+早期的架构、渲染、源码及受管属性命令已废弃。这些命令仍保留注册，但会返回 `COMMAND_RETIRED` 诊断信息。
+
+有关所有命令（可用与废弃）、选项标志及诊断信息的详情，请参见[模板工作台 CLI](/docs/reference/template-workbench-cli)；有关核心概念请参见[模板工作台](/docs/reference/template-workbench-cli)。
+
+## 另请参阅 [#see-also]
+
+<Cards>
+  <Card
+    title="查询 Zotero 文库"
+    description="从 Obsidian CLI 查找文献、检查文件并汇总阅读标记。"
+    href="/docs/how-to/query-zotero-library"
+  />
+  <Card
+    title="ZotLit 查询工作原理"
+    description="查询数据集、关联列表、分组以及精确的分类和标签名称。"
+    href="/docs/reference/how-queries-work#zotlit-query"
+  />
+  <Card
+    title="安装 ZotLit Skill"
+    description="安装使用模板工作台的 Agent 工作流。"
+    href="/docs/install-skill"
+  />
+  <Card
+    title="设置"
+    description="ZotLit 的所有设置项：键名、标签、默认值和所在位置。"
+    href="/docs/reference/settings"
+  />
+  <Card
+    title="导出带引文的笔记"
+    description="将当前 Markdown 笔记导出为 Word 文档或网页。"
+    href="/docs/how-to/export-note-with-citations"
+  />
+  <Card
+    title="协议链接"
+    description="用于脚本工作流的 obsidian://zotlit/* 操作。"
+    href="/docs/reference/protocol-links"
+  />
+  <Card
+    title="模板语法"
+    description="ZotLit 模板的 Liquid 标记参考。"
+    href="/docs/reference/templates/syntax"
+  />
+</Cards>

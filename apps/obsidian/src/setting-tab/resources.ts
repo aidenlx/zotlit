@@ -14,9 +14,9 @@ import { Release } from "@/services/release/service";
 import { PluginSettings } from "@/services/settings/service";
 import {
   BUG_REPORT,
-  COMMUNITY,
-  DOCS_HOME,
-  MIGRATION_GUIDE,
+  communityUrl,
+  docsHomeUrl,
+  migrationGuideUrl,
 } from "@/views/welcome/links";
 import { openWelcomeView } from "@/views/welcome/register";
 
@@ -70,7 +70,7 @@ function renderMigrationReminderButtons(
     btn
       .setButtonText(m.welcome_action_open_migration_guide())
       .setCta()
-      .onClick(() => window.open(MIGRATION_GUIDE)),
+      .onClick(() => window.open(migrationGuideUrl())),
   );
   setting.addButton((btn) =>
     btn.setButtonText(m.settings_migration_reminder_mark_done()).onClick(() => {
@@ -153,7 +153,7 @@ function resourcesItems(
         setting.addButton((btn) =>
           btn
             .setButtonText(m.settings_resources_docs_button())
-            .onClick(() => window.open(DOCS_HOME)),
+            .onClick(() => window.open(docsHomeUrl())),
         );
       },
     },
@@ -165,7 +165,7 @@ function resourcesItems(
         setting.addButton((btn) =>
           btn
             .setButtonText(m.settings_resources_help_button())
-            .onClick(() => window.open(COMMUNITY)),
+            .onClick(() => window.open(communityUrl())),
         );
       },
     },

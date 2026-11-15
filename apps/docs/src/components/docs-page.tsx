@@ -28,6 +28,7 @@ import { ReleaseSnapshotProvider } from "@/components/release-snapshot";
 import { docs } from "@/lib/collections";
 import { installPageSlugs } from "@/lib/github-releases";
 import { localeInput } from "@/lib/i18n";
+import { getPageLocaleState } from "@/lib/locale-state";
 import { contentRouteUrl } from "@/lib/markdown-routes";
 import { ztProse } from "@/lib/prose";
 import { getReleaseSnapshot } from "@/lib/release-data";
@@ -109,10 +110,10 @@ function DocsPageContent({
   const MDX = page.body;
   return (
     <DocsPage toc={toc} full={page.full} slots={{ footer: DocsPageFooter }}>
-      <DocsTitle className="font-serif text-4xl leading-[1.16] font-medium text-balance">
+      <DocsTitle className="font-serif text-4xl leading-[1.16] font-medium text-balance zh:leading-[1.3]">
         {docsPageTitle(page)}
       </DocsTitle>
-      <DocsDescription className="mb-0 font-serif text-lg italic">
+      <DocsDescription className="mb-0 font-serif text-lg italic zh:leading-[1.75]">
         {page.description}
       </DocsDescription>
       <div className="flex flex-row items-center gap-2 border-b pb-6">
@@ -168,7 +169,10 @@ export function docsPageHead(page: DocsPageData | undefined) {
         published: page.published,
         modified: page.modified,
         url: page.url,
-        image: ogImageUrl("docs", page.slugs),
+        image: ogImageUrl("docs", {
+          slugs: page.slugs,
+          locale: getPageLocaleState(page.url, getLocale()).contentLocale,
+        }),
       }),
       ...(page.faq.length > 0
         ? [faqPageSchema({ url: page.url, entries: page.faq })]

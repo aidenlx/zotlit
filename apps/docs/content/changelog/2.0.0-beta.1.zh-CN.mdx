@@ -1,0 +1,28 @@
+---
+version: "2.0.0-beta.1"
+companion: "2.0.0-beta.1"
+date: 2026-07-24
+description: "按设备保存的 Zotero 路径、网页端文库链接、阅读器窗口修复"
+---
+
+## 不兼容变更 [#breaking-changes]
+
+### 按设备保存的 Zotero 路径 [#per-device-zotero-paths]
+
+Zotero 配置文件和数据目录路径现已改为按设备单独保存。如果你在多台机器之间同步仓库，一台电脑上的 Zotero 路径不会再覆盖另一台电脑的设置。未设置路径表示自动检测；你在某台机器上设置的路径只会保留在该机器上。
+
+如果插件在某台新设备上找不到你的 Zotero 数据库，欢迎视图会显示提示，引导你进行定位操作。参见[在多台设备上使用 ZotLit](/docs/how-to/sync-across-devices)。
+
+如果你之前设置过自定义的 Zotero 配置文件或数据目录路径，更新后需要在每台设备上重新输入一次。旧的已同步值不会被迁移。
+
+## 新增功能 [#whats-new]
+
+### `zt.weblink` 模板字段 [#ztweblink-template-field]
+
+新增模板变量 `zt.weblink`，可获取条目在浏览器中打开的 Zotero 网页端文库 URL（例如 `https://www.zotero.org/yourname/items/ABC123`），与现有的 `zt.backlink` 桌面端深度链接并存。该变量可在主条目以及 `zt.relatedItems` 中的每个条目上使用。从未同步过的账户无法使用此链接。参见[模板数据参考](/docs/reference/templates/data)。
+
+## 问题修复 [#bug-fixes]
+
+- 修复了标注视图无法跟随在独立窗口（而非标签页）中打开的 Zotero 阅读器的问题。此前仅能跟踪标签页形式的阅读器；现在独立阅读器窗口在获得焦点时也会被捕获。
+
+- 修复了当 Obsidian 窗口处于后台或被遮挡时，批量导入和索引构建速度变慢的问题。

@@ -1,0 +1,34 @@
+---
+version: "2.0.0-beta.2"
+companion: "2.0.0-beta.2"
+date: "2026-07-25"
+description: "引文的 @ 触发、富文本标注卡片与引文输出规范化"
+---
+
+## 不兼容变更 [#breaking-changes]
+
+### 引文输出规范化 [#citation-output-normalization]
+
+插入笔记中的渲染后引文文本现在会自动修剪首尾空白并折叠为单行行内文本。插入后编辑器会在末尾添加一个空格，以便光标就位后继续输入。特意生成多行引文输出的模板在插入时将被展平为单行。
+
+现在在行内引文建议器中按 Shift+Enter 可选择次要引文格式，与命令面板弹窗的行为保持一致。
+
+## 新增内容 [#whats-new]
+
+### 引文的 @ 触发 [#at-trigger-for-citations]
+
+这是一项可选设置，允许你直接输入 `@` 来打开引文建议器，而无需使用默认的 `[@` 触发符。由于 @ 查询没有闭合方括号，请使用下划线代替空格（例如 `@cognitive_load`）。可以在插件设置的引文分节下启用该功能。完整工作流请参阅[插入引用](/docs/how-to/insert-citations)。
+
+### 富文本标注卡片 [#rich-annotation-cards]
+
+标注视图中的标注卡片现在支持渲染带有行内格式（粗体、斜体、下标、上标）的摘录，并通过与文献笔记相同的处理流程渲染 Markdown 评论。卡片中显示的内容与笔记模板生成的内容保持一致。评论中的链接会基于文献笔记进行解析，并通过工作区打开。
+
+### 其他改进 [#other-improvements]
+
+- Zotero 插件 ZotLit Companion 中的上下文菜单标签现显示为“Literature Note”而非单独的“note”，并采用首字母大写（Title Case）以匹配 Zotero 自带菜单的风格。
+
+## 问题修复 [#bug-fixes]
+
+- 尽管 `zt.parentItem.title` 正常工作，但 `zt.parentItem.authorsShort` 和 `zt.parentItem.authors` 在标注模板中此前会渲染为空值。这些字段现在已能正确解析。`zt.parentItem.backlink` 和 `zt.parentItem.weblink` 也已补充完整。
+
+- 在没有文献笔记的条目上仅更新元数据时，此前会错误地根据模板创建完整笔记。按文档规范，仅限元数据的更新现在会跳过不存在笔记的条目。

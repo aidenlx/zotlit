@@ -3,7 +3,7 @@
 
 import { Effect } from "effect";
 
-import { DOCS_COMPANION } from "@/lib/constants";
+import { companionDocsUrl } from "@/lib/docs-url";
 import * as m from "@/lib/i18n/generated/messages";
 import { BaseNotice } from "@/lib/notice";
 import { Notifier } from "@/lib/notifier";
@@ -30,7 +30,7 @@ export function companionNotice(options: {
       {
         label: m.notice_companion_install_action(),
         run: () => {
-          window.open(DOCS_COMPANION);
+          window.open(companionDocsUrl());
         },
       },
     ],

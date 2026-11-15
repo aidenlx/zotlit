@@ -90,34 +90,38 @@ export const Route = createFileRoute("/learn/$lesson")({
     await lessons.get(lesson.path)?.preload();
     return lesson;
   },
-  head: ({ loaderData: lesson }) =>
-    lesson === undefined
-      ? {}
-      : pageHead({
+  head: ({ loaderData: lesson }) => {
+    if (lesson === undefined) return {};
+    const localeState = getPageLocaleState(lesson.url, getLocale());
+    return pageHead({
+      title: lesson.view.title,
+      description: lesson.description,
+      path: lesson.url,
+      card: {
+        type: "learn",
+        slugs: lesson.slugs,
+        alt: m.docs_learn_card_alt({ title: lesson.view.title }),
+      },
+      schemas: [
+        lessonArticleSchema({
           title: lesson.view.title,
           description: lesson.description,
-          path: lesson.url,
-          card: {
-            type: "learn",
+          published: lesson.published,
+          modified: lesson.modified,
+          url: localeState.canonicalPath,
+          image: ogImageUrl("learn", {
             slugs: lesson.slugs,
-            alt: m.docs_learn_card_alt({ title: lesson.view.title }),
-          },
-          schemas: [
-            lessonArticleSchema({
-              title: lesson.view.title,
-              description: lesson.description,
-              published: lesson.published,
-              modified: lesson.modified,
-              url: getPageLocaleState(lesson.url, getLocale()).canonicalPath,
-              image: ogImageUrl("learn", lesson.slugs),
-            }),
-            breadcrumbListSchema([
-              { name: appName, url: "/" },
-              { name: m.docs_nav_learn(), url: learnRoute },
-              { name: lesson.view.title, url: lesson.url },
-            ]),
-          ],
+            locale: localeState.contentLocale,
+          }),
         }),
+        breadcrumbListSchema([
+          { name: appName, url: "/" },
+          { name: m.docs_nav_learn(), url: learnRoute },
+          { name: lesson.view.title, url: lesson.url },
+        ]),
+      ],
+    });
+  },
 });
 
 function Lesson() {

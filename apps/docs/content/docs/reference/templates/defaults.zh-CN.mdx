@@ -1,0 +1,215 @@
+---
+title: "默认模板"
+description: "各类型内置 Liquid 模板完整内容，附逐行渲染效果说明。"
+---
+
+import { Card, Cards } from "fumadocs-ui/components/card";
+import { Callout } from "@/components/callout";
+import { Command } from "@/components/command";
+import { UiLabel } from "@/components/ui-label";
+import { m } from "@/paraglide/messages.js";
+
+ZotLit 为每种模板都提供了内置的 Liquid 默认实现。本页面逐字展示每个默认模板，解释其渲染内容，并指明自定义后保存该模板的对应文档。
+
+配置方案（Profile）文档将笔记、内容、文件名和标注模板整合在一起。引文文本则保存在独立的文档中。在自定义文档创建之前，ZotLit 会渲染下方显示的内置文本。有关如何创建文档，请参阅[自定义模板](/docs/how-to/customize-a-template)。
+
+## 笔记模板 [#note-template]
+
+在配置方案文档中：位于标注分节（Annotation Section）上方的笔记正文。
+
+```liquid
+# {{ zt.title }}
+
+[Zotero]({{ zt.backlink }}) {{ zt.attachments | map: "fileLink" | compact | join: " " }}
+
+{% render "content" with zt as zt %}
+```
+
+| 行                                                                | 渲染内容                                                                                                                                                                                                                                                                                                                                                                              |
+| ----------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `# {{ zt.title }}`                                                | 条目标题作为一级标题（H1）。                                                                                                                                                                                                                                                                                                                                                          |
+| `[Zotero]({{ zt.backlink }})`                                     | 指向 Zotero 中该条目的 Markdown 链接（深度链接）。                                                                                                                                                                                                                                                                                                                                    |
+| `{{ zt.attachments \| map: "fileLink" \| compact \| join: " " }}` | 指向每个可解析附件的直接 `file://` 链接。对于 Zotero 链接文件，链接指向其原始外部位置。这些链接不会将文件复制到仓库中。当开启 <UiLabel name={m.settings_reader_open_file_links_name()} />（默认开启）时，指向 Zotero 文库中 PDF 的链接会在 [Obsidian 的 PDF 阅读器](/docs/how-to/open-pdf-in-obsidian)中打开。`map` 提取每个链接，`compact` 剔除缺失的链接，`join` 用空格将它们分隔。 |
+| `{% render "content" with zt as zt %}`                            | 引入 `content` 模板，传入完整的条目上下文。                                                                                                                                                                                                                                                                                                                                           |
+
+## 内容模板 [#content-template]
+
+在配置方案文档中：就地写入笔记正文的末尾。默认模板不包含 `{% managed %}` 块。
+
+````liquid
+## Annotations
+
+```zotquery
+views:
+  - type: annotations
+    name: Annotations
+    from: annotations
+    filters: item == this.item
+    sort:
+      - property: attachment.dateAdded
+        direction: ASC
+      - property: sortIndex
+        direction: ASC
+```
+````
+
+默认正文仅在 ZotLit 创建笔记时渲染一次。之后它完全由你掌控：<Command inline name={m.command_update_note_name()} /> 会刷新属性（frontmatter），而保留正文原样不变。默认模板没有 **Notes** 列表；请参阅[导入 Zotero 笔记](/docs/how-to/import-zotero-notes)将子笔记导入仓库。
+
+| 分节        | 渲染内容                                                                                                                                                                     |
+| ----------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Annotations | 一个 `zotquery` 块，以实时卡片形式显示该笔记所属条目的标注。`this.item` 指笔记属性中 `zotero-key` 所指定的条目。卡片按附件排序（最早添加的优先），然后按在文件中的位置排序。 |
+
+标注卡片与 Zotero 保持同步，你可以在笔记中的卡片上直接编辑评论或标签。在查询块工具栏中所做的更改（如调整排序）会修改块文本。<Command inline name={m.command_update_note_name()} /> 会保留笔记中已有的块文本，因此你的更改不会丢失。
+
+使用旧版默认模板创建的笔记会以纯文本形式列出标注。当该笔记仍保留其托管区域（managed region）时，下次更新会用查询块替换该文本列表。
+
+若要在笔记中以纯文本形式列出标注，请在你自己的配置方案中用以下循环替换该查询块。每个标注都会通过标注模板渲染，`render_annotation` 标签将每个标注作为 `zt` 传入。等效的原生语法请参阅[标注渲染](/docs/reference/templates/syntax#render-annotation)。
+
+```liquid
+{% for annotation in zt.annotations %}
+{% render_annotation annotation %}
+{% endfor %}
+```
+
+## 标注模板 [#annotation-template]
+
+在配置方案文档中：独立行 `--- zotlit:annotation ---` 之后的最终分节，即标注分节。
+
+```liquid
+{% bq %}
+[!note] {% if zt.pageLabel and zt.pageLabel != "" %}Page [{{ zt.pageLabel }}]({{ zt.backlink }}){% else %}[Zotero]({{ zt.backlink }}){% endif %}
+
+{{ zt.imgLink | embed }}{{ zt.text }}{% if zt.citation %} {{ zt.citation }}{% endif %}
+{% if zt.comment %}
+
+{{ zt.comment }}
+{% endif %}
+{% endbq %}
+```
+
+对于文献引用标识为 `smith2024` 的文献第 42 页上的标注（包含图片摘录、高亮文本和评论），渲染输出如下：
+
+```markdown
+> [!note] Page [42](zotero://open/library/items/ABCD2345?annotation=ANNX2345&page=42)
+>
+> ![[excerpt.png]]The highlighted passage [@smith2024, {p. 42}]
+>
+> My thoughts on this
+```
+
+| 元素         | 来源                                                                                                                                                                                                                                                                                                                                                                                  |
+| ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Callout 类型 | `[!note]`：Obsidian 的 callout。将 `note` 改为 `quote`、`info` 或任何支持的类型即可调整样式。                                                                                                                                                                                                                                                                                         |
+| 页码标签     | callout 标题中的 `Page [{{ zt.pageLabel }}]({{ zt.backlink }})`：页码标签，链接到该标注的持久 Zotero 链接 [`zt.backlink`](/docs/reference/templates/data#annotation-template)。点击它会在该标注处打开 PDF；若本机存有该 PDF，则在 Obsidian 的阅读器中打开。请参阅 [Zotero 协议链接](/docs/reference/protocol-links#zotero-open-links)。没有页码标签的标注会以 `Zotero` 作为链接文本。 |
+| 图片         | `{{ zt.imgLink \| embed }}`：嵌入已生成的图片或墨迹摘录。刷新失败时会保留已验证的前一张图片，或返回图片不可用说明及源链接。对于其他标注类型，折叠为 `""`。                                                                                                                                                                                                                            |
+| 文本         | `{{ zt.text }}`：高亮选中的段落。                                                                                                                                                                                                                                                                                                                                                     |
+| 引用         | `{{ zt.citation }}`：该文献的引用，以该标注的页码作为定位符，通过[引文文本](#citation-text)模板渲染。对于独立 PDF 或没有文献引用标识的文献上的标注，此项留空。                                                                                                                                                                                                                        |
+| 评论         | `{{ zt.comment }}`：用户的边注，仅在存在时渲染。                                                                                                                                                                                                                                                                                                                                      |
+
+`{% bq %}` / `{% endbq %}` 块标签会处理每行开头的 `> ` 前缀，并将连续的空行折叠为单个空的 `>`。
+
+## 引文文本 [#citation-text]
+
+保存在模板文件夹下的独立文档 `zotlit-citation.md` 中。一个模板同时响应两种引文操作方式，`zt.variant` 标明了读者所使用的操作：
+
+```liquid
+{% if zt.variant == "alt" %}
+  {{ zt.citations | pandoc_cite: "prefer-author-in-text" }}
+{% else %}
+  {{ zt.citations | pandoc_cite }}
+{% endif %}
+```
+
+`zt.variant` 的值为 `"main"` 或 `"alt"`。`"main"` 对应引文建议器或插入模态框中的 Enter 键；`"alt"` 对应 Shift+Enter 键，或建议器查询词末尾的 `/`。它指明了读者执行的操作，而该模板决定每种操作渲染的内容。请参阅[引文形式](/docs/reference/templates/data#citation-variant)。
+
+内置默认模板的 `else` 分支渲染带方括号的引文组（Citation Cluster），例如 `[@smith2024, {p. 62}; -@doe2021]`。`"alt"` 分支请求 Pandoc 使用正文作者形式（author-in-text），只要第一个保留的条目包含前缀或隐藏了作者，就会自动回退为带方括号的引文组。
+
+| 输入                 | `"main"`                | `"alt"`                                    |
+| -------------------- | ----------------------- | ------------------------------------------ |
+| 单个 key `smith2024` | `[@smith2024]`          | `@smith2024`                               |
+| 两个 key             | `[@a2020; @b2021]`      | 第一个条目在正文中，其余条目在末尾方括号内 |
+| 定位符 `62`          | `[@smith2024, {p. 62}]` | `@smith2024 [{p. 62}]`                     |
+| `suppressAuthor`     | `[-@smith2024]`         | `[-@smith2024]`，引文组                    |
+| 前缀 `see `          | `[see @smith2024]`      | `[see @smith2024]`，引文组                 |
+| 无文献引用标识的条目 | 从输出中剔除            | 从输出中剔除                               |
+
+`pandoc_cite` 过滤器在两个分支中的行为一致：
+
+| 行为             | 详情                                                                                                                      |
+| ---------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| 前缀与后缀       | 保留每个条目的 `prefix` 和 `suffix`。                                                                                     |
+| 隐藏作者         | `suppressAuthor` 为真时渲染为 `-@key`。                                                                                   |
+| 定位符           | 根据 `labelShort` 和 `locator` 渲染显式定位符，如 `, {p. 62}`。                                                           |
+| 复杂文献引用标识 | 当 Pandoc 需要时添加花括号。例如 `KX67D9YM?` 渲染为 `@{KX67D9YM?}`。                                                      |
+| 缺失文献引用标识 | 省略 `item.citationKey` 为 null 的条目。空数组或全为 null 的数组不渲染任何内容。                                          |
+| 形式             | `normal` 始终生成带方括号的引文组；`prefer-author-in-text` 仅在第一个保留条目无前缀且未隐藏作者时生成正文作者形式的引用。 |
+
+ZotLit 会将渲染出的引文规范化为行内形式：去除首尾空白字符，并将包含换行的连续空白字符折叠为单个空格。此规范化应用于所有渲染引文的场景：行内建议器、命令面板选择器、`zt.citation` 标注字段、<UiLabel name={m.annot_view_menu_copy_citation()} /> 以及笔记导入期间的引文解析。
+
+每次插入引文后都会附带一个尾随空格并将光标置于其后；如果插入位置后已存在空格，则直接复用而不是重复添加。
+
+仅内置了 Liquid 版本。使用 Eta 编写的等效模板如下：
+
+```eta
+<% if (zt.variant === "alt") { %>
+  <%= pandocCite(zt.citations, "prefer-author-in-text") %>
+<% } else { %>
+  <%= pandocCite(zt.citations) %>
+<% } %>
+```
+
+## 文件名模板 [#filename-template]
+
+在配置方案文档中：其 YAML manifest 的 `filename` 键。模板工作台视图中将其标记为 <UiLabel name={m.workbench_name_filename_label()} />。
+
+渲染输出是新笔记路径的文件名部分。ZotLit 会在该配置方案的[文献笔记文件夹](/docs/reference/settings#literature-note-folder)下以该名称创建笔记。
+
+```liquid
+{{ zt.citationKey | default: zt.DOI | default: zt.title | default: zt.key }}{% suffix %}
+```
+
+| 元素           | 详情                                                                              |
+| -------------- | --------------------------------------------------------------------------------- |
+| 回退链         | `citationKey` > `DOI` > `title` > `key`。`default` 过滤器会跳过 nil 和空值。      |
+| `{% suffix %}` | 仅在渲染出的文件名与现有笔记冲突时追加一个简短的随机字符串。无冲突时解析为 `""`。 |
+| 单行           | 渲染输出会被折叠为单个修剪后的行（移除所有换行符和首尾空白）。                    |
+| 扩展名         | `.md` 扩展名会自动追加；模板仅生成基础名称。                                      |
+
+<Callout type="info" title="笔记名称中的子文件夹">
+  在渲染出的名称中使用正斜杠（`/`）会在文献笔记文件夹下创建子文件夹。例如文件夹
+  `literatures` 和名称 `2024/Smith2020` 会生成 `literatures/2024/Smith2020.md`。
+</Callout>
+
+## 实时重编译 [#live-recompilation]
+
+在仓库中编辑模板文档会通过文件监视器触发实时重编译。更改会立即生效，无需重新加载插件。将文档移至回收站会使其模板恢复为上方显示的内置默认值。
+
+## 另请参阅 [#see-also]
+
+<Cards>
+  <Card
+    title="模板语法"
+    description="Liquid 标记、过滤器以及 ZotLit 自定义标签。"
+    href="/docs/reference/templates/syntax"
+  />
+  <Card
+    title="模板数据参考"
+    description="各模板类型中 zt 上可用的属性。"
+    href="/docs/reference/templates/data"
+  />
+  <Card
+    title="模板工作原理"
+    description="模板文档、语言以及各类模板的存放位置。"
+    href="/docs/reference/templates/how-templates-work"
+  />
+  <Card
+    title="自定义模板"
+    description="打开模板文档、进行编辑并测试效果。"
+    href="/docs/how-to/customize-a-template"
+  />
+  <Card
+    title="自定义标注样式"
+    description="教程第 2 课：修改标注的渲染格式。"
+    href="/docs/how-to/customize-template"
+  />
+</Cards>

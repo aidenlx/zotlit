@@ -11,6 +11,7 @@ import type { Thing, WithContext } from "schema-dts";
 import * as m from "@/paraglide/messages.js";
 import { getLocale } from "@/paraglide/runtime.js";
 
+import type { SiteLocale } from "./i18n";
 import { getPageLocaleState } from "./locale-state";
 import { appName, baseURL, ogImageUrl } from "./shared";
 import type { OgType } from "./shared";
@@ -44,8 +45,12 @@ export interface PageSeo {
 }
 
 /** OG/Twitter image tags: absolute card URL plus its dimensions, MIME, and alt. */
-export function ogImageMeta(type: OgType, alt: string, slugs?: string[]) {
-  const url = absoluteUrl(ogImageUrl(type, slugs));
+export function ogImageMeta(
+  type: OgType,
+  alt: string,
+  { slugs, locale }: { slugs?: string[]; locale?: SiteLocale } = {},
+) {
+  const url = absoluteUrl(ogImageUrl(type, { slugs, locale }));
   return [
     { property: "og:image", content: url },
     { property: "og:image:width", content: OG_IMAGE_DIMENSIONS.width },
@@ -110,7 +115,10 @@ export function pageHead(seo: PageSeo) {
             })),
           ]
         : [{ property: "og:type", content: "website" }]),
-      ...ogImageMeta(seo.card.type, seo.card.alt, seo.card.slugs),
+      ...ogImageMeta(seo.card.type, seo.card.alt, {
+        slugs: seo.card.slugs,
+        locale: localeState.contentLocale,
+      }),
     ],
     links: [
       { rel: "canonical", href: canonical },
