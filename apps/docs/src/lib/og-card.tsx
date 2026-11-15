@@ -8,6 +8,7 @@
 //
 // @see docs/brand.md
 
+import { regex } from "arkregex";
 import { readFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { dirname, resolve } from "node:path";
@@ -16,6 +17,8 @@ import { render } from "takumi-js";
 import { googleFonts, subsetFonts } from "takumi-js/helpers";
 import type { FetchLike, FontSubset } from "takumi-js/helpers";
 import { Renderer } from "takumi-js/node";
+
+import { cjkGlyph, textWidth } from "./cjk.js";
 
 /**
  * `fonts.gstatic.com` drops connections and stalls during CI prerender, so a
@@ -47,6 +50,10 @@ const CJK_SANS = "Noto Sans SC";
  * site links, each loading its bytes from disk on demand. Google Fonts
  * carries no GB edition of WenKai.
  */
+/** A slice file and its code points, from one `@font-face` rule of the WenKai stylesheet. */
+const faceUrl = regex(`url\\(["']?\\./(?<file>[^"')]+)`);
+const faceRange = regex("unicode-range:(?<range>[^;}]+)");
+
 async function wenkaiSubsets(packageRoot: string): Promise<FontSubset[]> {
   const wenkaiCss = createRequire(resolve(packageRoot, "package.json")).resolve(
     "lxgw-wenkai-screen-web/lxgwwenkaigbscreen/result.css",
@@ -56,8 +63,8 @@ async function wenkaiSubsets(packageRoot: string): Promise<FontSubset[]> {
     .split("@font-face")
     .slice(1)
     .flatMap((face) => {
-      const file = /url\(["']?\.\/([^"')]+)/.exec(face)?.[1];
-      const range = /unicode-range:([^;}]+)/.exec(face)?.[1];
+      const file = faceUrl.exec(face)?.groups.file;
+      const range = faceRange.exec(face)?.groups.range;
       if (!file || !range) return [];
       const ranges = range.split(",").map((part): [number, number] => {
         const [start = "", end = start] = part
@@ -157,15 +164,6 @@ function ZotLitMark() {
       <path d="M17 3.5 H20.5 V16.5 L18.75 14.75 L17 16.5 Z" fill="#E8622C" />
     </svg>
   );
-}
-
-const cjkGlyph = /[\p{Script=Han}　-〿＀-￯]/u;
-
-/** A string's width in Latin glyphs: a CJK glyph or full-width mark counts two. */
-function textWidth(text: string): number {
-  let width = 0;
-  for (const glyph of text) width += cjkGlyph.test(glyph) ? 2 : 1;
-  return width;
 }
 
 /**

@@ -25,6 +25,7 @@ import {
 import type { LucideIcon } from "lucide-react";
 import type { CSSProperties, ReactNode } from "react";
 
+import { Message } from "@/components/message";
 import { cn } from "@/lib/cn";
 import { m } from "@/paraglide/messages.js";
 import { getLocale } from "@/paraglide/runtime.js";
@@ -285,9 +286,11 @@ function LibrarySheet({ compact = false }: { compact?: boolean }) {
 
 /** The query file as a table: the rating column is the reader's own, filled in as they read. */
 function TableSheet({ compact = false }: { compact?: boolean }) {
+  // The Chinese rating header ("rating（笔记）") needs a little more room.
+  const chinese = getLocale() === "zh-CN";
   const cols = compact
-    ? "minmax(0,1fr) 48px 92px"
-    : "minmax(0,1fr) 50px 104px 100px";
+    ? `minmax(0,1fr) 48px ${chinese ? 92 : 84}px`
+    : `minmax(0,1fr) 50px 104px ${chinese ? 100 : 96}px`;
   const cell = compact ? "truncate px-2 py-[6px]" : "truncate px-2 py-[10px]";
   const own = "bg-(--desk-own)";
   const tool = "inline-flex items-center gap-1";
@@ -526,22 +529,29 @@ function DraftSheet() {
       <div className="relative mt-1.5 text-[13px] leading-[1.65] text-fd-foreground">
         {/* The draft is in the reader's language; the citations stay as the references give them. */}
         <p>
-          {m.docs_home_desk_draft_before_citation()}
-          <span className={CITATION}>(Sandve et al., 2013)</span>
-          {m.docs_home_desk_draft_after_citation()}
-          {/* The typed key and the citation that replaces it share one cell. */}
-          <span className="inline-grid">
-            <span className="opacity-0 [grid-area:1/1] motion-safe:animate-desk-typed">
-              <span className="inline-block overflow-hidden align-bottom font-mono text-[12px] whitespace-nowrap text-fd-primary motion-safe:animate-desk-type">
-                [@ten
-              </span>
-              <span className="ms-px inline-block h-[15px] w-[1.5px] translate-y-[3px] bg-fd-foreground motion-safe:animate-desk-blink" />
-            </span>
-            <span className="-mx-0.5 rounded-[3px] px-0.5 [grid-area:1/1] motion-safe:animate-desk-cited">
-              <span className={CITATION}>(Rougier et al., 2014)</span>
-              {m.docs_home_desk_draft_end()}
-            </span>
-          </span>
+          <Message
+            text={m.docs_home_desk_draft_body({
+              sandve: "{sandve}",
+              rougier: "{rougier}",
+            })}
+            slots={{
+              sandve: <span className={CITATION}>(Sandve et al., 2013)</span>,
+              // The typed key and the citation that replaces it share one cell.
+              rougier: (
+                <span className="inline-grid">
+                  <span className="opacity-0 [grid-area:1/1] motion-safe:animate-desk-typed">
+                    <span className="inline-block overflow-hidden align-bottom font-mono text-[12px] whitespace-nowrap text-fd-primary motion-safe:animate-desk-type">
+                      [@ten
+                    </span>
+                    <span className="ms-px inline-block h-[15px] w-[1.5px] translate-y-[3px] bg-fd-foreground motion-safe:animate-desk-blink" />
+                  </span>
+                  <span className="-mx-0.5 rounded-[3px] px-0.5 [grid-area:1/1] motion-safe:animate-desk-cited">
+                    <span className={CITATION}>(Rougier et al., 2014)</span>
+                  </span>
+                </span>
+              ),
+            }}
+          />
         </p>
         <div className="absolute top-full left-[6%] z-10 mt-1.5 w-[268px] origin-[12%_0] overflow-hidden rounded-md border border-fd-border bg-fd-card opacity-0 [box-shadow:var(--desk-shadow)] motion-safe:animate-desk-suggest">
           <div className="bg-fd-muted px-3 py-2 motion-safe:animate-desk-pick">

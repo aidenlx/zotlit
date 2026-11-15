@@ -64,49 +64,50 @@ export const Route = createFileRoute("/_home/changelog/$version")({
     await changelogs.get(release.path)?.preload();
     return release;
   },
-  head: ({ loaderData: release }) =>
-    release === undefined
-      ? {}
-      : pageHead({
-          fullTitle: m.docs_changelog_release_title({
+  head: ({ loaderData: release }) => {
+    if (release === undefined) return {};
+    const localeState = getPageLocaleState(release.url, getLocale());
+    return pageHead({
+      fullTitle: m.docs_changelog_release_title({
+        version: release.version,
+      }),
+      description: release.description
+        ? m.docs_changelog_release_summary({
             version: release.version,
+            summary: release.description,
+          })
+        : m.docs_changelog_release_description({
+            version: release.version,
+            date: formatReleaseDate(release.date, { locale: getLocale() }),
           }),
-          description: release.description
-            ? m.docs_changelog_release_summary({
-                version: release.version,
-                summary: release.description,
-              })
-            : m.docs_changelog_release_description({
-                version: release.version,
-                date: formatReleaseDate(release.date, { locale: getLocale() }),
-              }),
-          path: release.url,
-          card: {
-            type: "changelog",
+      path: release.url,
+      card: {
+        type: "changelog",
+        slugs: release.slugs,
+        alt: m.docs_changelog_release_og_alt({ version: release.version }),
+      },
+      article: { publishedTime: release.date },
+      feeds: { "application/rss+xml": changelogFeedRoute },
+      schemas: [
+        changelogArticleSchema({
+          title: release.title,
+          version: release.version,
+          date: release.date,
+          url: localeState.canonicalPath,
+          inLanguage: localeState.contentLocale,
+          image: ogImageUrl("changelog", {
             slugs: release.slugs,
-            alt: m.docs_changelog_release_og_alt({ version: release.version }),
-          },
-          article: { publishedTime: release.date },
-          feeds: { "application/rss+xml": changelogFeedRoute },
-          schemas: [
-            changelogArticleSchema({
-              title: release.title,
-              version: release.version,
-              date: release.date,
-              url: getPageLocaleState(release.url, getLocale()).canonicalPath,
-              image: ogImageUrl(
-                "changelog",
-                release.slugs,
-                getPageLocaleState(release.url, getLocale()).contentLocale,
-              ),
-            }),
-            breadcrumbListSchema([
-              { name: appName, url: "/" },
-              { name: m.docs_nav_changelog(), url: changelogRoute },
-              { name: `v${release.version}`, url: release.url },
-            ]),
-          ],
+            locale: localeState.contentLocale,
+          }),
         }),
+        breadcrumbListSchema([
+          { name: appName, url: "/" },
+          { name: m.docs_nav_changelog(), url: changelogRoute },
+          { name: `v${release.version}`, url: release.url },
+        ]),
+      ],
+    });
+  },
 });
 
 function ChangelogVersion() {

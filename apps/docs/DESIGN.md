@@ -543,9 +543,11 @@ closing call. Sections run 1152px wide (`max-w-6xl`) with 32px side gutters
   site tokens; the Zotero annotation colours and Obsidian's purple
   (`--desk-purple`, with `--desk-selected` and `--desk-own` for the
   selected row and the note-property column) appear only there. Sample
-  research data — titles, authors, citation keys, the chapter text, the
+  research data — titles, authors, citation keys, the citations, the
   references — stays as data in `papers.ts` and the components, not as
-  messages.
+  messages. The draft sheet's own writing (its chapter label, heading and
+  sentences) is a message, so a Chinese reader sees a Chinese draft that
+  cites English sources; each citation is a named slot in that message.
 - **Actions.** **Start the tutorial** (to Lesson 1,
   `/learn/connect-zotero-to-obsidian`, whose first step installs ZotLit)
   comes first, fills with the accent text tone and carries the

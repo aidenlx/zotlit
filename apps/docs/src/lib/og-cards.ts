@@ -53,10 +53,15 @@ const lessonCard = v.object({
   steps: v.array(v.unknown()),
 });
 
+/** The site address a card of this edition prints in its footer. */
+function editionSite(locale: SiteLocale): string {
+  return locale === "zh-CN" ? `${baseURL}/zh-CN` : baseURL;
+}
+
 /** The landing cards, which carry hand-written copy instead of frontmatter. */
 function landingCards(m: Messages, locale: SiteLocale): [OgType, CardProps][] {
   const o = { locale };
-  const site = locale === "zh-CN" ? `${baseURL}/zh-CN` : baseURL;
+  const site = editionSite(locale);
   return [
     [
       "home",
@@ -134,7 +139,7 @@ function cardsOf<Schema extends v.GenericSchema>(
   },
 ): [string, CardProps][] {
   return entries.map((entry) => [
-    ogImageUrl(type, entry.slugs, read.locale),
+    ogImageUrl(type, { slugs: entry.slugs, locale: read.locale }),
     read.toCard(v.parse(read.schema, entry.frontmatter)),
   ]);
 }
@@ -156,7 +161,7 @@ function editionCards(
   );
   return [
     ...landings.map(([type, card]): [string, CardProps] => [
-      ogImageUrl(type, [], locale),
+      ogImageUrl(type, { locale }),
       card,
     ]),
     ...cardsOf("docs", content.docs, {
@@ -166,7 +171,7 @@ function editionCards(
         kind: m.docs_og_documentation_kind({}, o),
         title: docsPageTitle(page),
         description: page.description,
-        meta: baseURL,
+        meta: editionSite(locale),
       }),
     }),
     ...cardsOf("blog", content.blog, {

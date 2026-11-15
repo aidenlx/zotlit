@@ -6,6 +6,7 @@ import { join, resolve } from "node:path";
 import { rcompare } from "semver";
 import { describe, expect, it } from "vitest";
 
+import { cjkGlyph, textWidth } from "./cjk";
 import { docsPageTitle } from "./shared";
 import {
   getBlogPages,
@@ -66,9 +67,9 @@ describe("docs collection", () => {
         description: page.data.description,
       })),
     ].filter(({ title }) => cjkGlyph.test(title));
-    expect(pages.filter(({ title }) => searchWidth(title) > 60)).toEqual([]);
+    expect(pages.filter(({ title }) => textWidth(title) > 60)).toEqual([]);
     expect(
-      pages.filter(({ description }) => searchWidth(description) > 160),
+      pages.filter(({ description }) => textWidth(description) > 160),
     ).toEqual([]);
     const titles = pages.map(({ title }) => title);
     expect(titles.filter((title, i) => titles.indexOf(title) !== i)).toEqual(
@@ -93,14 +94,6 @@ describe("docs collection", () => {
 });
 
 const docsDirectory = resolve(import.meta.dirname, "../../content/docs");
-
-const cjkGlyph = /[\p{Script=Han}\u3000-\u303f\uff00-\uffef]/u;
-/** A string's width in Latin glyphs: a CJK glyph or full-width mark counts two. */
-function searchWidth(text: string): number {
-  let width = 0;
-  for (const glyph of text) width += cjkGlyph.test(glyph) ? 2 : 1;
-  return width;
-}
 
 /** Markdown inline text as a reader sees it: link text, no code or bold marks. */
 function plainText(markdown: string): string {

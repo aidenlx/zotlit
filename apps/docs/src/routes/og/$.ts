@@ -30,7 +30,7 @@ export const Route = createFileRoute("/og/$")({
 
         return isChangelogEntry
           ? missingReleaseResponse(slugs.join("/"), {
-              release: ogImageUrl("changelog", slugs),
+              release: ogImageUrl("changelog", { slugs }),
               changelog: ogImageUrl("changelog"),
             })
           : new Response("Not found", { status: 404 });

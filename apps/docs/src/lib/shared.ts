@@ -86,8 +86,7 @@ export type OgType = (typeof ogTypes)[number];
  */
 export function ogImageUrl(
   type: OgType,
-  slugs: string[] = [],
-  locale: SiteLocale = "en",
+  { slugs = [], locale = "en" }: { slugs?: string[]; locale?: SiteLocale } = {},
 ) {
   const edition = locale === "zh-CN" ? ["zh-CN"] : [];
   return `/og/${[...edition, type, ...slugs, "image.webp"].join("/")}`;

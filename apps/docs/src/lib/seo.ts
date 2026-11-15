@@ -50,7 +50,7 @@ export function ogImageMeta(
   alt: string,
   { slugs, locale }: { slugs?: string[]; locale?: SiteLocale } = {},
 ) {
-  const url = absoluteUrl(ogImageUrl(type, slugs, locale));
+  const url = absoluteUrl(ogImageUrl(type, { slugs, locale }));
   return [
     { property: "og:image", content: url },
     { property: "og:image:width", content: OG_IMAGE_DIMENSIONS.width },

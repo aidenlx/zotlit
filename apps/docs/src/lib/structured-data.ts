@@ -83,6 +83,8 @@ export function blogPostingSchema(input: {
   date: string;
   modified?: string;
   url: string;
+  /** The language of the edition the page shows. */
+  inLanguage: string;
   /** Root-relative path of the post's social card. */
   image?: string;
 }): WithContext<BlogPosting> {
@@ -95,6 +97,7 @@ export function blogPostingSchema(input: {
     }),
     datePublished: input.date,
     ...(input.modified !== undefined && { dateModified: input.modified }),
+    inLanguage: input.inLanguage,
     author: personSchema(input.author),
     publisher: organization,
     url: absoluteUrl(input.url),
@@ -110,6 +113,8 @@ export function changelogArticleSchema(input: {
   version: string;
   date: string;
   url: string;
+  /** The language of the edition the page shows. */
+  inLanguage: string;
   /** Root-relative path of the release's social card. */
   image: string;
 }): WithContext<Article> {
@@ -118,16 +123,12 @@ export function changelogArticleSchema(input: {
     "@type": "Article",
     headline: input.title ?? `${appName} v${input.version}`,
     datePublished: input.date,
+    inLanguage: input.inLanguage,
     author: organization,
     publisher: organization,
     url: absoluteUrl(input.url),
     image: absoluteUrl(input.image),
   };
-}
-
-/** The URL a schema names for a page: its canonical edition, absolutized. */
-function canonicalUrl(path: string): string {
-  return absoluteUrl(getPageLocaleState(path, getLocale()).canonicalPath);
 }
 
 /** The git days of a docs page or lesson, each when git knows it. */
@@ -189,10 +190,12 @@ export function faqPageSchema(input: {
   url: string;
   entries: FaqEntry[];
 }): WithContext<FAQPage> {
+  const localeState = getPageLocaleState(input.url, getLocale());
   return {
     "@context": "https://schema.org",
     "@type": "FAQPage",
-    url: canonicalUrl(input.url),
+    url: absoluteUrl(localeState.canonicalPath),
+    inLanguage: localeState.contentLocale,
     mainEntity: input.entries.map((entry) => ({
       "@type": "Question",
       name: entry.question,

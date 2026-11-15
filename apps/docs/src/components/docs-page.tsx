@@ -169,11 +169,10 @@ export function docsPageHead(page: DocsPageData | undefined) {
         published: page.published,
         modified: page.modified,
         url: page.url,
-        image: ogImageUrl(
-          "docs",
-          page.slugs,
-          getPageLocaleState(page.url, getLocale()).contentLocale,
-        ),
+        image: ogImageUrl("docs", {
+          slugs: page.slugs,
+          locale: getPageLocaleState(page.url, getLocale()).contentLocale,
+        }),
       }),
       ...(page.faq.length > 0
         ? [faqPageSchema({ url: page.url, entries: page.faq })]
