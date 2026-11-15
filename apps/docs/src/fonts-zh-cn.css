@@ -1,0 +1,78 @@
+/* The Simplified Chinese faces of the type system. `__root.tsx` links this
+   stylesheet only on a page whose content is Chinese (`<html lang="zh-CN">`),
+   so an English page neither parses these rules nor downloads a CJK file.
+
+   Noto Serif SC (variable, 200–900) carries the serif role beside Gelasio.
+   Fontsource slices it into ~100 unicode-range files of 45–105 KB, so a page
+   downloads only the slices that hold its characters, and swaps them in
+   (`font-display: swap`). The variable face serves the 400 ledes and the 500
+   headings from one set of slices. The sans and mono roles take the
+   platform's Chinese sans, which costs no download.
+   @see apps/docs/DESIGN.md → Type system */
+@import "@fontsource-variable/noto-serif-sc/wght.css";
+
+/* Chinese punctuation that shares its code point with Latin text: the double
+   quotation marks, the dash and the ellipsis. Gelasio and Inter also cover
+   these code points and would set them narrow, so these faces lead the Chinese
+   stacks and claim only these code points, with the CJK glyphs. The single
+   quotation marks stay with the Latin faces: U+2019 is also the apostrophe of
+   a Latin word in Chinese text.
+
+   The serif faces reuse the Noto Serif SC slices that hold these glyphs, so
+   they add no download beyond those slices. The sans faces name the platform
+   Chinese sans; `local()` matches a full font name or a PostScript name, so
+   each face is named in both forms. A face that matches nothing is inert, and
+   the stack's Latin face sets the mark. */
+@font-face {
+  font-family: "ZotLit CJK Punctuation Serif";
+  font-style: normal;
+  font-weight: 200 900;
+  font-display: swap;
+  src: url("@fontsource-variable/noto-serif-sc/files/noto-serif-sc-117-wght-normal.woff2")
+    format("woff2-variations");
+  unicode-range: U+201C-201D;
+}
+
+@font-face {
+  font-family: "ZotLit CJK Punctuation Serif";
+  font-style: normal;
+  font-weight: 200 900;
+  font-display: swap;
+  src: url("@fontsource-variable/noto-serif-sc/files/noto-serif-sc-119-wght-normal.woff2")
+    format("woff2-variations");
+  unicode-range: U+2014;
+}
+
+@font-face {
+  font-family: "ZotLit CJK Punctuation Serif";
+  font-style: normal;
+  font-weight: 200 900;
+  font-display: swap;
+  src: url("@fontsource-variable/noto-serif-sc/files/noto-serif-sc-114-wght-normal.woff2")
+    format("woff2-variations");
+  unicode-range: U+2026;
+}
+
+@font-face {
+  font-family: "ZotLit CJK Punctuation Sans";
+  font-style: normal;
+  font-weight: 100 550;
+  src:
+    local("PingFangSC-Regular"), local("PingFang SC Regular"),
+    local("SourceHanSansSC-Regular"), local("Source Han Sans SC Regular"),
+    local("NotoSansCJKsc-Regular"), local("Noto Sans CJK SC Regular"),
+    local("MicrosoftYaHei"), local("Microsoft YaHei");
+  unicode-range: U+201C-201D, U+2014, U+2026;
+}
+
+@font-face {
+  font-family: "ZotLit CJK Punctuation Sans";
+  font-style: normal;
+  font-weight: 551 900;
+  src:
+    local("PingFangSC-Semibold"), local("PingFang SC Semibold"),
+    local("SourceHanSansSC-Bold"), local("Source Han Sans SC Bold"),
+    local("NotoSansCJKsc-Bold"), local("Noto Sans CJK SC Bold"),
+    local("MicrosoftYaHei-Bold"), local("Microsoft YaHei Bold");
+  unicode-range: U+201C-201D, U+2014, U+2026;
+}

@@ -109,10 +109,10 @@ function DocsPageContent({
   const MDX = page.body;
   return (
     <DocsPage toc={toc} full={page.full} slots={{ footer: DocsPageFooter }}>
-      <DocsTitle className="font-serif text-4xl leading-[1.16] font-medium text-balance">
+      <DocsTitle className="font-serif text-4xl leading-[1.16] font-medium text-balance zh:leading-[1.3]">
         {docsPageTitle(page)}
       </DocsTitle>
-      <DocsDescription className="mb-0 font-serif text-lg italic">
+      <DocsDescription className="mb-0 font-serif text-lg italic zh:leading-[1.75]">
         {page.description}
       </DocsDescription>
       <div className="flex flex-row items-center gap-2 border-b pb-6">
