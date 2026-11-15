@@ -94,7 +94,11 @@ export const Route = createFileRoute("/_home/changelog/$version")({
               version: release.version,
               date: release.date,
               url: getPageLocaleState(release.url, getLocale()).canonicalPath,
-              image: ogImageUrl("changelog", release.slugs),
+              image: ogImageUrl(
+                "changelog",
+                release.slugs,
+                getPageLocaleState(release.url, getLocale()).contentLocale,
+              ),
             }),
             breadcrumbListSchema([
               { name: appName, url: "/" },

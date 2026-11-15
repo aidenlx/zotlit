@@ -12,8 +12,8 @@ import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { render } from "takumi-js";
-import { googleFonts } from "takumi-js/helpers";
-import type { FetchLike } from "takumi-js/helpers";
+import { googleFonts, subsetFonts } from "takumi-js/helpers";
+import type { FetchLike, FontSubset } from "takumi-js/helpers";
 import { Renderer } from "takumi-js/node";
 
 /**
@@ -32,6 +32,29 @@ const fetchFont: FetchLike = async (input, init) => {
     }
   }
 };
+
+/**
+ * The Simplified Chinese faces a Chinese card falls back to after each Latin
+ * face, as the zh-CN site does: Noto Serif SC under the Gelasio title, Noto
+ * Sans SC under the sans and mono lines. Both are SIL OFL 1.1.
+ */
+const CJK_SERIF = "Noto Serif SC";
+const CJK_SANS = "Noto Sans SC";
+
+/**
+ * A CJK family is about a hundred unicode-range subsets, so these load as a
+ * list and each card downloads only the subsets its own text needs.
+ */
+function cjkSubsets(): Promise<FontSubset[]> {
+  return googleFonts({
+    families: [
+      { name: CJK_SERIF, weight: 500 },
+      { name: CJK_SANS, weight: [400, 500, 600] },
+    ],
+    fetch: fetchFont,
+    timeout: 30_000,
+  });
+}
 
 /** One renderer whose fonts (Google subsets + the vendored Archivo wordmark face) register once, then reuse. */
 async function createRenderer(packageRoot: string): Promise<Renderer> {
@@ -89,21 +112,58 @@ function ZotLitMark() {
   );
 }
 
+const cjkGlyph = /[\p{Script=Han}　-〿＀-￯]/u;
+
+/** A string's width in Latin glyphs: a CJK glyph or full-width mark counts two. */
+function textWidth(text: string): number {
+  let width = 0;
+  for (const glyph of text) width += cjkGlyph.test(glyph) ? 2 : 1;
+  return width;
+}
+
 /**
- * The title's type size. A title past about 44 characters wraps to three lines
- * at the standard size, which pushes a four-line description off the card, so
- * it steps down to keep two.
+ * The title's type size. A title past about 44 Latin glyphs of width wraps to
+ * three lines at the standard size, which pushes a four-line description off
+ * the card, so it steps down to keep two.
  */
 function titleSize(title: string, hero?: boolean) {
   if (hero) return "text-[150px]";
-  return title.length > 44 ? "text-[72px]" : "text-[84px]";
+  // A Chinese title sits on a taller line and over a longer description, so it
+  // steps down sooner, and once more when it would still take three lines.
+  const width = textWidth(title);
+  if (cjkGlyph.test(title)) {
+    if (width > 52) return "text-[64px]";
+    return width > 36 ? "text-[72px]" : "text-[84px]";
+  }
+  return width > 44 ? "text-[72px]" : "text-[84px]";
+}
+
+/** Chinese lines need open leading and no negative tracking; Latin keeps the tight display setting. */
+function titleSetting(title: string) {
+  return cjkGlyph.test(title)
+    ? "leading-[1.2] tracking-[0px]"
+    : "leading-[1.05] tracking-[-1px]";
+}
+
+/** A Chinese description wraps to more lines at the Latin measure, so it runs wider and a size smaller. */
+function descriptionSetting(description: string) {
+  return cjkGlyph.test(description)
+    ? "text-[32px] leading-[1.45] max-w-[1000px]"
+    : "text-[35px] leading-[1.4] max-w-[820px]";
+}
+
+/** Spaced capitals suit Latin; a Chinese label keeps a light tracking. */
+function kindTracking(kind: string) {
+  return cjkGlyph.test(kind) ? "tracking-[1px]" : "tracking-[5px]";
 }
 
 function OGCard({ kind, title, description, meta, hero }: CardProps) {
   return (
-    <div tw="flex flex-col w-full h-full bg-[#f7f5f0] px-[84px] py-[72px] font-['Inter']">
+    <div tw="flex flex-col w-full h-full bg-[#f7f5f0] px-[84px] py-[72px] font-['Inter','Noto_Sans_SC']">
       <div tw="flex flex-col self-start">
-        <div tw="font-['IBM_Plex_Mono'] font-semibold text-[30px] tracking-[5px] text-[#b9461a]">
+        <div
+          tw={`font-['IBM_Plex_Mono','Noto_Sans_SC'] font-semibold text-[30px] ${kindTracking(kind)} text-[#b9461a]`}
+        >
           {kind.toUpperCase()}
         </div>
         <div tw="flex w-full h-[6px] mt-[18px] bg-[#E8622C]" />
@@ -111,12 +171,14 @@ function OGCard({ kind, title, description, meta, hero }: CardProps) {
 
       <div tw="flex flex-col flex-1 justify-center py-[10px]">
         <div
-          tw={`font-['Gelasio'] font-medium ${titleSize(title, hero)} leading-[1.05] tracking-[-1px] text-[#1b2029] max-w-[1000px] text-balance`}
+          tw={`font-['Gelasio','Noto_Serif_SC'] font-medium ${titleSize(title, hero)} ${titleSetting(title)} text-[#1b2029] max-w-[1000px] text-balance`}
         >
           {title}
         </div>
         {description ? (
-          <div tw="font-['Inter'] text-[35px] leading-[1.4] text-[#1b2029] max-w-[820px] mt-[26px]">
+          <div
+            tw={`font-['Inter','Noto_Sans_SC'] ${descriptionSetting(description)} text-[#1b2029] mt-[26px]`}
+          >
             {description}
           </div>
         ) : null}
@@ -130,7 +192,7 @@ function OGCard({ kind, title, description, meta, hero }: CardProps) {
             <span tw="text-[#E8622C]">Lit</span>
           </div>
         </div>
-        <div tw="font-['IBM_Plex_Mono'] font-medium text-[24px] text-[#1b2029]">
+        <div tw="font-['IBM_Plex_Mono','Noto_Sans_SC'] font-medium text-[24px] text-[#1b2029]">
           {meta}
         </div>
       </div>
@@ -147,11 +209,40 @@ export type OgCardRenderer = (props: CardProps) => Promise<Uint8Array>;
  */
 export function createOgCardRenderer(packageRoot: string): OgCardRenderer {
   let renderer: Promise<Renderer> | undefined;
+  let cjk: Promise<FontSubset[]> | undefined;
+  /** Each CJK subset registers once, however many cards need it at the same time. */
+  const registered = new Map<string, Promise<unknown>>();
 
   return async (props) => {
     renderer ??= createRenderer(packageRoot);
+    const ready = await renderer;
+    const text = [
+      props.kind.toUpperCase(),
+      props.title,
+      props.description,
+      props.meta,
+    ].join(" ");
+    if (cjkGlyph.test(text)) {
+      cjk ??= cjkSubsets();
+      for (const subset of subsetFonts({ fonts: await cjk, source: text })) {
+        if (!registered.has(subset.key))
+          registered.set(
+            subset.key,
+            subset.data().then((data) =>
+              ready.registerFont({
+                name: subset.name,
+                subsetOf: subset.subsetOf,
+                weight: subset.weight,
+                style: subset.style,
+                data,
+              }),
+            ),
+          );
+      }
+      await Promise.all(registered.values());
+    }
     return render(<OGCard {...props} />, {
-      renderer: await renderer,
+      renderer: ready,
       width: 1200,
       height: 630,
       format: "webp",

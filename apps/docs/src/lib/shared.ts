@@ -3,6 +3,8 @@
 
 import * as v from "valibot";
 
+import type { SiteLocale } from "./i18n.js";
+
 export const appName = "ZotLit";
 /** The documentation line selected by the Worker configuration. */
 export type DocsLine = "beta" | "production";
@@ -77,9 +79,18 @@ export const ogTypes = [
 ] as const;
 export type OgType = (typeof ogTypes)[number];
 
-/** OG card URL for a page type. Empty `slugs` → the index/landing card. */
-export function ogImageUrl(type: OgType, slugs: string[] = []) {
-  return `/og/${[type, ...slugs, "image.webp"].join("/")}`;
+/**
+ * OG card URL for a page type. Empty `slugs` → the index/landing card.
+ * @param locale the edition the page shows: a native Chinese page has its own
+ *   card under `/og/zh-CN/`, and an English fallback advertises the English one.
+ */
+export function ogImageUrl(
+  type: OgType,
+  slugs: string[] = [],
+  locale: SiteLocale = "en",
+) {
+  const edition = locale === "zh-CN" ? ["zh-CN"] : [];
+  return `/og/${[...edition, type, ...slugs, "image.webp"].join("/")}`;
 }
 
 /**

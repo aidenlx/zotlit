@@ -28,6 +28,7 @@ import { ReleaseSnapshotProvider } from "@/components/release-snapshot";
 import { docs } from "@/lib/collections";
 import { installPageSlugs } from "@/lib/github-releases";
 import { localeInput } from "@/lib/i18n";
+import { getPageLocaleState } from "@/lib/locale-state";
 import { contentRouteUrl } from "@/lib/markdown-routes";
 import { ztProse } from "@/lib/prose";
 import { getReleaseSnapshot } from "@/lib/release-data";
@@ -168,7 +169,11 @@ export function docsPageHead(page: DocsPageData | undefined) {
         published: page.published,
         modified: page.modified,
         url: page.url,
-        image: ogImageUrl("docs", page.slugs),
+        image: ogImageUrl(
+          "docs",
+          page.slugs,
+          getPageLocaleState(page.url, getLocale()).contentLocale,
+        ),
       }),
       ...(page.faq.length > 0
         ? [faqPageSchema({ url: page.url, entries: page.faq })]

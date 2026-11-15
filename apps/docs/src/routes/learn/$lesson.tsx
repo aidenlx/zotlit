@@ -109,7 +109,11 @@ export const Route = createFileRoute("/learn/$lesson")({
               published: lesson.published,
               modified: lesson.modified,
               url: getPageLocaleState(lesson.url, getLocale()).canonicalPath,
-              image: ogImageUrl("learn", lesson.slugs),
+              image: ogImageUrl(
+                "learn",
+                lesson.slugs,
+                getPageLocaleState(lesson.url, getLocale()).contentLocale,
+              ),
             }),
             breadcrumbListSchema([
               { name: appName, url: "/" },

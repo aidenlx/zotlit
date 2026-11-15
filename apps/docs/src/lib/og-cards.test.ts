@@ -25,4 +25,23 @@ describe("docs OG cards", () => {
       expect(cards.get(url)?.title, url).toBe(docsPageTitle(data));
     }
   });
+
+  // A native Chinese page advertises its own card; a page with no Chinese
+  // file falls back to the English card, so the build renders no zh one.
+  it("give each Chinese edition a card with its own title", async () => {
+    const packageRoot = getPackageRoot(import.meta.filename);
+    const cards = await ogCards(packageRoot);
+    const chinese = scanContent(packageRoot, { locale: "zh-CN" }).docs;
+    expect(chinese.length).toBeGreaterThan(0);
+    for (const page of chinese) {
+      const url = ogImageUrl("docs", page.slugs, "zh-CN");
+      const data = v.parse(frontmatter, page.frontmatter);
+      expect(cards.get(url)?.title, url).toBe(docsPageTitle(data));
+    }
+    const native = new Set(chinese.map(({ slugs }) => slugs.join("/")));
+    const english = scanContent(packageRoot).docs;
+    const fallback = english.find(({ slugs }) => !native.has(slugs.join("/")));
+    expect(fallback).toBeDefined();
+    expect(cards.has(ogImageUrl("docs", fallback!.slugs, "zh-CN"))).toBe(false);
+  });
 });
