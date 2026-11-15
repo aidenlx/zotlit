@@ -1,0 +1,12 @@
+---
+version: "2.1.4"
+companion: "2.1.4"
+date: "2026-09-12"
+description: "导入笔记为空、快速切换详情、Zotero 10.0.2 上的 Zotero 菜单命令"
+---
+
+## Bug 修复 [#bug-fixes]
+
+- 修复了导入的笔记只包含属性而内容为空的问题（[讨论 #944](https://github.com/aidenlx/zotlit/discussions/944)）。由其他 Zotero 插件或自动化工具创建（而非在 Zotero 自带笔记编辑器中输入）的 Zotero 子笔记在导入时，其全部正文会直接丢失，且没有任何警告。ZotLit 此前仅转换带有 Zotero 笔记编辑器排版标记的笔记。现在，这类笔记在导入时将保留完整内容。标题、段落、粗体文本和列表都会转换为 Markdown。在 Zotero 笔记编辑器中编写的笔记则与之前一样正常导入。
+- 修复了“打开文献笔记快速切换”命令对大多数条目类型仅显示标题的问题（[讨论 #939](https://github.com/aidenlx/zotlit/discussions/939)）。每个结果下方的第二行包含作者、年份及发表出处，此前仅对期刊文章（Journal Article）条目显示。预印本（Preprint）、书籍章节（Book Section）、学位论文（Thesis）、报告（Report）、会议论文（Conference Paper）或网页（Webpage）此前仅显示标题，导致难以区分不同结果，尽管 Zotero 中包含作者信息且 ZotLit 也已将其传递给模板。现在所有条目类型都会显示第二行，且“发表出处”部分会依据条目类型自适应，例如预印本显示其存储库（如 arXiv），图书显示其出版社。自定义条目类型和自定义字段同样支持解析，没有对应字段的条目则会显示作者和年份。
+- 修复了在 Zotero 10.0.2 上，Zotero 条目菜单中的笔记命令无响应的问题（[讨论 #1064](https://github.com/aidenlx/zotlit/discussions/1064)）。右键点击条目并选择“在 Obsidian 中打开文献笔记”或“创建或更新文献笔记”时没有任何反馈。Obsidian 保持关闭，也没有弹出错误对话框，原因是 Zotero 10.0.2 收紧了插件向操作系统传递链接的限制。标注同步以及从 Obsidian 端发起的操作在此期间始终正常工作。将 Zotero 中的 ZotLit Companion 插件更新至 2.1.4 后，这两个命令即可恢复打开 Obsidian。仅更新 Obsidian 插件无法解决此问题。

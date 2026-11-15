@@ -1,0 +1,57 @@
+---
+version: "2.2.1"
+companion: "2.2.1"
+date: "2026-11-02"
+description: "“更新笔记”对话框、筛选器支持全部字段、文本筛选默认不区分大小写"
+---
+
+import { Command } from "@/components/command";
+import { UiLabel } from "@/components/ui-label";
+import { m } from "@/paraglide/messages.js";
+
+这是 2.2.0 之后的维护版本。ZotLit Companion 2.2.1 随之发布，自身无改动，因此 Companion 2.2.0 可继续正常使用。
+
+## 新增功能 [#whats-new]
+
+### 更新笔记 [#update-notes]
+
+- 新的 <Command inline name={m.command_update_notes_name()} /> 命令会打开一个对话框。<UiLabel name={m.modal_update_notes_all()} /> 会更新所有现有笔记。打开文献笔记时会显示 <UiLabel name={m.modal_update_notes_active()} />。
+- 除非你主动勾选，否则该对话框不会创建新笔记。复选框 <UiLabel name={m.modal_update_notes_create()} /> 默认处于未选中状态。
+- 在网页版模板工作台中保存模板后，提示栏中的操作按钮现在显示为 <UiLabel name={m.notice_workbench_profile_saved_action()} />。它仅修改你现有的笔记。之前此处显示为“Update all notes”。
+- 当你更新整个文库或分类时，即使其中只有一个条目，ZotLit 现在也会显示确认提示。
+- 旧版更新命令仍然保留，可继续用于快捷键绑定。
+- “Update imported note from Zotero”现已更名为 <Command inline name={m.command_reimport_note_name()} />，名称与其实际功能保持一致。你之前设置的快捷键仍然有效。
+
+参见[使用“更新笔记”更新](/docs/how-to/keep-notes-updated#update-notes)和[将模板更改应用到已有笔记](/docs/how-to/keep-notes-updated#existing-only)。
+
+### 筛选器支持所有字段 [#every-field-in-the-filter]
+
+查询视图筛选器过去只列出 8 个字段，因此针对期刊或 DOI 的条件需要手写表达式。现在它列出了每一个 Zotero 字段，常用字段排在最前。完整日期字段与其各组成部分并列显示。
+
+- 支持使用中英文日常词汇查找字段。例如，输入 `journal` 或 `期刊` 均可找到出版物（Publication）字段。
+- 这些词汇在“属性”、“排序”和“分组”列表以及筛选表达式的自动补全列表中同样有效。
+- 基于此类字段保存的表达式现在会以可视化条件行打开。
+- 配置方案匹配共用相同的字段列表。
+
+参见[筛选行](/docs/how-to/use-query-files#filter)与[配置方案匹配](/docs/reference/templates/profile-match)。
+
+### 其他改进 [#other-improvements]
+
+- 文本筛选条件现在默认忽略英文字母大小写：<UiLabel name={m.workbench_filter_op_contains()} /> 与 <UiLabel name={m.workbench_filter_op_does_not_contain()} />。若要区分大小写，请使用新增的条件行 <UiLabel name={m.workbench_filter_op_contains_match_case()} /> 和 <UiLabel name={m.workbench_filter_op_does_not_contain_match_case()} />。已保存的筛选器会保留原有筛选结果，并以区分大小写的条件行打开。此改动适用于查询视图筛选器与配置方案匹配。
+- 优化了查询视图筛选器、公式和配置方案匹配中筛选表达式输入框的体验：
+  - `(`、`[` 和引号现在会自动闭合。选中文本后输入相应符号即可直接包裹所选内容。
+  - 输入框为空时会显示提示 <UiLabel name={m.workbench_match_expression_placeholder()} />。
+  - 点击 <UiLabel name={m.workbench_match_edit_visually()} /> 可将空白表达式转换为一条空白条件行。
+  - 当表达式无法转为可视化形式时，按钮的提示工具条会显示 <UiLabel name={m.workbench_match_edit_visually_unavailable()} />。
+- 提升了查询视图在大型文库下的运行速度。在包含 10 万条记录的测试文库中，首屏加载、排序和常见标题搜索的速度提升了约 3 至 4 倍。按标签或分类筛选也更快。范围极宽的搜索耗时与之前相同。
+- 工作台的 <UiLabel name={m.workbench_tab_annotation()} /> 标签页现在会提示：所做编辑将应用于此后插入的每一条标注。其帮助文本指明了 <UiLabel name={m.workbench_annotation_example()} /> 面板的位置。
+
+## 问题修复 [#bug-fixes]
+
+- 在大型文库中，在 Zotero 中编辑条目后条目搜索可能会卡顿。这影响了文库视图、快速切换器、引文建议器以及模板工作台中的搜索。现在即使在更新整个文库的笔记时，搜索也能保持流畅响应。
+- 转换 2.1 模板时，如果有属性字段未通过转换检查，会导致转换中断。由于配置方案编辑器被锁定，此前只能通过手动编辑配置文件来修复。现在转换流程可以正常完成，保留你编写的原有字段，并通过提示标出该字段。在修复该字段之前，ZotLit 会拒绝创建笔记，并在提示中说明具体原因。参见[需要修复的属性](/docs/how-to/migrate-from-2.1-templates#fix-properties)。
+- 点击 <UiLabel name={m.welcome_template_conversion_action()} /> 时，其他原因导致的转换失败此前没有任何直观提示。现在会弹出通知说明错误原因。如果问题源于模板文件，通知中还会提供将该文件移出模板文件夹以使用内置模板的选项。
+- 模板工作台预览中包含引文且未安装 Pandoc 引擎时，此前界面会损坏，且引文样式标题显示为“undefined”。现在预览能够保持正常显示并给出提示。<UiLabel name={m.workbench_preview_open_settings()} /> 可带你跳转到 <UiLabel name={m.settings_citation_engine_name()} /> 设置项。
+- 部分磁盘格式不区分大小写（macOS 和 Windows 的常见默认设置）。在此类环境下，如果模板文件夹设置为 `templates`，而仓库中同时存在 `Templates` 文件夹，会导致模板自定义功能失效并提示“Could not create the template document”。现在 ZotLit 可以正确识别已存在的文件夹，笔记也能正常移动到此类文件夹中。
+- 弹出层内部控件（例如查询视图筛选器和属性弹出面板）的提示工具条此前会显示在弹出层后方。现在它们能正常显示在最上方。
+- 筛选表达式中的函数参数提示此前会随光标移动而闪烁跳动。现在它能稳定停留在固定位置。

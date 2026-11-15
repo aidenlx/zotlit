@@ -215,12 +215,14 @@ export function lessonArticleSchema(input: {
   /** Root-relative path of the lesson's social card. */
   image: string;
 }): WithContext<Article> {
+  const { contentLocale } = getPageLocaleState(input.url, getLocale());
   return {
     "@context": "https://schema.org",
     "@type": "Article",
     headline: input.title,
     description: input.description,
     ...commitDates(input),
+    inLanguage: contentLocale,
     author: organization,
     publisher: organization,
     url: absoluteUrl(input.url),

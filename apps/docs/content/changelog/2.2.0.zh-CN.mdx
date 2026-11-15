@@ -1,0 +1,289 @@
+---
+version: "2.2.0"
+companion: "2.2.0"
+date: "2026-10-30"
+description: "文库视图、在 Obsidian 中阅读 PDF、ZotLit 查询表格"
+---
+
+import { Callout } from "@/components/callout";
+import { Command } from "@/components/command";
+import { SettingsPath } from "@/components/settings-path";
+import { UiLabel } from "@/components/ui-label";
+import { m } from "@/paraglide/messages.js";
+
+这是 ZotLit 2.2 的首个稳定版本。该版本汇总了自 2.1 以来的所有变更。有关主要功能的导览，请阅读[发布博客](/blog/v2.2-release)。
+
+<Callout type="info" title="版本要求">
+
+- **Obsidian 1.14.5 或更高版本**。ZotLit 2.2 无法在旧版 Obsidian 上安装。ZotLit 2.1 需要 1.13.4。
+- **Zotero 10 或更高版本**以从 Obsidian 保存标注更改。使用 Zotero 9 时，你可以阅读 PDF 及其标注，但无法对其进行编辑。
+- Zotero 中的 **ZotLit Companion 2.2.0**。ZotLit 2.2 无法与 Companion 2.1 协同工作。
+
+</Callout>
+
+## 不兼容变更 [#breaking-changes]
+
+### Obsidian 1.14.5 或更高版本 [#obsidian-1145-or-later]
+
+ZotLit 2.2 需要 Obsidian 1.14.5 或更高版本。ZotLit 2.1 需要 1.13.4。在旧版 Obsidian 上，插件将停留在 2.1.4 且不会更新。请先更新 Obsidian，然后再更新 ZotLit。参见[安装 ZotLit](/docs/install-zotlit)。
+
+### 将 ZotLit Companion 与插件一同更新 [#update-zotlit-companion-together-with-the-plugin]
+
+ZotLit 2.2 不再接收来自 ZotLit Companion 2.1 的请求。在 Zotero 中安装 Companion 2.2.0 之前，以下功能将停止工作，且 ZotLit 会提示你更新 Companion：
+
+- 在 Zotero 中修改条目时文献笔记的实时更新。
+- Zotero 条目列表中的 Obsidian 笔记列。
+- 从 Zotero 一次性更新或导入多个选中的条目。
+
+从 Zotero 打开单个条目的链接仍可正常工作。参见[安装 ZotLit Companion](/docs/install-companion)。
+
+### PDF 文件链接在 Obsidian 中打开 [#pdf-file-links-open-in-obsidian]
+
+点击笔记中的 PDF 文件链接现在会在 Obsidian 的阅读器中打开该 PDF，而不再是在系统 PDF 应用程序或 Zotero 中打开。这包括 2.1 默认模板写入笔记的 `file:///` 附件链接。要保留旧的行为方式，请在 <SettingsPath page={m.settings_page_reader()} /> 下关闭 <UiLabel name={m.settings_reader_open_file_links_name()} /> 与 <UiLabel name={m.settings_reader_open_annotation_links_name()} />。
+
+### 移除 Eta 标签补全建议 [#eta-tag-suggestions-removed]
+
+Obsidian 笔记编辑器不再在模板文件中提供 Eta 标签补全建议，且**自动配对 Eta 标签**（Auto-pair Eta tags）设置项已移除。请改在模板工作台中编辑模板，工作台支持标签补全与自动配对。
+
+### 2.1 模板文件转为配置方案文档 [#21-template-files-become-profile-documents]
+
+2.1 模板文件在转换之前仍可继续使用。欢迎视图与设置中提供了转换入口。转换会将笔记、受管区域、文件名以及标注文件合并到 `zotlit-profile.default.md` 中，将两个引文字件合并到 `zotlit-citation.md` 中，并将其余文件转为片段。ZotLit 在写入前会校验输出内容保持一致，随后将旧文件移至回收站。
+
+在完成转换之前，属性字段列表将没有编辑器可用，且你无法添加或导入自己的配置方案。参见[转换 2.1 模板文件](/docs/how-to/migrate-from-2.1-templates)。
+
+### 全新的默认文献笔记 [#new-default-literature-notes]
+
+由默认模板生成的新笔记仅写入一次。其正文包含标题、Zotero 链接、附件链接以及带有一个实时读取 Zotero 的查询块的标注分节。此后，正文内容完全由你自由编辑。
+
+- <Command inline name={m.command_update_note_name()} />
+  会刷新笔记的属性，并保留你所编写的正文内容。
+- 默认模板不再添加 `%%zt-managed%%` 标记，也不再添加 Zotero 子笔记列表。
+- 你已有的笔记会保留其标记，执行更新仍会刷新标记之间的文本。如果你使用的是默认模板，该文本现在为标注查询块：下一次更新会用该查询块替换原有的静态标注列表和子笔记列表。查询块中的标注仅在 Obsidian 内部显示，不会出现在搜索、Publish 或其他应用程序中。若要保留静态文本，请在更新前删除这两行标记。
+- 如果你自定义或复制了默认配置方案，请在其文档中添加 `{% managed %}` 块，以便继续刷新旧笔记。
+
+参见[保持笔记最新](/docs/how-to/keep-notes-updated)和[文献笔记与受管区域](/docs/reference/literature-notes)。
+
+### 仅在手动请求时导入子笔记 [#child-notes-import-only-when-you-ask]
+
+创建或更新文献笔记不再将 Zotero 子笔记写入仓库。请运行 <Command inline name={m.command_import_child_notes_name()} /> 或 <Command inline name={m.command_import_all_notes_name()} />，或者从 Zotero 中发起导入。在模板中，当已导入的文件存在时 `noteLink` 会链接到该文件，否则在 Zotero 中打开该笔记。参见[导入 Zotero 笔记](/docs/how-to/import-zotero-notes)。
+
+### 遇到未知标识或缺失样式时停止导出 [#export-stops-on-an-unknown-key-or-a-missing-style]
+
+- <Command inline name={m.command_pandoc_export_name()} /> 现在会像 Pandoc
+  一样读取原样字面的 `@citation-key`
+  文本。如果某个标识未匹配到任何条目或匹配到多个条目，导出将停止并列出有问题的标识。此前，此类笔记在导出时不会包含参考文献列表。
+- 导出会采用该笔记在 Obsidian 中使用的样式来排版引文。当 Zotero 无法提供该样式时，导出将停止并提示你。此前，它会回退到内置的样式。
+- 如果你自行配合 ZotLit 的集成文件运行 Pandoc，请从当前版本重新保存集成文件。
+
+参见[导出带引文的笔记](/docs/how-to/export-note-with-citations)和[使用原生 Pandoc 导出](/docs/how-to/export-with-native-pandoc)。
+
+### 设置项调整 [#settings-moved]
+
+- 维护页面现已更名为 <SettingsPath page={m.settings_page_advanced()} />，该页面同时包含模板文件夹、模板引擎设置项以及本地服务器。
+- 数据库与文库页面合并入 <SettingsPath page={m.settings_page_zotero()} />。连接和数据库覆盖选项位于其 <UiLabel name={m.settings_page_zotero_location()} /> 子页面中。
+- 笔记导入现位于 <SettingsPath page={m.settings_page_note_import()} />，引文文本则位于 <SettingsPath page={m.settings_page_citations()} /> 下。
+
+配置行名称保持不变，因此 Obsidian 的设置搜索仍可检索到它们。参见[设置迁移说明](/docs/reference/settings#moved)。
+
+### 废弃智能体模板命令 [#agent-template-commands-retired]
+
+来自 ZotLit 2.1 的八个模板和属性相关的 Obsidian CLI 命令已废弃。请改用 `zotlit:template-inspect`、`zotlit:template-data` 以及 `zotlit:template-check`。参见[模板工作台 CLI 参考](/docs/reference/template-workbench-cli#retired)。
+
+## 亮点特性 [#highlights]
+
+### 文库视图 [#library-view]
+
+![文库视图中筛选出包含 PDF 文献的分类，右侧阅读卡片显示文献的摘要、附件及按颜色统计的标注数量](/img/changelog/library-view.webp)
+
+在 Obsidian 标签页中浏览你的 Zotero 文库。运行 <Command inline name={m.command_open_library_view_name()} /> 或点击功能区图标。该视图直接读取本地 Zotero 数据库，因此无需 Companion 即可工作。
+
+- 目录树显示文库、分类和文献数量。你可以折叠并调整其大小。
+- 快速筛选可显示 <UiLabel name={m.library_view_facet_unread()} />、<UiLabel name={m.library_view_facet_annotated()} />、包含文献笔记的文献或包含 PDF 的文献。你也可以按标签筛选。
+- 将文献拖入笔记中即可完成引用。
+- 阅读卡片显示元数据、摘要、附件以及按颜色统计的标注数量。使用 <UiLabel name={m.library_view_details_toggle()} /> 或 `Space` 键显示或隐藏它。未选中任何文献时，卡片会显示该文库或分类的统计数据。
+
+参见[在文库视图中浏览文库](/docs/how-to/use-library-view)。
+
+### 在 Obsidian 中阅读和批注 PDF [#read-and-annotate-pdfs-in-obsidian]
+
+![在 Obsidian 的 PDF 阅读器中打开的文献，显示来自 Zotero 的高亮与下划线，某个高亮的浮窗显示其评论和标签，标注视图将每条标注列为卡片](/img/changelog/pdf-reader-annotations.webp)
+
+文献的 PDF 会在笔记旁的 Obsidian 标签页中打开。文件保存在 Zotero 的存储目录中，位于仓库之外。你的 Zotero 高亮和笔记会以其在 Zotero 中的颜色直接显示在页面上。
+
+- 可以通过 <Command inline name={m.command_open_pdf_name()} />、在 <Command inline name={m.command_open_lit_note_name()} /> 中按 `Shift+Enter`、点击笔记中的文件链接，或者从 Zotero 的条目菜单和阅读器页面菜单打开 PDF。
+- 工具栏可创建与 Zotero 阅读器相同的标注类型：高亮、下划线、笔记、文本、图片和手绘。
+- 支持修改标注的颜色、评论或标签，通过拖动来移动或调整其大小，并使用 `Ctrl+Z` 或 `Command+Z` 撤销操作。
+- 配合 Zotero 10 使用时，每项更改都会保存到 Zotero，并像在 Zotero 中添加的标注一样进行同步。若两款应用同时修改了同一条标注，ZotLit 会展示两个版本供你选择。
+
+编辑功能需要 Zotero 在同一台计算机上运行，开启 Zotero 的**允许本计算机上的其他应用程序与 Zotero 通信**（Allow other applications on this computer to communicate with Zotero）设置，并完成一次授权。在标注视图中点击 <UiLabel name={m.capability_enable_editing()} /> 并在 Zotero 中选择**总是允许**（Always Allow）。目前仅 PDF 可以在 Obsidian 中打开；EPUB 和网页快照仍在 Zotero 中阅读。参见[在 Obsidian 中打开条目的 PDF](/docs/how-to/open-pdf-in-obsidian)与[在 Obsidian 中编辑 PDF 标注](/docs/how-to/edit-pdf-annotations)。
+
+### ZotLit Query 与查询视图 [#zotlit-query-and-the-query-view]
+
+![文献表格展示来自各文献笔记的阅读状态、笔记、关联、完成、评分和结束日期等列，其中一篇文献的状态单元格正处于编辑状态并提供 read、reading、to-read 和 unread 补全建议](/img/changelog/reading-status-table.webp)
+
+以表格形式展示你的文献，使用体验与 Obsidian Bases 高度类似。使用 <Command inline name={m.command_new_query_file_name()} /> 创建 `.zotquery` 查询文件，或在任意笔记中嵌入查询块。
+
+- 支持以表格、卡片、列表或标注的形式展示结果。
+- 可以将文献笔记属性（如 `reading-status`）添加为列，并直接就地编辑单元格。修改的值会保存到笔记中，因此属性面板与 Bases 会显示相同的值。
+- 没有笔记的文献会显示 <UiLabel name={m.query_view_vault_no_note()} />。在此处输入内容即可直接创建笔记。
+- 支持使用嵌套条件组或表达式进行筛选。表达式编辑器支持语法高亮、错误下划线提示，以及字段和函数名补全。
+- 支持排序、分组、搜索、添加公式列、重命名列，并导出为 CSV 或 TSV。
+
+参见[在查询视图中跟踪阅读状态](/docs/how-to/track-reading-status)、[查询文件与查询块](/docs/reference/how-queries-work)以及[使用查询文件](/docs/how-to/use-query-files)。
+
+## 新增功能 [#whats-new]
+
+### 关系图谱中的引用关系 [#citations-in-the-graph-view]
+
+![全局关系图谱显示连接文献笔记的引用连线以及淡显的被引作品节点，旁边为该笔记的局部关系图谱与参考文献侧边栏](/img/changelog/graph-view-citations.webp)
+
+- Obsidian 的关系图谱会在笔记与其引用的每一部作品之间绘制一条连线。没有文献笔记的被引作品会显示为淡显的被引作品节点。
+- 关系图谱的筛选与显示设置项中提供了引用类型选择、作者和标题标签、为引用连线着色以及悬停弹出框选项。
+- 点击被引作品节点可为其创建文献笔记。右键点击可选择在 Zotero 中打开或复制其文献引用标识。
+- <Command inline name={m.command_open_citation_graph_name()} /> 与
+  <Command inline name={m.command_open_local_citation_graph_name()} />
+  会打开排布为研究图谱的关系图谱。
+
+此功能默认开启。可在 <SettingsPath page={m.settings_page_citations()} /> 下通过 <UiLabel name={m.settings_citation_graph_name()} /> 将其关闭。参见[在关系图谱中探索引用关系](/docs/how-to/explore-citations-in-graph)。
+
+### 文献笔记配置方案 [#literature-note-profiles]
+
+![编辑器中打开的配置方案文档位于文献笔记配置方案设置页旁边，列出了默认配置方案、Books 配置方案以及 book-details 片段](/img/changelog/literature-note-profiles.webp)
+
+- 每个配置方案都是一份单独的 Markdown 文档，其中包含笔记名称、文件夹、属性、正文以及标注格式。
+- `zotlit-citation.md` 保存整个仓库通用的引文文本，片段则保存多个配置方案之间共享的文本。
+- 在 <SettingsPath page={m.settings_page_profiles()} /> 下管理配置方案。新建配置方案只需填写名称；将文件夹留空即可使用默认配置方案的文件夹。
+- 配置方案匹配可按文库、条目类型、标签或分类选取配置方案。
+- <Command inline name={m.command_switch_literature_note_profile_name()} />
+  可将笔记移至另一个配置方案并保留其子文件夹。
+- 来自 Zotero 的链接和菜单命令可以指定配置方案。
+
+参见[配置方案](/docs/reference/templates/how-templates-work#profiles)、[配置方案匹配](/docs/reference/templates/profile-match)以及[为不同笔记使用不同模板](/docs/how-to/use-different-templates)。
+
+### 模板工作台 [#template-workbench]
+
+![模板工作台布局展示了字段面板、显示带有字段悬停卡片的 Liquid 模板配置方案编辑器，以及笔记预览面板](/img/changelog/template-workbench-layout.webp)
+
+- 在桌面端视图中编辑配置方案，一侧显示字段，另一侧显示实时笔记预览。<Command inline name={m.template_workbench_open_layout()} /> 会同时打开全部三个面板。
+- 在文献笔记中，<Command inline>ZotLit: Customize this note's template</Command> 会在选中该文献的情况下打开其配置方案，点击 <UiLabel name={m.template_workbench_update_this_note()} /> 可将修改应用到该笔记。
+- 选项卡涵盖笔记、属性、标注、名称和文件夹以及匹配。名称和文件夹选项卡展示笔记在仓库中所获得的完整路径。
+- 编辑器支持 Liquid 和 Eta 高亮，提供字段与片段补全建议，并列出文档中的问题及其所在位置。
+- 使用 <UiLabel name={m.template_workbench_extract_partial()} /> 可将选中文本提取为片段。
+- 模板数据浏览器将字段分组呈现，并支持将字段复制为值、路径或循环结构。
+
+参见[模板工作台视图](/docs/reference/template-workbench-view)、[自定义模板](/docs/how-to/customize-a-template)以及[探索模板数据](/docs/how-to/explore-template-data)。
+
+### 标注视图 [#annotation-view]
+
+- 视图采用紧凑卡片展示引用文本、评论、标签和页码。图片和手绘标注会直接显示对应图像。
+- 可以选择多张卡片，然后使用数字键 `1` 到 `8` 为其重新着色、复制其文本或将其删除。一次撤销操作即可还原整组操作。
+- 颜色和标签筛选器以弹出框形式展开。点击 <UiLabel name={m.annot_view_save_as_query_file()} /> 可将当前视图及其筛选条件保存为 `.zotquery` 文件。
+- 视图可以跟随活动标签页或 Zotero 阅读器，也可以固定显示某篇特定文献。
+- 点击卡片菜单中的 <UiLabel name={m.annot_view_menu_insert()} /> 可在光标处插入该标注。插入的标注会在文本周围保留适当的空格。
+- 当文件位于本机时，点击页码标签会在 Obsidian 中打开 PDF；否则在 Zotero 中打开。
+- 更新后，固定的文献打开时可能会定位在第一个附件上，已保存的筛选器打开时可能为空。手动选择一次附件或筛选器后，视图便会记住该选择。
+
+参见[使用标注视图](/docs/how-to/use-annotation-view)。
+
+### 标注链接与引文 [#annotation-links-and-citations]
+
+![采用全新默认布局的学位论文章节包含两条标注，每条均带有引用文本、后置的文献引文以及作为链接的页码；悬停在第二个链接上的弹出框显示了引用文本、评论、第 1 页以及位于文献参考文献操作按钮和参考文献条目上方的绿色高亮条](/img/changelog/annotation-popover-reference.webp)
+
+- 笔记中的标注链接是指定了该标注的 Zotero 打开链接，因此在打开该仓库的任何计算机上都能生效。当文件存在于本机时，链接会在 Obsidian 中打开 PDF，否则在 Zotero 中打开。参见 [Zotero 打开链接](/docs/reference/protocol-links#zotero-open-links)。
+- 悬停在标注链接上可查看引用文本、评论、页码、颜色或对应图片。在标注下方，弹出框还会显示该文献的参考文献条目，并带有与引用弹出框相同的操作按钮。独立 PDF 的标注则会单独显示。
+- 默认标注布局会将文献引文放置在引用文本之后，并将页码标签作为链接。
+- 在 <SettingsPath page={m.settings_page_citations()} /> 下开启 <UiLabel name={m.settings_citation_annotation_citations_name()} />，可使文献在 <UiLabel name={m.references_view_name()} /> 和 <UiLabel name={m.cited_by_view_name()} /> 侧边栏中列出。
+
+![学位论文章节中的标注链接呈现为引文“(Ioannidis 2005, 696)”，紧邻 Rougier et al. 2014 的普通引文，其弹出框已展开：第 696 页的引用文本与评论“Both apply to the pilot cohort (n = 24)”位于文献参考文献操作按钮和参考文献条目上方](/img/changelog/annotation-link-as-citation.webp)
+
+同样在 <SettingsPath page={m.settings_page_citations()} /> 下开启 <UiLabel name={m.settings_citation_render_annotation_citations_name()} />（默认关闭），可将没有链接文本的标注链接（如 `[](zotero://…)`）直接呈现为其对应文献的引文。标注的页码会变为定位符，如 `[@key, p. 12]`，且该引文会与笔记共享统一编号。点击该引文仍会打开对应标注。该选项需要同时启用 <UiLabel name={m.settings_citation_annotation_citations_name()} /> 与 <UiLabel name={m.settings_citation_show_formatted_name()} />。参见[文内引用](/docs/reference/settings#in-text-citations)。
+
+### 在文库中显示 [#show-in-library]
+
+![学位论文章节中展开了 Rougier et al. 引文的弹出框，其文库按钮显示提示文本“在 Zotero 文库中显示”，旁边为文库视图，选中了该文献所在行并在列表下方显示其详细信息](/img/changelog/show-in-library.webp)
+
+<UiLabel name={m.library_view_show_in_library()} />
+可带你跳转到文库视图中的对应文献。该按钮可在引用弹出框、
+<UiLabel name={m.references_view_name()} /> 和
+<UiLabel name={m.cited_by_view_name()} />
+侧边栏、关系图谱菜单、文献笔记的文件菜单中找到，也可以在快速切换器中使用
+`Alt+Enter` 触发。
+<Command inline name={m.command_show_in_library_name()} />
+命令同样具有此功能，同时模板也新增了 `zt.librarylink`
+变量。参见[在文库中显示文献](/docs/how-to/use-library-view#show-in-library)。
+
+### 最近文献 [#recent-papers]
+
+最近列表会将你最近处理过的文献排在最上方。打开笔记、阅读 PDF、引用和编辑都会计入其中。文库视图、快速切换器、引文建议器以及模板工作台共享该排序规则。在开启 Zotero 编辑时，在 Obsidian 中阅读 PDF 会同步更新 Zotero 的最近阅读（Recently Read）列表。参见[“最近”列表排序规则](/docs/how-to/use-library-view#recent)。
+
+### 引文与建议器 [#citations-and-the-suggester]
+
+- 在未输入任何内容时，引文建议器与 <Command inline name={m.command_insert_citation_name()} /> 会优先列出当前笔记已经引用的文献。
+- 建议器结果单行显示刊物名称、卷号和页码，并标注群组文库条目。
+- 鼠标在相邻引文之间悬停移动时，会复用同一个弹出框。
+- 带有定位符的引文会生成 Pandoc 的花括号格式：`[@key, {p. 62}]`。
+- 模板新增了 LaTeX 引文过滤器：Liquid 中为 `tex_cite`，Eta 中为 `texCite`。参见 [`tex_cite`](/docs/reference/templates/syntax#tex-cite)。
+
+参见[插入引用](/docs/how-to/insert-citations)。
+
+### 搜索与性能 [#search-and-performance]
+
+- 数据库读取、搜索和引文查找均在后台运行，因此在大型文库中 Obsidian 仍能保持流畅响应。
+- <SettingsPath page={m.settings_page_zotero()} /> 下的
+  <UiLabel name={m.settings_chinese_segmenter_name()} />
+  为可选下载项。它可以将中文标题切分为分词，从而使搜索能够匹配到标题中间的词语。
+- 对于 10,000 篇新笔记，<Command inline name={m.command_update_all_notes_name()} /> 的确认提示显示时间由约十秒缩减至约一秒。
+- 批量确认提示按配置方案对行进行分组，并在你展开各组时按需加载。参见[保持笔记最新](/docs/how-to/keep-notes-updated#batch)。
+- 包含大量引用的笔记在打开和更新时速度更快。
+
+### ZotLit Query CLI [#zotlit-query-cli]
+
+在 Obsidian CLI 中使用 `zotlit:query` 查询你的 Zotero 文库。支持对条目、附件和标注进行搜索、筛选、分组和字段选取，并可导出 JSON 供脚本或 AI 智能体使用。`zotlit:query-values`、`zotlit:query-schema`、`zotlit:query-guide` 以及 `zotlit:query-cancel` 可帮助你构建和执行查询。参见 [ZotLit Query 工作原理](/docs/reference/how-queries-work#zotlit-query)与[查询你的 Zotero 文库](/docs/how-to/query-zotero-library)。
+
+### 导入笔记 [#imported-notes]
+
+<SettingsPath
+  page={m.settings_page_note_import()}
+  setting={m.settings_note_import_highlight_mappings_name()}
+/>
+可将每种 Zotero 高亮颜色映射为 Emoji、标记或自定义 Emoji。参见[导入 Zotero
+笔记](/docs/how-to/import-zotero-notes)。
+
+### ZotLit Companion [#zotlit-companion]
+
+- Zotero 的 ZotLit 设置中的 <UiLabel name={m["zotero.prefs_pane_type"]()} /> 可以选择从 Zotero 打开的笔记所在位置：活动标签页、新标签页、分栏或新窗口。
+- Zotero 的条目菜单和阅读器页面菜单可在 Obsidian 中打开 PDF。
+- ZotLit 链接支持携带带有相同选项的 `paneType` 参数。参见[链接打开位置](/docs/reference/protocol-links#pane-type)。
+
+### 其他改进 [#other-improvements]
+
+- 文件和标签页菜单将 ZotLit 的功能项归入独立分组，与 Obsidian 原生分组并列显示。
+- 条目选择器在打开时已就绪对应行，或展示加载提示。
+- <Command inline name={m.command_open_lit_note_name()} />
+  搜索框会提示你可以依据哪些字段进行检索。
+- 导出对话框会将目标位置显示为简短清晰的路径。
+- 欢迎视图提供了安装 ZotLit Companion 的可选步骤。参见[安装 ZotLit Companion](/docs/install-companion)。
+- [从 Zotero Integration 迁移](/docs/how-to/migrate-from-zotero-integration)会将该插件的模板映射为配置方案。
+
+## 问题修复 [#bug-fixes]
+
+- 在选择器中输入内容后立即按下 `Enter` 或点击可能触发上一次搜索的结果，从而插入错误的引文或创建错误的笔记。现在 `Enter` 会等待针对当前输入内容的搜索结果返回。
+- 搜索八个字母的单词（例如“thinking”）时无搜索结果。现在可以正常找到匹配项。
+- 在 <UiLabel name={m.settings_citation_open_as_links_name()} /> 关闭时，点击引文未能将光标置于其中。现在光标会准确移动到你点击的位置。
+- `[[@key]]` 曾被解析为引文。现在它被正确识别为普通 Wiki 链接。
+- 插入形如 `[@key]` 的引文后会自动添加空格。现在标点符号可以紧接在其后。
+- 在 `[@key, p. 5]` 中编辑定位符曾会触发引文建议器。现在建议器会保持关闭状态。
+- 位于另一条引文的前缀或后缀之中的引文曾会导致 Pandoc 导出失败。现在内部引文会导出为纯文本，且其文献仍会保留在参考文献列表中。
+- Word 导出曾将标注块显示为原始的 `[!type]` 文本，将文本行下方的引用块转换为普通文本，且未给参考文献列表添加标题。现在标注块会转换为带有加粗标题的引用块，引用块保持为引用块，参考文献列表也会带有采用该引文样式对应语言的标题。
+- 笔记的实时更新曾导致阅读位置发生偏移。现在笔记会停留在你当前阅读的位置。
+- 当光标位于笔记标题或属性中时，<Command inline name={m.command_update_note_name()} /> 曾不可用。现在可在笔记的任意位置运行该命令。
+- 将拖动的标注放置在句子末尾曾会拼接到该行。现在它会作为独立文本块插入。
+- 在阅读视图下将标注插入笔记曾会写入隐藏的编辑器中。现在 ZotLit 会提示你切换到编辑视图。
+- 在实时预览中，结尾的 `%%/zt-managed%%` 标记曾隐藏在最后一个标注块内部。现在它会保持在块外部。
+- 当未打开任何文献笔记时，<UiLabel name={m.cited_by_view_name()} /> 视图曾显示为零。现在仅在打开文献笔记时才会显示统计数。
+- 在 Zotero 中，右键点击 PDF 附件曾会打开一个空的 ZotLit 子菜单。现在该子菜单会显示为不可选的淡显状态。
+- 当其他服务占用了 Zotero 的端口时，连接检查曾失败并给出不明确的错误信息。现在它会提示你打开 Zotero 并检查其设置。
+- 欢迎视图中的步骤在完成后仍显示为待办。现在它们会正常标记为已完成。
+- <Command inline name={m.command_open_welcome_name()} />
+  曾会覆盖当前活动笔记。现在它会在新标签页中打开。
+- 快速关闭并重新启用 ZotLit 曾会导致命令丢失或报错。现在 ZotLit 可以正常启动。

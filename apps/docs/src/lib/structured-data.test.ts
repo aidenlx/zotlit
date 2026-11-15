@@ -81,6 +81,7 @@ describe("lessonArticleSchema", () => {
       description: "Type [@ and pick a paper.",
       datePublished: "2026-10-02",
       dateModified: "2026-11-12",
+      inLanguage: "en",
       author: publisher,
       publisher,
       url: "https://zotlit.aidenlx.site/learn/cite-in-obsidian-with-zotero",

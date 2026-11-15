@@ -1,0 +1,42 @@
+---
+version: "2.0.0-beta.4"
+companion: "2.0.0-beta.3"
+date: "2026-08-01"
+description: "模板工作台、受管属性、更安全的附件导入"
+---
+
+## 不兼容变更 [#breaking-changes]
+
+### Obsidian 版本要求 [#obsidian-version-requirement]
+
+ZotLit 现在需要 Obsidian 1.13.4 或更高版本。此版本还需要 Obsidian 安装程序附带的较新 Electron 版本。仅在应用内更新 Obsidian 是不够的：下载最新的安装程序并覆盖现有安装，然后在安装或更新 ZotLit 之前重新打开 Obsidian。请参阅[如何更新 Obsidian 安装程序](/docs/how-to/update-obsidian-installer)以及 [Obsidian 1.13.4 发行说明](https://obsidian.md/changelog/2026-07-30-desktop-v1.13.4/)。
+
+### 引文模板 `item.extra` [#citation-template-itemextra]
+
+引文模板中的 `item.extra` 现在使用与笔记模板相同的已解析 `ItemExtra` 结构。如果模板需要读取原始文本，请使用 `item.extra.raw`。请参阅[模板数据参考](/docs/reference/templates/data#extra-field)。
+
+## 新增内容 [#whats-new]
+
+### 模板工作台 [#template-workbench]
+
+[模板工作台 CLI](/docs/reference/template-workbench-cli) 为 Agent 添加了 Obsidian CLI 命令。Agent 可以检查模板状态、针对 Zotero 数据渲染模板而无需更改仓库，并管理已配置的属性字段。
+
+为你的 Agent 安装 [`zotlit-template` skill](/docs/install-skill) 即可使用此工作流。
+
+### 受管属性 [#managed-frontmatter]
+
+你可以[拖动属性字段以调整顺序](/docs/how-to/configure-frontmatter-properties#reorder-fields)。ZotLit 在创建新文献笔记时会使用该顺序。现有笔记保留其当前的属性顺序。
+
+### 新增模板过滤器 [#new-template-filters]
+
+Liquid 语法现已包含 `arr_prefix`、`arr_suffix` 和 `arr_replace`，用于更改数组中的每个值。`obsidian_tag` 过滤器可将文本或 Zotero 标签转换为有效的 Obsidian 标签。请参阅[模板语法参考](/docs/reference/templates/syntax#arr-prefix)。
+
+### 复制 Zotero 标识符 [#copy-zotero-keys]
+
+Zotero 上下文菜单现在可以复制所选条目、附件、笔记和标注的标识符。阅读器标注菜单也提供了复制操作。在 Obsidian 中，可以从文献笔记的命令面板或文件菜单中使用 **ZotLit: 复制 Zotero 标识符**。
+
+## 问题修复 [#bug-fixes]
+
+- 修复了标注视图、模板数据浏览器和引文建议器之间条目摘要不一致的问题。这些视图现在使用相同的标题、创作者和日期格式化方式。
+- 附件现在仅从已批准的文件夹中复制。默认情况下仅批准了 Zotero storage、标注缓存和链接附件文件夹。可在**设置**（Settings）> **ZotLit > 附件 > 已批准文件夹**下添加其他文件夹。
+- 语言包现在与安装的 ZotLit 版本保持匹配。

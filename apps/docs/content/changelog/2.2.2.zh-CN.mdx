@@ -1,0 +1,64 @@
+---
+version: "2.2.2"
+companion: "2.2.2"
+date: "2026-11-09"
+description: "整合了字段和笔记预览的单一模板工作台视图、自适应布局以及导出问题修复"
+---
+
+import { Command } from "@/components/command";
+import { UiLabel } from "@/components/ui-label";
+import { m } from "@/paraglide/messages.js";
+
+此版本将模板工作台重构为单一视图。随附发布的 ZotLit Companion 2.2.2 本身没有改动，因此 Companion 2.2.0 和 2.2.1 仍可继续正常使用。
+
+## 亮点 [#highlights]
+
+### 单一视图中的模板工作台 [#the-template-workbench-in-one-view]
+
+![Rougier 等人（2014）《Ten Simple Rules for Better Figures》的模板工作台：左侧编辑器中为 Reading notes 配置方案的笔记模板，中间为渲染出属性、标题和标注的笔记预览，右侧边缘展开了按分组显示文献字段的“字段”弹出框](/img/changelog/template-workbench-fields.webp)
+
+模板编辑器、“字段”面板和“笔记预览”现在整合在同一个视图中，显示在其专属的 Obsidian 窗口内。只需选择一次文献，三者便会同时展示该文献的内容。
+
+- **笔记预览**：在宽窗口中位于编辑器旁，在窄窗口中位于编辑器下方。其标题栏中的按钮可在阅读视图与 Markdown 之间切换。
+- “**字段”面板**：选择 <UiLabel name={m.workbench_view_fields()} /> 即可查找字段、查看其取值并插入。固定该面板可使其始终保留在编辑器旁。
+- **分隔条**：拖动分隔条即可调整各部分的大小，与在 Obsidian 中一致。
+
+参见[模板工作台视图](/docs/reference/template-workbench-view)。
+
+## 不兼容变更 [#breaking-changes]
+
+### 统一为一个打开模板工作台的命令 [#one-command-opens-the-template-workbench]
+
+现在只能通过 <Command inline name={m.template_workbench_open_layout()} /> 进入。该命令可在配置方案、模板文档或文献笔记中运行。以下命令和菜单项已移除：
+
+- “切换到模板工作台视图”（Switch to template workbench view）。请改用 <Command inline name={m.template_workbench_open_layout()} />。
+- “自定义此笔记的模板”（Customize this note's template）。请直接在笔记中运行 <Command inline name={m.template_workbench_open_layout()} />。它会打开该笔记对应的配置方案，并预先选中该笔记关联的文献。<UiLabel name={m.template_workbench_update_this_note()} /> 仍可将更改应用到该笔记。
+- “打开笔记预览”（Open note preview）。笔记预览现已成为该视图的一部分。
+
+如果你曾为这些命令设置过快捷键，请为 <Command inline name={m.template_workbench_open_layout()} /> 重新设置。ZotLit 2.2.1 中曾存在同名的第二个命令（用于配置方案文档），为其绑定的快捷键也已失效。
+
+如果工作区中保留了来自 2.2.1 的“笔记预览”标签页，打开后会显示为空白标签页，直接关闭即可。
+
+## 新增内容 [#whats-new]
+
+### 其他改进 [#other-improvements]
+
+- 现在可以直接从 PDF 将标注拖入笔记。点击标注标记以选中它，然后将标记拖入笔记即可。ZotLit 会像从标注视图拖拽一样插入该标注。参见[将标注拖入笔记](/docs/how-to/edit-pdf-annotations#drag-into-note)。
+- 若要调整属性顺序，可以在“属性”标签页上按住行的拖拽手柄（<UiLabel name={m.workbench_drag_to_reorder()} />）进行拖动。将光标移至该行时会显示手柄。你也可以选中手柄并按 `Alt+Arrow Up` 或 `Alt+Arrow Down`。拖拽手柄取代了原本的“上移”和“下移”按钮。参见[配置 Frontmatter 属性](/docs/how-to/configure-frontmatter-properties#reorder-fields)。
+- 视图的窗格菜单更加精简。视图标题栏中的各项操作在该菜单中也均有对应项。
+- “笔记预览”中的内嵌笔记现在会显示一个占位符，注明笔记名称以及该笔记是否存在。此前，预览会直接加载内嵌笔记或提示创建缺失的笔记。
+- “笔记预览”中的查询块和内嵌查询文件现在会列出每个视图及其布局和行数。它们会标出显示 <UiLabel name={m.query_view_placeholder_note_item()} /> 的视图，并指出查询文本中的问题。
+- 模板工作台的每个标签页现在都会链接到模板对应部分的文档页面，例如“属性”标签页上的 <UiLabel name={m.workbench_docs_properties()} />。<UiLabel name={m.workbench_help()} /> 菜单中包含 <UiLabel name={m.workbench_docs_guide()} />、<UiLabel name={m.workbench_docs_note()} /> 和 <UiLabel name={m.workbench_docs_data()} />。模板数据浏览器则链接到 <UiLabel name={m.template_data_explorer_docs()} />。
+- 文库视图中的分隔条外观现在与 Obsidian 的窗格分隔条保持一致。
+
+## 问题修复 [#bug-fixes]
+
+- 在模板工作台中移动“属性”行后，所有行曾会短暂显示原始规则；“名称”标签页的示例也会以同样方式闪烁。现在在预览重新渲染期间，每一行都会保留其显示值。
+- <Command inline name={m.command_pandoc_export_name()} />
+  此前可能将笔记正文中的 `---`
+  行误识别为属性。现在该行会在导出的文档中如实保留。
+- 如果你自行运行 Pandoc，`---` 行也存在同样的问题；此外，属性之后以 `%` 开头的行曾会被识别为文档标题。现在两者都会保持为普通文本。重新保存 [Pandoc 集成文件对](/docs/how-to/export-with-native-pandoc)即可获取此修复。
+- 在独立窗口中打开的 PDF 中，选中标注的弹出浮窗此前在点击主窗口时会移动到主窗口。现在它会留在 PDF 所在窗口中。
+- 在独立窗口中调整窗口大小时，ZotLit 的部分组件此前无法自适应：固定弹出框、文库视图布局以及阅读卡片上的摘要。现在它们会像在主窗口中一样自适应调整。
+- 在独立窗口中，当主窗口被隐藏时，部分操作曾会出现迟缓：“被引用”搜索、保存查询文件、刷新查询视图以及条目选择器。现在它们均能全速运行。
+- ZotLit 现在可在更多系统配置下找到你的 Zotero 配置文件。在 Linux 上，它还能找到 `~/.config/zotero` 下的 Zotero 配置文件。在 Windows 上，它能正确定位被移动到其他位置的 AppData 文件夹。

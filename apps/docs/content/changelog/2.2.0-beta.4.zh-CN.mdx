@@ -1,0 +1,88 @@
+---
+version: "2.2.0-beta.4"
+date: "2026-10-19"
+description: "文库视图、可视化查询表格与查询块、阅读状态追踪"
+---
+
+import { Command } from "@/components/command";
+import { UiLabel } from "@/components/ui-label";
+import { m } from "@/paraglide/messages.js";
+
+此测试版引入了文库视图，可直接在 Obsidian 中浏览 Zotero 文库。它将 ZotLit Query 升级为交互式表格和笔记查询块。你还可以就地追踪阅读状态，并按近期研究活跃度查看最近文献。
+
+## 亮点 [#highlights]
+
+### 直接在 Obsidian 中浏览 Zotero 文库 [#browse-your-zotero-library-directly-in-obsidian]
+
+![文库视图：筛选显示有 PDF 的分类文献，右侧阅读卡片展示某篇文献的摘要、附件以及按颜色统计的标注数量](/img/changelog/library-view.webp)
+
+文库视图是直接嵌入在 Obsidian 内的可视化文库浏览器。可通过 <Command inline name={m.command_open_library_view_name()} /> 或点击左侧功能区（ribbon）打开。它直接读取本地 Zotero 数据库，因此无需 ZotLit Companion 或本地服务器即可运行。
+
+侧边栏目录树显示你的分类、子分类及文献数量。快捷筛选器让你专注于 <UiLabel name={m.library_view_facet_unread()} />、<UiLabel name={m.library_view_facet_annotated()} />、有文献笔记的文献或带有 PDF 的文献。你还可以按标签筛选文献。
+
+文献列表以双行卡片展示阅读状态指示器和文献引用标识。按方向键即可浏览，或将某一行拖入打开的笔记中直接插入引用。右侧的阅读卡片显示元数据、摘要以及可展开的标注预览。完整指南请参阅[在文库视图中浏览文库](/docs/how-to/use-library-view)。
+
+![包含来自各文献笔记的阅读状态、笔记、关联、完成、评分和阅读完毕列的文献表格，其中某篇文献的状态单元格已打开编辑，并提示 read、reading、to-read 和 unread 选项](/img/changelog/reading-status-table.webp)
+
+若要追踪阅读状态，请选择 <UiLabel name={m.annot_view_save_as_query_file()} /> 并将视图切换为表格布局。在 <UiLabel name={m.query_view_properties()} /> 中添加诸如 `reading-status` 的文献笔记属性，随后无需打开笔记，选中单元格即可直接更改取值。复选框单击即可切换，列表以标签条形式编辑，日期则会打开日期选择器。未创建笔记的文献会显示 <UiLabel name={m.query_view_vault_no_note()} />；在此输入值即可自动创建笔记并保存该值。属性值保存在你的笔记中，因此 Obsidian 的属性面板和 Bases 都会显示相同的值。详见[在查询视图中追踪阅读状态](/docs/how-to/track-reading-status)。
+
+## 不兼容变更 [#breaking-changes]
+
+### 默认文献笔记改用查询块显示标注 [#default-literature-notes-display-annotations-in-a-query-block]
+
+![内嵌查询块的文献笔记：该查询块按颜色对文献标注进行分组，黄色分组下的两张卡片并排显示在红色和紫色分组上方](/img/changelog/query-block-in-note.webp)
+
+默认笔记模板现在内嵌交互式查询块，取代了原先的静态 Markdown 列表。
+
+更新现有的默认笔记会将静态标注列表替换为查询块。标注以交互式卡片呈现，并能实时反映 Zotero 中的更改。
+
+若希望继续使用静态 Markdown 列表，请使用带有标注循环的自定义模板。详见[文献笔记与受管区域](/docs/reference/literature-notes)和[自定义模板](/docs/how-to/customize-a-template)。
+
+## 新增功能 [#whats-new]
+
+### 交互式查询文件与内嵌查询块 [#interactive-query-files-and-embedded-query-blocks]
+
+![以表格展示文献的查询文件（包含阅读状态和笔记列），旁边是一篇通过内嵌查询块按文献对标注进行分组的笔记](/img/changelog/query-file-and-block.webp)
+
+现在你可以创建独立的 `.zotquery` 查询文件，并在任何笔记中内嵌查询块。可通过 <Command inline name={m.command_new_query_file_name()} /> 或在空白标签页中新建文件。
+
+每个查询视图都可以显示为表格、卡片、列表或标注。在表格布局中，拖动列标题即可调整列顺序或调整列宽。展开行可查看附件文件和子笔记，点击链接还可直接打开 PDF。
+
+可视化筛选编辑器支持嵌套条件分组以及拖拽排序。工具栏包含排序、分组、搜索以及导出为 CSV 或 TSV 功能。你还可以添加自定义公式属性，并为列设置自定义显示名称。
+
+详见[查询文件与查询块](/docs/reference/how-queries-work)以及[使用查询文件](/docs/how-to/use-query-files)。
+
+### 最近文献紧跟活跃研究进展 [#recent-papers-follow-your-active-research]
+
+最近列表现在会将你最近处理过的文献置顶。打开文献笔记、阅读 PDF、引用文献以及编辑笔记或标注都会计入。
+
+文库视图会说明每篇文献排位的原因和相对时间。快速切换器（Quick Switcher）、引文建议器和模板工作台也采用相同的排序。
+
+文库视图的 <UiLabel name={m.library_view_facet_unread()} /> 筛选器会排除有 Zotero 阅读时间的文献。开启写入授权后，在 Obsidian 中阅读 PDF 也会同步更新 Zotero 的“最近阅读”（Recently Read）列表。
+
+详见[“最近”如何对文献排序](/docs/how-to/use-library-view#recent)。
+
+### 侧边栏标注视图基于查询视图引擎重构 [#sidebar-annotation-view-built-on-the-query-view-engine]
+
+侧边栏 <UiLabel name={m.annot_view_name()} /> 视图现在基于查询视图引擎运行。你可以直接将侧边栏视图及其当前启用的筛选条件另存为 `.zotquery` 文件。
+
+新创建的标注会立刻显示在屏幕上，无需等待数据库同步。如果数据库读取失败或筛选条件有误，视图会显示清晰的诊断信息。
+
+有关更多信息，请参阅[使用标注视图](/docs/how-to/use-annotation-view)。
+
+### 其他改进 [#other-improvements]
+
+- 在快速切换器中，在搜索结果上按 `Alt+Enter` 即可在文库视图中定位并选中该文献。
+- 标注视图中的颜色和标签筛选按钮在为空时仍保持可见，并通过提示信息说明该筛选为何被禁用。
+- ZotLit Query 引入了表示主要创作者的 `firstAuthor`，并支持查询标注所属父附件的字段。
+- 导出为 PDF 可以整洁地打印查询视图中的行，不会被工具栏遮挡截断。
+
+## 问题修复 [#bug-fixes]
+
+### 连接 [#connections]
+
+- 当其他本地服务占用了 Zotero 的 HTTP 端口时，之前的连接探测会失败并报出含义不明的错误。现在它能检测到无法连接 Zotero，并提示你打开 Zotero 检查设置。
+
+### 笔记与标注 [#notes-and-annotations]
+
+- 此前在处于阅读视图（Reading view）的笔记中插入标注时，会将 Markdown 写入隐藏的源码编辑器中。ZotLit 现在要求处于活动的编辑器标签页中，若笔记处于阅读视图，则会发出提醒。
