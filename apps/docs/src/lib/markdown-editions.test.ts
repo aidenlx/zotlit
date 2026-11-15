@@ -43,8 +43,10 @@ describe("docs page titles in the Markdown surface", () => {
         { locale },
       );
       const further = edition?.split(/^## .+$/m).at(-1);
+      // The guide's own title in this locale: its Chinese edition's, where it has one.
+      const guide = source.getPage(["how-to", "insert-citations"], locale)!;
       expect(further).toContain(
-        `- [Insert Zotero citations in Obsidian: every way to do it](${prefix}/docs/how-to/insert-citations.md): `,
+        `- [${docsPageTitle(guide.data)}](${prefix}/docs/how-to/insert-citations.md): `,
       );
       expect(edition).toContain(
         `](${prefix}/learn/export-obsidian-to-word-with-citations.md): `,
