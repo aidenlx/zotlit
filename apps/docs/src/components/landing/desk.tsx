@@ -541,7 +541,7 @@ function DraftSheet() {
             </span>
           </span>
         </p>
-        <div className="absolute top-full left-[6%] mt-1.5 w-[268px] origin-[12%_0] overflow-hidden rounded-md border border-fd-border bg-fd-card opacity-0 [box-shadow:var(--desk-shadow)] motion-safe:animate-desk-suggest">
+        <div className="absolute top-full left-[6%] z-10 mt-1.5 w-[268px] origin-[12%_0] overflow-hidden rounded-md border border-fd-border bg-fd-card opacity-0 [box-shadow:var(--desk-shadow)] motion-safe:animate-desk-suggest">
           <div className="bg-fd-muted px-3 py-2 motion-safe:animate-desk-pick">
             <p className="text-[12px] leading-snug font-medium text-fd-foreground">
               Ten Simple Rules for Better Figures
@@ -559,6 +559,24 @@ function DraftSheet() {
             </p>
           </div>
         </div>
+      </div>
+      {/* The reference list takes the new entry as the citation lands. */}
+      <div className="mt-3 border-t border-fd-border pt-2">
+        <p className="font-mono text-[10px] tracking-[0.12em] text-fd-muted-foreground uppercase">
+          References
+        </p>
+        <ul className="mt-1 font-serif text-[11px] leading-[1.5] text-fd-foreground/90">
+          <li className="-mx-1 overflow-hidden rounded-[3px] px-1 motion-safe:animate-desk-ref">
+            <p className="ps-4 -indent-4">
+              Rougier, N. P., et al. (2014). Ten simple rules for better
+              figures.
+            </p>
+          </li>
+          <li className="ps-4 -indent-4">
+            Sandve, G. K., et al. (2013). Ten simple rules for reproducible
+            computational research.
+          </li>
+        </ul>
       </div>
     </div>
   );

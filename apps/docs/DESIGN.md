@@ -375,7 +375,7 @@ closing call. Sections run 1152px wide (`max-w-6xl`) with 32px side gutters
   Reproducibility.zotquery table ("Compare your papers") lead at the
   top; the PDF page with the reader's marks ("Read and highlight"), the
   literature-note index card ("Take literature notes"), the draft with its
-  citation picker ("Cite as you write") and the Word reference page
+  citation picker and short reference list ("Cite as you write") and the Word reference page
   ("Export and submit") lie below. Two blank sheets under the leads give
   depth. Each side group (left, right) is drawn at 0.84 towards its own
   outer edge, so each of its objects keeps at least 72px clear of the text at every
@@ -397,7 +397,7 @@ closing call. Sections run 1152px wide (`max-w-6xl`) with 32px side gutters
   loop, slow enough to follow from across the desk: a caret shows, `[@ten`
   types at 250 ms per character, the citation picker opens and holds, its
   first row is picked, and the picker closes as "(Rougier et al., 2014)."
-  takes the key's place, marked in the accent tint for 4 s; then the
+  takes the key's place, marked in the accent tint for 4 s, while its entry opens in the card's short reference list above Sandve (2013), marked the same way; then the
   sentence clears and the loop starts again. Without motion the citation
   stands in place. From 1280px the
   objects drift with a fine pointer, each by its depth, up to 8px. All of it

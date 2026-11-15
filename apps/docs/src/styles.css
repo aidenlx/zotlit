@@ -238,6 +238,7 @@
   --animate-desk-suggest: desk-suggest 11s linear 1.7s infinite backwards;
   --animate-desk-pick: desk-pick 11s linear 1.7s infinite backwards;
   --animate-desk-cited: desk-cited 11s linear 1.7s infinite backwards;
+  --animate-desk-ref: desk-ref 11s linear 1.7s infinite backwards;
   --animate-desk-blink: desk-blink 0.9s steps(1) infinite;
   @keyframes desk-drop {
     from {
@@ -340,6 +341,33 @@
     }
     98%,
     100% {
+      opacity: 0;
+    }
+  }
+  /* The new reference opens in place as the citation lands, marked with it,
+     and closes as the sentence clears. */
+  @keyframes desk-ref {
+    0%,
+    40% {
+      max-height: 0;
+      opacity: 0;
+      background-color: transparent;
+    }
+    43%,
+    76.4% {
+      max-height: 3rem;
+      opacity: 1;
+      background-color: var(--desk-cited);
+    }
+    81.8%,
+    94.5% {
+      max-height: 3rem;
+      opacity: 1;
+      background-color: transparent;
+    }
+    98%,
+    100% {
+      max-height: 0;
       opacity: 0;
     }
   }
