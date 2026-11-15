@@ -42,7 +42,7 @@ export const ztProse = [
 export const changelogProseRoles = [
   "prose max-w-none font-sans prose-sm text-fd-muted-foreground",
   "prose-code:rounded-none",
-  "prose-h2:font-mono prose-h2:font-semibold prose-h2:text-fd-foreground prose-h2:uppercase",
+  "prose-h2:font-mono prose-h2:font-semibold prose-h2:text-fd-foreground prose-h2:uppercase zh:prose-h2:tracking-normal",
   "prose-h2:before:inline-block prose-h2:before:w-0.5 prose-h2:before:translate-y-px prose-h2:before:bg-fd-primary prose-h2:before:align-middle prose-h2:before:content-['']",
   "prose-h3:font-serif prose-h3:font-medium",
 ].join(" ");

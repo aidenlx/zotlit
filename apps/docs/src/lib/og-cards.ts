@@ -80,10 +80,9 @@ function landingCards(m: Messages, locale: SiteLocale): [OgType, CardProps][] {
     [
       "workbench",
       {
-        kind: "Workbench",
-        title: "Template workbench",
-        description:
-          "Edit a literature note profile in the browser and see the note it produces.",
+        kind: m.docs_og_workbench_kind({}, o),
+        title: m.workbench_title({}, o),
+        description: m.workbench_description({}, o),
         meta: `${site}/workbench`,
       },
     ],

@@ -491,7 +491,7 @@
 /* Accepted stable-id anchor: the TOC "On this page" h3 ships with this exact
    id and exposes no className hook short of ejecting the whole TOC slot. */
 #toc-title {
-  @apply font-mono text-[0.8125rem] font-semibold tracking-widest uppercase;
+  @apply font-mono text-[0.8125rem] font-semibold tracking-widest uppercase zh:tracking-normal;
 }
 
 html {

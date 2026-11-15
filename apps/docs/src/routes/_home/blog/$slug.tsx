@@ -129,7 +129,7 @@ function BlogPost() {
       <article className="pb-14">
         <BackCrumb to="/blog" label={m.docs_nav_blog()} />
         <header className="pt-4.5 pb-2">
-          <h1 className="mb-2.5 text-4xl leading-[1.16] font-medium text-balance">
+          <h1 className="mb-2.5 text-4xl leading-[1.16] font-medium text-balance zh:leading-[1.3] zh:tracking-normal zh:wrap-anywhere zh:break-keep">
             {post.title}
           </h1>
           {post.description && (
@@ -137,7 +137,7 @@ function BlogPost() {
               {post.description}
             </p>
           )}
-          <p className="mb-1.5 font-mono text-xs font-medium tracking-widest text-fd-muted-foreground uppercase">
+          <p className="mb-1.5 font-mono text-xs font-medium tracking-widest text-fd-muted-foreground uppercase zh:tracking-normal">
             {m.docs_blog_post_byline({
               date: formatReleaseDate(post.date, { locale: getLocale() }),
               author: post.author,

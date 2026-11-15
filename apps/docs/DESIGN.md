@@ -178,13 +178,15 @@ Chinese text follows these rules:
   1.8, the docs title at 1.3 and the prose h1 at 1.35 (`zh:` modifiers in
   `src/lib/prose.ts` and `src/components/docs-page.tsx`).
 - **Tracking.** Chinese text in content sets at zero tracking; the prose h4
-  label drops its tracking under `zh:`.
+  label, the changelog category h2 and the TOC title drop their tracking
+  under `zh:`.
 - **Labels.** Han has no case, so the label voice's uppercase and wide
   tracking carry no meaning in Chinese: a Chinese label (nav link, washi tape,
   sheet label) sets at zero tracking under `zh:tracking-normal`, a sheet label
   in the Chinese sans, and a tape at 12px (`zh:text-xs`) so its strokes stay
   legible on the scaled desk.
-- **Display headings.** Landing headings set at 1.3 leading and zero tracking,
+- **Display headings.** Landing headings, the blog post title and the
+  course and lesson titles set at 1.3 leading and zero tracking,
   and break only between words (`zh:leading-[1.3] zh:tracking-normal
   zh:break-keep zh:wrap-anywhere`), so `text-balance` never splits a word or a
   highlighted term. Chinese headings and short leads end without a full stop.
