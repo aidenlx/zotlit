@@ -9,7 +9,8 @@
 // @see docs/brand.md
 
 import { readFile } from "node:fs/promises";
-import { resolve } from "node:path";
+import { createRequire } from "node:module";
+import { dirname, resolve } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { render } from "takumi-js";
 import { googleFonts, subsetFonts } from "takumi-js/helpers";
@@ -35,25 +36,71 @@ const fetchFont: FetchLike = async (input, init) => {
 
 /**
  * The Simplified Chinese faces a Chinese card falls back to after each Latin
- * face, as the zh-CN site does: Noto Serif SC under the Gelasio title, Noto
- * Sans SC under the sans and mono lines. Both are SIL OFL 1.1.
+ * face, as the zh-CN site does: LXGW WenKai GB Screen under the Gelasio
+ * title, Noto Sans SC under the sans and mono lines. Both are SIL OFL 1.1.
  */
-const CJK_SERIF = "Noto Serif SC";
+const CJK_SERIF = "LXGW WenKai GB Screen";
 const CJK_SANS = "Noto Sans SC";
 
 /**
- * A CJK family is about a hundred unicode-range subsets, so these load as a
- * list and each card downloads only the subsets its own text needs.
+ * WenKai's unicode-range slices, read from the package stylesheet that the
+ * site links, each loading its bytes from disk on demand. Google Fonts
+ * carries no GB edition of WenKai.
  */
-function cjkSubsets(): Promise<FontSubset[]> {
-  return googleFonts({
-    families: [
-      { name: CJK_SERIF, weight: 500 },
-      { name: CJK_SANS, weight: [400, 500, 600] },
-    ],
-    fetch: fetchFont,
-    timeout: 30_000,
-  });
+async function wenkaiSubsets(packageRoot: string): Promise<FontSubset[]> {
+  const wenkaiCss = createRequire(resolve(packageRoot, "package.json")).resolve(
+    "lxgw-wenkai-screen-web/lxgwwenkaigbscreen/result.css",
+  );
+  const css = await readFile(wenkaiCss, "utf8");
+  return css
+    .split("@font-face")
+    .slice(1)
+    .flatMap((face) => {
+      const file = /url\(["']?\.\/([^"')]+)/.exec(face)?.[1];
+      const range = /unicode-range:([^;}]+)/.exec(face)?.[1];
+      if (!file || !range) return [];
+      const ranges = range.split(",").map((part): [number, number] => {
+        const [start = "", end = start] = part
+          .trim()
+          .replace(/^U\+/i, "")
+          .split("-");
+        return [Number.parseInt(start, 16), Number.parseInt(end, 16)];
+      });
+      const name = `${CJK_SERIF} ${file}`;
+      return [
+        {
+          name,
+          subsetOf: CJK_SERIF,
+          key: `${name}:400:normal`,
+          weight: 400,
+          style: "normal",
+          ranges,
+          data: async () => {
+            const bytes = await readFile(resolve(dirname(wenkaiCss), file));
+            return bytes.buffer.slice(
+              bytes.byteOffset,
+              bytes.byteOffset + bytes.byteLength,
+            );
+          },
+        },
+      ];
+    });
+}
+
+/**
+ * A CJK family is a hundred or more unicode-range subsets, so these load as a
+ * list and each card reads only the subsets its own text needs.
+ */
+async function cjkSubsets(packageRoot: string): Promise<FontSubset[]> {
+  const [serif, sans] = await Promise.all([
+    wenkaiSubsets(packageRoot),
+    googleFonts({
+      families: [{ name: CJK_SANS, weight: [400, 500, 600] }],
+      fetch: fetchFont,
+      timeout: 30_000,
+    }),
+  ]);
+  return [...serif, ...sans];
 }
 
 /** One renderer whose fonts (Google subsets + the vendored Archivo wordmark face) register once, then reuse. */
@@ -171,7 +218,7 @@ function OGCard({ kind, title, description, meta, hero }: CardProps) {
 
       <div tw="flex flex-col flex-1 justify-center py-[10px]">
         <div
-          tw={`font-['Gelasio','Noto_Serif_SC'] font-medium ${titleSize(title, hero)} ${titleSetting(title)} text-[#1b2029] max-w-[1000px] text-balance`}
+          tw={`font-['Gelasio','LXGW_WenKai_GB_Screen'] font-medium ${titleSize(title, hero)} ${titleSetting(title)} text-[#1b2029] max-w-[1000px] text-balance`}
         >
           {title}
         </div>
@@ -223,7 +270,7 @@ export function createOgCardRenderer(packageRoot: string): OgCardRenderer {
       props.meta,
     ].join(" ");
     if (cjkGlyph.test(text)) {
-      cjk ??= cjkSubsets();
+      cjk ??= cjkSubsets(packageRoot);
       for (const subset of subsetFonts({ fonts: await cjk, source: text })) {
         if (!registered.has(subset.key))
           registered.set(

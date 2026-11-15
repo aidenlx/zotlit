@@ -451,24 +451,26 @@
    first, so a Latin word in Chinese text stays in Gelasio, Inter or Plex Mono,
    and the Chinese face of the same voice follows. The punctuation faces lead
    because the Latin faces also cover the quotation marks, the dash and the
-   ellipsis. Installed copies of Source Han / Noto CJK come before the Noto
-   Serif SC webfont, so a reader who has them downloads nothing.
+   ellipsis. The serif role sets LXGW WenKai GB Screen; the sans and mono
+   roles set Noto Sans SC, where an installed Source Han Sans SC or Noto Sans
+   CJK SC comes first, so a reader who has one downloads nothing for it.
    `src/fonts-zh-cn.css` registers the Chinese faces.
    @see apps/docs/DESIGN.md → Type system */
 :root:lang(zh) {
   --zt-font-sans:
     "ZotLit CJK Punctuation Sans", "Inter Variable", "Inter Fallback",
-    "PingFang SC", "Hiragino Sans GB", "Source Han Sans SC", "Noto Sans CJK SC",
-    "Microsoft YaHei", ui-sans-serif, system-ui, sans-serif,
-    "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
+    "Source Han Sans SC", "Noto Sans CJK SC", "Noto Sans SC Variable",
+    "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", ui-sans-serif,
+    system-ui, sans-serif, "Apple Color Emoji", "Segoe UI Emoji",
+    "Segoe UI Symbol", "Noto Color Emoji";
   --zt-font-mono:
     "IBM Plex Mono", "IBM Plex Mono Fallback", ui-monospace, SFMono-Regular,
-    Menlo, Consolas, "Liberation Mono", "PingFang SC", "Hiragino Sans GB",
-    "Source Han Sans SC", "Noto Sans CJK SC", "Microsoft YaHei", monospace;
+    Menlo, Consolas, "Liberation Mono", "Source Han Sans SC",
+    "Noto Sans CJK SC", "Noto Sans SC Variable", "PingFang SC",
+    "Hiragino Sans GB", "Microsoft YaHei", monospace;
   --zt-font-serif:
     "ZotLit CJK Punctuation Serif", "Gelasio Variable", "Gelasio Fallback",
-    "Source Han Serif SC", "Noto Serif CJK SC", "Noto Serif SC Variable",
-    "Noto Serif SC Fallback", serif;
+    "LXGW WenKai GB Screen", "LXGW WenKai Fallback", serif;
 }
 
 /* `zh:` styles an element in Chinese text, e.g. the looser Chinese leading in

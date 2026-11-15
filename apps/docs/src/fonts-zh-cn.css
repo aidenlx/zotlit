@@ -2,36 +2,37 @@
    stylesheet only on a page whose content is Chinese (`<html lang="zh-CN">`),
    so an English page neither parses these rules nor downloads a CJK file.
 
-   Noto Serif SC (variable, 200–900) carries the serif role beside Gelasio.
-   Fontsource slices it into ~100 unicode-range files of 45–105 KB, so a page
-   downloads only the slices that hold its characters, and swaps them in
-   (`font-display: swap`). The variable face serves the 400 ledes and the 500
-   headings from one set of slices. The sans and mono roles take the
-   platform's Chinese sans, which costs no download.
+   LXGW WenKai GB Screen (霞鹜文楷 GB Screen, one weight, 400) carries the
+   serif role beside Gelasio: titles, ledes and quotes. It is the mainland
+   GB edition of the Screen cut, drawn heavier for reading on screen. Noto Sans
+   SC (variable, 100–900) carries the sans role beside Inter: body text and
+   the interface. Both arrive as unicode-range slices (259 for WenKai, ~100
+   for Noto Sans SC), so a page downloads only the slices that hold its
+   characters, and swaps them in (`font-display: swap`). Both are SIL OFL 1.1.
    @see apps/docs/DESIGN.md → Type system */
-@import "@fontsource-variable/noto-serif-sc/wght.css";
+@import "lxgw-wenkai-screen-web/lxgwwenkaigbscreen/result.css";
+@import "@fontsource-variable/noto-sans-sc/wght.css";
 
-/* While a Noto Serif SC slice loads, the Chinese characters fall to a local
-   Song face, and that face's own ascent and descent move the line boxes when
-   Noto swaps in: the hero title shifts. This fallback sets a local Song face
-   on Noto Serif SC's vertical metrics (hhea 1151 / -286 / 0 at 1000 units per
-   em, which the Windows metrics repeat), so the line boxes match before and
-   after the swap. A CJK ideograph advances 1em in every Song face, so the
-   width needs no size-adjust; the Latin words keep Gelasio throughout.
+/* While a WenKai slice loads, the Chinese characters fall to a local Kai
+   face, and that face's own ascent and descent would move the line boxes
+   when WenKai swaps in. This fallback sets a local Kai face on WenKai GB
+   Screen's vertical metrics (hhea 1900 / -500 / 0 at 2048 units per em;
+   the font leaves USE_TYPO_METRICS off, so browsers on macOS read hhea), so
+   the line boxes match before and after the swap. A CJK ideograph advances
+   1em in every Kai face, so the width needs no size-adjust; the Latin words
+   keep Gelasio throughout.
 
    `local()` matches a full font name or a PostScript name, never a family
-   name, so each face is named in both forms: Songti SC and STSong (macOS),
-   SimSun (Windows), Noto Serif CJK SC and Source Han Serif SC (Linux, or
-   installed). A face that matches nothing is inert. */
+   name, so each face is named in both forms: Kaiti SC and STKaiti (macOS),
+   KaiTi (Windows), AR PL UKai CN (Linux). A face that matches nothing is
+   inert. */
 @font-face {
-  font-family: "Noto Serif SC Fallback";
+  font-family: "LXGW WenKai Fallback";
   src:
-    local("Songti SC Regular"), local("STSongti-SC-Regular"), local("STSong"),
-    local("SimSun"), local("Noto Serif CJK SC Regular"),
-    local("NotoSerifCJKsc-Regular"), local("Source Han Serif SC Regular"),
-    local("SourceHanSerifSC-Regular");
-  ascent-override: 115.1%;
-  descent-override: 28.6%;
+    local("Kaiti SC Regular"), local("STKaiti-SC-Regular"), local("STKaiti"),
+    local("KaiTi"), local("AR PL UKai CN");
+  ascent-override: 92.77%;
+  descent-override: 24.41%;
   line-gap-override: 0%;
 }
 
@@ -42,61 +43,63 @@
    quotation marks stay with the Latin faces: U+2019 is also the apostrophe of
    a Latin word in Chinese text.
 
-   The serif faces reuse the Noto Serif SC slices that hold these glyphs, so
-   they add no download beyond those slices. The sans faces name the platform
-   Chinese sans; `local()` matches a full font name or a PostScript name, so
-   each face is named in both forms. A face that matches nothing is inert, and
-   the stack's Latin face sets the mark. */
+   Each face reuses the slices of its role's Chinese face that hold these
+   glyphs, so it adds no download beyond those slices. */
 @font-face {
   font-family: "ZotLit CJK Punctuation Serif";
   font-style: normal;
-  font-weight: 200 900;
+  font-weight: 400;
   font-display: swap;
-  src: url("@fontsource-variable/noto-serif-sc/files/noto-serif-sc-117-wght-normal.woff2")
-    format("woff2-variations");
+  src: url("lxgw-wenkai-screen-web/lxgwwenkaigbscreen/256.woff2")
+    format("woff2");
   unicode-range: U+201C-201D;
 }
 
 @font-face {
   font-family: "ZotLit CJK Punctuation Serif";
   font-style: normal;
-  font-weight: 200 900;
+  font-weight: 400;
   font-display: swap;
-  src: url("@fontsource-variable/noto-serif-sc/files/noto-serif-sc-119-wght-normal.woff2")
-    format("woff2-variations");
+  src: url("lxgw-wenkai-screen-web/lxgwwenkaigbscreen/3.woff2") format("woff2");
   unicode-range: U+2014;
 }
 
 @font-face {
   font-family: "ZotLit CJK Punctuation Serif";
   font-style: normal;
-  font-weight: 200 900;
+  font-weight: 400;
   font-display: swap;
-  src: url("@fontsource-variable/noto-serif-sc/files/noto-serif-sc-114-wght-normal.woff2")
-    format("woff2-variations");
+  src: url("lxgw-wenkai-screen-web/lxgwwenkaigbscreen/257.woff2")
+    format("woff2");
   unicode-range: U+2026;
 }
 
 @font-face {
   font-family: "ZotLit CJK Punctuation Sans";
   font-style: normal;
-  font-weight: 100 550;
-  src:
-    local("PingFangSC-Regular"), local("PingFang SC Regular"),
-    local("SourceHanSansSC-Regular"), local("Source Han Sans SC Regular"),
-    local("NotoSansCJKsc-Regular"), local("Noto Sans CJK SC Regular"),
-    local("MicrosoftYaHei"), local("Microsoft YaHei");
-  unicode-range: U+201C-201D, U+2014, U+2026;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url("@fontsource-variable/noto-sans-sc/files/noto-sans-sc-117-wght-normal.woff2")
+    format("woff2-variations");
+  unicode-range: U+201C-201D;
 }
 
 @font-face {
   font-family: "ZotLit CJK Punctuation Sans";
   font-style: normal;
-  font-weight: 551 900;
-  src:
-    local("PingFangSC-Semibold"), local("PingFang SC Semibold"),
-    local("SourceHanSansSC-Bold"), local("Source Han Sans SC Bold"),
-    local("NotoSansCJKsc-Bold"), local("Noto Sans CJK SC Bold"),
-    local("MicrosoftYaHei-Bold"), local("Microsoft YaHei Bold");
-  unicode-range: U+201C-201D, U+2014, U+2026;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url("@fontsource-variable/noto-sans-sc/files/noto-sans-sc-119-wght-normal.woff2")
+    format("woff2-variations");
+  unicode-range: U+2014;
+}
+
+@font-face {
+  font-family: "ZotLit CJK Punctuation Sans";
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url("@fontsource-variable/noto-sans-sc/files/noto-sans-sc-114-wght-normal.woff2")
+    format("woff2-variations");
+  unicode-range: U+2026;
 }

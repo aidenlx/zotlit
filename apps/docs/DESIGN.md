@@ -157,9 +157,9 @@ Mono; the Chinese face sets the Chinese characters.
 
 | Role | Chinese face |
 | --- | --- |
-| Serif (display, ledes, quotes) | **Noto Serif SC** (Song style, variable 200–900, webfont); an installed Source Han Serif SC or Noto Serif CJK SC takes its place |
-| Sans (prose body, chrome) | The platform Chinese sans: PingFang SC (Apple), Source Han Sans SC / Noto Sans CJK SC (Android, Linux), Microsoft YaHei (Windows) |
-| Mono (Machine voice) | IBM Plex Mono for Latin, then the platform Chinese sans |
+| Serif (display, ledes, quotes) | **LXGW WenKai GB Screen** (霞鹜文楷 GB Screen: Kai style, mainland GB glyph forms, the screen cut, one weight 400, webfont) |
+| Sans (prose body, chrome) | **Noto Sans SC** (思源黑体, variable 100–900, webfont); an installed Source Han Sans SC or Noto Sans CJK SC takes its place |
+| Mono (Machine voice) | IBM Plex Mono for Latin, then Noto Sans SC |
 | Wordmark | Archivo, unchanged |
 
 Chinese text follows these rules:
@@ -192,9 +192,8 @@ Chinese text follows these rules:
   1.75 and text-xl to 1.7 under `zh:`.
 - **Punctuation.** Double quotation marks, the dash and the ellipsis take the
   Chinese face's glyphs: a punctuation-only face leads each Chinese stack,
-  because the Latin faces also cover these code points. In the serif they are
-  full-width; in the sans they take the platform face's own design (PingFang
-  SC sets its quotation marks half-width). Single quotation marks stay Latin,
+  because the Latin faces also cover these code points; it reuses the slices
+  of WenKai (serif) or Noto Sans SC (sans) that hold them. Single quotation marks stay Latin,
   because U+2019 is also the apostrophe in a Latin word. Line breaks follow strict kinsoku
   (`line-break: strict`); `text-autospace` spaces Chinese from Latin and
   digits, and `text-spacing-trim` closes adjacent full-width punctuation where
@@ -390,13 +389,14 @@ The Archivo wordmark subset needs no preload — it sits under Vite's
 
 The Chinese faces live in their own stylesheet, `src/fonts-zh-cn.css`, which
 `src/routes/__root.tsx` links only when the page's content locale is
-`zh-CN`; an English page downloads nothing for them. Noto Serif SC loads as
-Fontsource's unicode-range slices with `font-display: swap` and no preload, so
-a page fetches only the slices that hold its serif characters. A docs page
-with a Chinese title, lede, six headings and a blockquote fetches ten slices,
-about 750 KB, plus the stylesheet (21 KB with Brotli); the slices of the
-most common characters are shared, so the next page reuses most of them. The
-sans and mono roles use installed Chinese faces and download nothing.
+`zh-CN`; an English page downloads nothing for them. Both faces load as
+unicode-range slices with `font-display: swap` and no preload: WenKai from the
+`lxgw-wenkai-screen-web` package (259 slices), Noto Sans SC from Fontsource
+(about 100). A page fetches only the slices that hold its characters, and the
+slices of the most common characters are shared, so the next page reuses most
+of them. While a WenKai slice loads, `LXGW WenKai Fallback` sets a local Kai
+face on WenKai's vertical metrics, so the line boxes do not move at the swap.
+The OG cards read the same WenKai slices from disk.
 
 ## Per-surface
 
