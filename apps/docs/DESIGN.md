@@ -375,12 +375,14 @@ closing call. Sections run 1152px wide (`max-w-6xl`) with 32px side gutters
   Reproducibility.zotquery table ("Compare your papers") lead at the
   top; the PDF page with the reader's marks ("Read and highlight"), the
   literature-note index card ("Take literature notes"), the draft with its
-  citation picker ("Cite as you write") and the Word reference page
+  citations in place ("Cite as you write") and the Word reference page
   ("Export and submit") lie below. Two blank sheets under the leads give
-  depth. Each group (left, right, below) is drawn at 0.84 towards its own
+  depth. Each side group (left, right) is drawn at 0.84 towards its own
   outer edge, so every object keeps at least 72px clear of the text at every
   width while the text keeps its size; a soft clearing of the ground colour
-  sits behind the headline. The
+  sits behind the headline. The note card and the Word page lie at full size
+  above the clearing, hung from the hero's middle so they stay about 45px
+  under the requirements line at every hero height. The
   stage scales in steps with the window — 0.88 from 1280px, 0.94 from
   1360px, 1 from 1440px, 1.08 from 1800px — and the text zooms with it.
   Each object casts `--desk-shadow`. The desk is `aria-hidden`: the
@@ -390,8 +392,7 @@ closing call. Sections run 1152px wide (`max-w-6xl`) with 32px side gutters
 - **Hero motion, once.** The objects drop onto the desk in order (library,
   table, PDF, note card, draft, references; 100–1100 ms delays): a 38px
   fall with a 5° turn and a 7% shrink over 780 ms. Then the ratings fill in,
-  the table's cell focus lands, the citation picker opens, the draft's caret
-  blinks three times and the highlighter sweeps across "research desk" (at
+  the table's cell focus lands and the highlighter sweeps across "research desk" (at
   2.3 s). From 1280px the
   objects drift with a fine pointer, each by its depth, up to 8px. All of it
   is CSS under `motion-safe:`, except the drift, which writes `translate` on

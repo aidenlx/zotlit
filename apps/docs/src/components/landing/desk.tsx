@@ -1,8 +1,8 @@
 // The research desk around the hero's headline: six objects, each built in
 // HTML on the docs Fixture's data and named by a strip of washi tape. The
 // Library View sheet and the Reproducibility.zotquery table lead; the PDF
-// page, the literature-note card, the draft with its citation picker and the
-// Word reference page lie around them.
+// page, the literature-note card, the draft with its citations and the Word
+// reference page lie around them.
 //
 // From 1280px the desk lies on a 1440 × 832 stage that scales in steps with
 // the window. Below 1280px, the library sheet, the table and the PDF sit in a
@@ -501,7 +501,10 @@ function NoteCard() {
   );
 }
 
-/** The chapter draft: one citation already in place, a second one being typed. */
+const CITATION =
+  "text-fd-primary underline decoration-fd-primary/40 decoration-dotted underline-offset-[3px]";
+
+/** The chapter draft, with its citations in place. */
 function DraftSheet() {
   return (
     <div
@@ -516,36 +519,11 @@ function DraftSheet() {
       <p className="mt-2 font-serif text-[16px] font-semibold text-fd-foreground">
         3.3 Keeping each figure reproducible
       </p>
-      <div className="relative mt-1.5 text-[13px] leading-[1.65] text-fd-foreground">
-        <p>
-          Every figure in this chapter is rebuilt from its raw data by one
-          script{" "}
-          <span className="text-fd-primary underline decoration-fd-primary/40 decoration-dotted underline-offset-[3px]">
-            (Sandve et al., 2013)
-          </span>
-          . Their layout follows{" "}
-          <span className="font-mono text-[12px] text-fd-primary">[@ten</span>
-          <span className="ms-px inline-block h-[15px] w-[1.5px] translate-y-[3px] bg-fd-foreground motion-safe:animate-desk-blink" />
-        </p>
-        <div className="absolute top-full left-[6%] mt-1.5 w-[268px] origin-[12%_0] overflow-hidden rounded-md border border-fd-border bg-fd-card [box-shadow:var(--desk-shadow)] motion-safe:animate-desk-pop">
-          <div className="bg-fd-muted px-3 py-2">
-            <p className="text-[12px] leading-snug font-medium text-fd-foreground">
-              Ten Simple Rules for Better Figures
-            </p>
-            <p className="text-[11px] text-fd-muted-foreground">
-              Rougier et al. (2014)
-            </p>
-          </div>
-          <div className="px-3 py-2">
-            <p className="text-[12px] leading-snug text-fd-foreground">
-              Ten Simple Rules for Reproducible Computational Research
-            </p>
-            <p className="text-[11px] text-fd-muted-foreground">
-              Sandve et al. (2013)
-            </p>
-          </div>
-        </div>
-      </div>
+      <p className="mt-1.5 text-[13px] leading-[1.65] text-fd-foreground">
+        Every figure in this chapter is rebuilt from its raw data by one script{" "}
+        <span className={CITATION}>(Sandve et al., 2013)</span>. Their layout
+        follows <span className={CITATION}>(Rougier et al., 2014)</span>.
+      </p>
     </div>
   );
 }
@@ -593,7 +571,7 @@ export function Desk() {
       className="pointer-events-none absolute inset-0 hidden select-none xl:block"
     >
       <div className="absolute top-0 left-1/2 h-[832px] w-[1440px] origin-top -translate-x-1/2 scale-(--desk-s)">
-        {/* Each group of objects is drawn at 0.84 towards its own outer edge, so
+        {/* Each side group is drawn at 0.84 towards its own outer edge, so
             the objects keep at least 72px clear of the text (which keeps its
             size) and the table's last column stays on screen. */}
         {/* Left of the text: the library sheet over a blank sheet, and the PDF. */}
@@ -674,34 +652,35 @@ export function Desk() {
             <DraftSheet />
           </Piece>
         </div>
-        {/* Below the text: the note card and the Word page. */}
-        <div className="absolute inset-0 origin-bottom -translate-y-[44px] scale-[0.84]">
-          <Piece
-            x={-312}
-            y={604}
-            w={292}
-            r={-3}
-            d={700}
-            depth={0.9}
-            tape={<Tape>{m.docs_home_desk_notes()}</Tape>}
-          >
-            <NoteCard />
-          </Piece>
-          <Piece
-            x={14}
-            y={618}
-            w={330}
-            r={1.5}
-            d={1100}
-            depth={0.5}
-            tape={<Tape inset={26}>{m.docs_home_desk_export()}</Tape>}
-          >
-            <WordPage />
-          </Piece>
-        </div>
-
         {/* A clearing on the desk, so nothing crowds the headline. */}
         <div className="absolute top-[43%] left-1/2 h-[460px] w-[760px] -translate-1/2 bg-[radial-gradient(closest-side,var(--color-fd-background)_60%,transparent)]" />
+      </div>
+      {/* Below the text: the note card and the Word page, at full size. They
+          hang from the hero's middle, so they follow the text as the hero's
+          height changes, and they lie above the clearing. */}
+      <div className="absolute top-1/2 left-1/2 w-[1440px] origin-top -translate-x-1/2 scale-(--desk-s)">
+        <Piece
+          x={-364}
+          y={150}
+          w={330}
+          r={-3}
+          d={700}
+          depth={0.9}
+          tape={<Tape>{m.docs_home_desk_notes()}</Tape>}
+        >
+          <NoteCard />
+        </Piece>
+        <Piece
+          x={-8}
+          y={162}
+          w={372}
+          r={1.5}
+          d={1100}
+          depth={0.5}
+          tape={<Tape inset={26}>{m.docs_home_desk_export()}</Tape>}
+        >
+          <WordPage />
+        </Piece>
       </div>
     </div>
   );
