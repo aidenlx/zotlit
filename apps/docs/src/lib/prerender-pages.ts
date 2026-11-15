@@ -113,7 +113,8 @@ function chineseCatalogPagesWithEditions(): PrerenderPage[] {
     .filter((path) => path !== "/workbench")
     .flatMap((path) => {
       const section = path.slice(1);
-      const listing = section === "learn" || section === "changelog";
+      const listing =
+        section === "learn" || section === "changelog" || section === "blog";
       return [
         { path },
         ...(listing

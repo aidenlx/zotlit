@@ -1,0 +1,152 @@
+---
+title: "面向 Zotero 与 Obsidian 重构 ZotLit：v2 公开测试版"
+description: "阐述为何重构 ZotLit 这款 Obsidian 的 Zotero 集成插件，以及 v2 公测版如何处理文献笔记、PDF 标注与模板。"
+date: 2026-07-25
+---
+
+import { Steps, Step } from "fumadocs-ui/components/steps";
+import { ActionLink } from "@/components/action-link";
+import { Callout } from "@/components/callout";
+
+ZotLit v1 有一个依赖项，每当 Obsidian 更新其运行时环境，该依赖就会损坏。我曾试图不断打补丁跟进，但这不可持续。替换掉这个依赖项，意味着必须重构插件的大部分代码，因此 v2 的重写也顺便简化了内部架构：模板、标注，以及条目字段的组织方式。现在，公开测试版已可供试用。
+
+## 过去出了什么问题 [#what-broke]
+
+在 Obsidian 内部读取 Zotero 的数据库需要一个 SQLite 驱动。v1 发布时，唯一的选择是 `better-sqlite3`（一个第三方的原生二进制绑定库）。当时 Node 自带的 SQLite 模块尚未面世，而且在近两年的时间里都无法在 Electron 中使用。因此，v1 随附了一个分叉的 `better-sqlite3` 二进制文件，用户在初次设置时必须根据自己的 Obsidian 版本单独下载该文件。
+
+原生绑定库是针对特定的 Electron ABI 编译的。每当 Obsidian 发布包含 Electron 内核更新的新安装程序时，该二进制文件就会无法加载。有些用户会看到错误对话框，提示其 Electron 版本不再受支持。另一些用户则在启动时遇到黑屏，不得不从文件系统中删除插件文件才能让 Obsidian 重新启动。每次内核版本升级都是一场考验，而每一次的修复都是一场重新编译二进制文件并发布补丁的赛跑。
+
+在 Zotero 方面，v1 的配套插件是在 Zotero 6 向 7 过渡的时期开发的。Zotero 7 替换了扩展系统，重写了其 API，并改变了插件与主应用的交互方式。在过渡期内，配套插件必须同时适配两个版本，这意味着同样的功能需要维护两套代码路径。这部分桥接工作与 Electron 二进制文件的问题叠加在一起，在某个时刻，我发现自己投入的时间已经无法支撑这样的维护成本。
+
+原生绑定库让 Obsidian 的每一次更新都成为一种风险，Zotero 的过渡让维护工作量翻倍；而当我无法及时跟进时，用户手里的插件就会陷入不可用的状态。
+
+**关于重构决定背后更详细的个人背景，请参阅 [Reconnecting the Dots](https://aidenlx.site/blog/reconnecting-dots)**。
+
+## 有了哪些变化 [#what-changed]
+
+现在 Node 已经自带 `node:sqlite`，近期的 Electron 版本也包含该模块。v2 直接使用了它。这意味着不再需要下载二进制文件，也不再需要相应的安装指南，那个每次 Electron 更新都会损坏的原生绑定库已彻底不复存在。
+
+在更换驱动的基础上，v2 使用 Drizzle ORM 作为结构化数据层。在 v1 中，每一个数据库查询都是手写的 SQL，条目字段本质上没有类型定义。如果 Zotero 更改了字段名或添加了一列，v1 根本无法察觉，直到模板渲染出错才会暴露出来。在 v2 中，字段类型由 Zotero 自身的模式定义生成，因此每种条目类型（期刊文章、图书、会议论文）都有具体的类型化字段。字段不匹配的情况会直接显示在模板数据浏览器中，而不是悄无声息地生成错误的笔记。这也让跟进 Zotero 自身的改动变得更加容易。v2 通过一套更新机制来跟踪 Zotero 的模式版本。相比之下，v1 的类型只生成过一次，之后从未刷新。
+
+ZotLit Companion（Zotero 配套插件）目前面向 Zotero 9，其 API 已经足够稳定，无需再去追赶频繁变化的目标。
+
+我写 v1 时，正一边读医学院一边自学编程。从那以后在科技行业的全职工作经验改变了我构建软件的方式，这次重写正是一个付诸实践的机会：减少活动部件，减少容易出错的代码。插件以更简单的内部结构实现相同的功能，这意味着修复问题和发布新功能所需的时间更短。编程 Agent 也很有帮助——面对直截了当的代码，它们的表现更好，这也是保持内部简单明了的另一个原因。
+
+这是一个我可以更可靠地维护的基础。我不能保证永远不会出任何问题，但两个最大的麻烦来源已经解决：每次 Electron 更新都会损坏的原生二进制文件，以及悄无声息发生偏移的无类型模式定义。有了这个基础，Obsidian 和 Zotero 的日常更新应该不再是一件令人提心吊胆的事。
+
+## 你可以试用哪些功能 [#what-you-can-try]
+
+ZotLit v2 包含四个主要的工作流功能区：
+
+### 标注工作区 [#annotation-workspace]
+
+如果你在 Zotero 中阅读并批注 PDF，标注视图为你提供了一个工作区，让你可以在撰写文献笔记的同时查看高亮、评论和标注。你可以在文本、评论、标签和页码之间进行搜索，还可以按颜色或标签筛选，无需切回 Zotero 即可锁定所需内容。你可以将标注逐条拖入笔记，也可以一次性全部导入，或者有选择地处理。点击某条标注可以在 Zotero 中直接打开源 PDF 并定位到该位置，让你在两个应用之间无缝切换而不会迷失位置。
+
+![Obsidian 中的文献笔记与打开的标注视图，显示了搜索框、颜色和标签筛选器，以及某个 Zotero 条目的标注卡片](/img/blog/annotation-view.webp)
+
+<ActionLink href="/docs/how-to/use-annotation-view" kind="external">
+  使用标注视图
+</ActionLink>
+
+### 批量文献笔记工作流 [#batch-literature-note-workflows]
+
+逐个创建文献笔记在处理少量条目时表现良好，但在导入现有 Zotero 文库或刚刚完成文献检索批量导入大量新文献时就不适用了。批量工作流可以一次性为多个条目创建或更新笔记，既能处理新笔记，也能处理标注或元数据发生变化的现有笔记。
+
+![Obsidian 中的更新文献笔记对话框，列出了可批量更新和创建的 Zotero 条目](/img/blog/beta-batch-workflow.webp)
+
+<ActionLink href="/docs/how-to/create-and-open-notes#bulk" kind="external">
+  创建与打开笔记：批量操作
+</ActionLink>
+
+### Zotero 笔记导入 [#zotero-note-import]
+
+部分研究人员的大部分写作都在 Zotero 内置的笔记编辑器中进行。v2 可以将这些笔记作为导入笔记引入你的仓库，每篇笔记都会转换为 Markdown 文件，同时保留其内容与结构。如果你一直在 Zotero 中积累笔记，并希望将所有内容整合到一个地方，这就是连接两者的桥梁。
+
+![作为 Markdown 文件导入 Obsidian 的 Zotero 笔记，保留了内容与结构](/img/blog/beta-imported-note.webp)
+
+<ActionLink href="/docs/how-to/import-zotero-notes" kind="external">
+  导入 Zotero 笔记
+</ActionLink>
+
+### 模板与模板数据浏览器 [#templates-and-the-template-data-explorer]
+
+模板系统允许你自定义文献笔记、标注和引文的格式。v2 默认采用基于 Liquid 的模板语言，相比 v1 的 Eta 语法更易上手；当你需要完全的编程控制时，也可以使用 JavaScript 模板。模板数据浏览器经过重新设计，可以显示任何 Zotero 条目所具备的精确类型化数据，这样你就可以依据真实的值来编写模板，而无需猜测字段名称。
+
+![Obsidian 中的模板数据浏览器面板，显示了某个 Zotero 条目可用的类型化属性](/img/blog/beta-template-data-explorer.webp)
+
+<ActionLink href="/docs/reference/templates/how-templates-work" kind="external">
+  模板工作原理
+</ActionLink>
+<ActionLink href="/docs/how-to/explore-template-data" kind="external">
+  探索模板数据
+</ActionLink>
+
+## 升级 [#upgrading]
+
+ZotLit v2 引入了不兼容的重大改动，因此你需要对现有的安装进行迁移。
+
+首先，你可以通过 BRAT 安装公测版。
+
+<ActionLink href="/docs/install-zotlit" kind="external">
+  安装 ZotLit v2
+</ActionLink>
+
+简而言之，你接下来需要：
+
+<Steps>
+  <Step>
+    ### 重命名模板文件 [#rename-template-files]
+
+    重命名你的自定义 Eta 模板文件，使其符合 v2 的命名规范。
+
+  </Step>
+  <Step>
+    ### 更新模板中的引用 [#update-template-references]
+
+    在模板中将所有的 `it.*` 引用替换为 `zt.*`。
+
+  </Step>
+  <Step>
+    ### 启用 JavaScript 模板 [#enable-javascript-templates]
+
+    在 ZotLit 的插件设置中打开“JavaScript 模板”选项。
+
+  </Step>
+</Steps>
+
+有关每个步骤的详细说明，请参阅迁移指南。
+
+<ActionLink href="/docs/how-to/migrate-from-v1" kind="external">
+  从 v1 迁移
+</ActionLink>
+
+如果你是 ZotLit 的新用户，请跟随新手教程操作。
+
+<ActionLink href="/learn/connect-zotero-to-obsidian" kind="external">
+  创建你的第一篇文献笔记
+</ActionLink>
+
+## 反馈 [#feedback]
+
+疑问、想法和错误报告均可通过社区页面提交。对于简单的问题，Discord 是获得答复最快的途径。如果你认为自己发现了一个错误，请改为在 GitHub Discussions 中提交报告。相比聊天记录，它能为我们提供更好的跟踪和上下文信息，我们会在确认可复现后再将其转为正式 Issue。
+
+<ActionLink href="/community" kind="external">
+  社区
+</ActionLink>
+
+## 测试版功能范围 [#beta-scope]
+
+v1 中的两项功能没有延续到 v2 中：标注合并以及基于主题的导入。这些是被废弃的功能，而不是延期开发的工作。我权衡过是否保留它们，但它们带来的复杂度与实际使用频率相比并不划算。v2 专注于上述的核心工作流。
+
+<Callout type="info" title="兼容性">
+  此公测版包含针对 1.13 之前 Obsidian 版本的兼容层。正式版将以首个公开的 1.13
+  安装程序为目标版本。
+</Callout>
+
+## 展望未来 [#looking-ahead]
+
+v2 是一个比 v1 任何时期都更加稳固的起点。我可以在此基础上继续开发，而无需时刻担忧下一次 Obsidian 更新会破坏数据库层。这能否转化为你所需要的可靠性，唯有在实际使用中才能得到验证。
+
+文档仍在同步跟进插件的开发进度。部分页面尚不完整，另一些页面描述的可能是公测版之间已经发生变动的内容。如果你发现内容缺失或与实际界面不符，请在文档页面留言，我会尽快处理。
+
+我宁愿在公测阶段尽早暴露问题，也不愿发布一个潜藏隐患的正式版本。感谢那些试用早期版本并告诉我哪里出错的早期测试者，也感谢从那时起一直参与测试的朋友们：你们的反馈已经体现在近期发布的测试版中。如果你一直在等待 ZotLit 重新恢复正常，或者你是第一次了解它，我希望这项工作能够随着时间的推移赢得你的信任。
