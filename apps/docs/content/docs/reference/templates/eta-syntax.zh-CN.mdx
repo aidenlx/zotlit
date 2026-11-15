@@ -10,7 +10,7 @@ import { SettingsPath } from "@/components/settings-path";
 import { UiLabel } from "@/components/ui-label";
 import { m } from "@/paraglide/messages.js";
 
-本页介绍了 ZotLit 中配置的 Eta 模板语言。使用 Eta 模板需要开启 [<UiLabel name={m.settings_template_js_enable_name()} /> 门禁](/docs/how-to/enable-javascript-templates)。关于默认的 Liquid 引擎，请参阅[模板语法](/docs/reference/templates/syntax)。
+本页介绍了 ZotLit 中配置的 Eta 模板语言。使用 Eta 模板需要开启 [<UiLabel name={m.settings_template_js_enable_name()} /> 开关](/docs/how-to/enable-javascript-templates)。关于默认的 Liquid 引擎，请参阅[模板语法](/docs/reference/templates/syntax)。
 
 所有模板数据均可通过单一变量 `zt` 访问。`zt` 的结构取决于模板类型：完整属性列表请参阅[数据参考](/docs/reference/templates/data)。
 
@@ -314,7 +314,7 @@ v2 使用具有显式属性的扁平数组。创作者在字符串上下文中�
 
 ### 来自 `zt-field.eta.md` 的属性 [#v1-frontmatter]
 
-| v1 template line           | <UiLabel name={m.workbench_properties_name()} /> | <UiLabel name={m.workbench_properties_expression()} /> | <UiLabel name={m.workbench_properties_merge()} />         |
+| v1 模板行                  | <UiLabel name={m.workbench_properties_name()} /> | <UiLabel name={m.workbench_properties_expression()} /> | <UiLabel name={m.workbench_properties_merge()} />         |
 | -------------------------- | ------------------------------------------------ | ------------------------------------------------------ | --------------------------------------------------------- |
 | `title: "<%= it.title %>"` | `title`                                          | `zt.title`                                             | <UiLabel name={m.workbench_properties_merge_replace()} /> |
 | `authors: ...`             | `authors`                                        | `zt.authors \| map: "fullName" \| join: ", "`          | <UiLabel name={m.workbench_properties_merge_replace()} /> |
@@ -437,10 +437,10 @@ annotation 参数为必填项。缺失或为 null 时会抛出错误。
 
 可选参数 form 默认为 `"normal"`。
 
-| 形式                      | 单个条目的输出 | 描述                                                                                                          |
-| ------------------------- | -------------- | ------------------------------------------------------------------------------------------------------------- |
-| `"normal"`                | `[@smith2024]` | 生成带方括号的引文集群（Citation Cluster）。                                                                  |
-| `"prefer-author-in-text"` | `@smith2024`   | 当第一个保留条目没有前缀且不隐藏作者时，生成正文作者引文（Author-in-text Citation）；否则生成普通的引文集群。 |
+| 形式                      | 单个条目的输出 | 描述                                                                                                        |
+| ------------------------- | -------------- | ----------------------------------------------------------------------------------------------------------- |
+| `"normal"`                | `[@smith2024]` | 生成带方括号的引用组（Citation Cluster）。                                                                  |
+| `"prefer-author-in-text"` | `@smith2024`   | 当第一个保留条目没有前缀且不隐藏作者时，生成正文作者引文（Author-in-text Citation）；否则生成普通的引用组。 |
 
 该辅助函数可处理 Pandoc 源中使用的所有引文条目属性：
 
@@ -630,7 +630,7 @@ ZotLit 以同步方式渲染模板。在 Eta 模板内无法使用 `async`/`awai
   />
   <Card
     title="启用 JavaScript 模板"
-    description="选用 Eta 模板并配置启用门禁。"
+    description="选用 Eta 模板并配置启用开关。"
     href="/docs/how-to/enable-javascript-templates"
   />
 </Cards>

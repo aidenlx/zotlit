@@ -82,8 +82,8 @@ YAML 转义会自动处理。有关属性规则的详情，请参阅[属性条�
 ## 遇到其他情况 [#if-you-see-something-else]
 
 - **笔记显示为 v2 默认外观，而非你的模板** → 文件名仍以 `zt-` 开头；v2 仅读取 `zotlit-` 文件。请重命名它们（第 1 步）。
-- **"The Eta template at … is inactive because JavaScript templates are disabled on this device."** → 在此设备上开启 <UiLabel name={m.settings_template_js_enable_name()} />（第 4 步）。
-- **"These frontmatter fields are inactive because JavaScript templates are disabled: …"** → 在此设备上开启 <UiLabel name={m.settings_template_js_enable_name()} />（第 4 步）。
+- “**… 处的 Eta 模板处于非活动状态，因为 JavaScript 模板在此设备上被禁用。**” → 在此设备上开启 <UiLabel name={m.settings_template_js_enable_name()} />（第 4 步）。
+- “**由于 JavaScript 模板已禁用，以下 Frontmatter 字段未生效：…。**” → 在此设备上开启 <UiLabel name={m.settings_template_js_enable_name()} />（第 4 步）。
 - **笔记中出现多余空行** → v1 会在每个 `%>` 后去掉一个换行符；v2 则保留所有空白。如果需要恢复旧版的去除换行行为，请写为 `-%>`。
 - **年份显示为完整日期** → `it.date` 在 v1 中仅输出年份；请改写为 `zt.date?.year`。
 - 对 v1 笔记运行 <Command inline name={m.command_update_note_name()} /> 后出现 <UiLabel name={m.notice_updated_note_no_region()} /> → v1 笔记缺少托管区域标记。对该笔记运行 <Command inline name={m.command_overwrite_note_name()} />（第 6 步）。

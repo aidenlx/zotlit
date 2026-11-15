@@ -103,7 +103,7 @@ ZotLit 会创建一个名为 `Untitled.zotquery` 的文件并在标签页中打�
   <Step>
     ### 组合条件 [#combine-conditions]
 
-    选择 <UiLabel name={m.workbench_match_match_all()} /> 显示满足所有条件的记录，选择 <UiLabel name={m.workbench_match_match_any()} /> 显示满足至少一个条件的记录，或选择 <UiLabel name={m.workbench_match_match_none()} /> 隐藏满足该分组中任一条件的记录。选择 <UiLabel name={m.workbench_match_add_group()} /> 可以在另一个分组中嵌套条件分组（例如，查找既是黄色高亮且同时带有 `#theory` 或 `#method` 标签的批注）。
+    选择 <UiLabel name={m.workbench_match_match_all()} /> 显示满足所有条件的记录，选择 <UiLabel name={m.workbench_match_match_any()} /> 显示满足至少一个条件的记录，或选择 <UiLabel name={m.workbench_match_match_none()} /> 隐藏满足该分组中任一条件的记录。选择 <UiLabel name={m.workbench_match_add_group()} /> 可以在另一个分组中嵌套条件分组（例如，查找既是黄色高亮且同时带有 `#theory` 或 `#method` 标签的高亮）。
 
   </Step>
   <Step>
@@ -122,7 +122,7 @@ ZotLit 会创建一个名为 `Untitled.zotquery` 的文件并在标签页中打�
   </Step>
 </Steps>
 
-可用属性取决于视图展示的记录类型。标注视图提供每条标注的颜色、标签、评论、文本、页码以及日期。所有视图均提供文献的标题、创建者、第一作者、年份、条目类型、分类以及文库。标注和附件视图还提供文件的标题和文件类型。条目视图还提供文献笔记的属性，如[跟踪阅读进度](/docs/how-to/track-reading-status#filter)中所示。
+可用属性取决于视图展示的记录类型。标注视图提供每条标注的颜色、标签、评论、文本、页码以及日期。所有视图均提供文献的标题、创建者、第一作者、年份、条目类型、分类以及文库。标注和附件视图还提供文件的标题和文件类型。条目视图还提供文献笔记的属性，如[在查询视图中跟踪阅读状态](/docs/how-to/track-reading-status#filter)中所示。
 
 要将条件编写为[筛选表达式](/docs/reference/how-queries-work#steps)，请在其所在行选择 <UiLabel name={m.workbench_match_edit_as_expression()} />。筛选表达式编辑器会对字段名、函数、数字和字符串进行语法着色。在输入时，自动补全会提示可用字段和函数（按 `Tab` 或 `Enter` 插入），参数提示会显示预期参数，波浪下划线会立即标出语法错误。选择 <UiLabel name={m.workbench_match_edit_visually()} /> 可切回可视化条件行。
 
@@ -166,7 +166,7 @@ ZotLit 会创建一个名为 `Untitled.zotquery` 的文件并在标签页中打�
 
 ## 选择属性 [#properties]
 
-选择 <UiLabel name={m.query_view_properties()} />。勾选或取消勾选属性的复选框可显示或隐藏该属性，拖动属性可调整其顺序。在 <UiLabel name={m.query_view_properties_search()} /> 中输入内容可查找属性。要添加列表中没有的属性，请输入其路径（例如 `item.citationKey`），然后选择添加该属性的行。在条目视图中，菜单还支持添加文献笔记的属性。参见[跟踪阅读进度](/docs/how-to/track-reading-status#add-column)。
+选择 <UiLabel name={m.query_view_properties()} />。勾选或取消勾选属性的复选框可显示或隐藏该属性，拖动属性可调整其顺序。在 <UiLabel name={m.query_view_properties_search()} /> 中输入内容可查找属性。要添加列表中没有的属性，请输入其路径（例如 `item.citationKey`），然后选择添加该属性的行。在条目视图中，菜单还支持添加文献笔记的属性。参见[在查询视图中跟踪阅读状态](/docs/how-to/track-reading-status#add-column)。
 
 点击任意属性行上的箭头按钮（或按右方向键）可打开其设置页面，在此可以设置[显示名称](#display-names)或编辑[公式](#formulas)。
 
@@ -219,7 +219,7 @@ ZotLit 会创建一个名为 `Untitled.zotquery` 的文件并在标签页中打�
 
 ## 重命名属性 [#display-names]
 
-显示名称可以在视图中替代属性的路径。例如，属性 `formula.year` 可以显示为“文献年份”。
+显示名称可以在视图中替代属性的路径。例如，属性 `formula.year` 可以显示为“Year of source”。
 
 <Steps>
   <Step>
@@ -250,11 +250,11 @@ ZotLit 会创建一个名为 `Untitled.zotquery` 的文件并在标签页中打�
   当匹配记录数超过视图显示数量时，结果计数会同时显示两个数字，例如
   <UiLabel name={m.query_view_results_limited({ count: 250, shown: 100 })} />。
 - <UiLabel name={m.query_view_copy()} />
-  ：将所显示行的可见列作为表格复制到剪贴板。 可以将其作为 Markdown 表格粘贴到
+  ：将所显示行的可见列作为表格复制到剪贴板。可以将其作为 Markdown 表格粘贴到
   Obsidian 笔记中，或粘贴到 Microsoft Excel、Google Sheets、Apple Numbers
   等电子表格软件中。
 - <UiLabel name={m.query_view_export_csv()} />
-  ：将所显示行的可见列保存为 CSV 文件。 该文件采用带 BOM 的 UTF-8 编码，以便
+  ：将所显示行的可见列保存为 CSV 文件。该文件采用带 BOM 的 UTF-8 编码，以便
   Excel 以及 R 或 SPSS 等统计软件能够正常显示多语言标题和作者姓名。
 
 复制和 CSV 导出都仅包含视图中显示的属性，并按照可见顺序排列。界面按钮（例如 <UiLabel name={m.query_view_table_literature_note()} /> 列）会被自动忽略。
@@ -284,8 +284,8 @@ ZotLit 会创建一个名为 `Untitled.zotquery` 的文件并在标签页中打�
 你可以直接在视图中调整表格各列：
 
 - 左右拖动表头可更改列顺序。
-- 拖动两列标头之间的边界可调整列宽。
-- 双击两列标头之间的边界可将该列恢复为自动宽度。
+- 拖动两列表头之间的边界可调整列宽。
+- 双击两列表头之间的边界可将该列恢复为自动宽度。
 - 右键点击任意表头可打开其菜单（移动端点击表头即可）。菜单提供 <UiLabel name={m.query_view_table_move_column_left()} />、<UiLabel name={m.query_view_table_move_column_right()} /> 和 <UiLabel name={m.query_view_table_reset_column_width()} /> 选项。
 
 该菜单还可以对该列对应的属性进行操作，与 Obsidian base 类似：
@@ -299,7 +299,7 @@ ZotLit 会创建一个名为 `Untitled.zotquery` 的文件并在标签页中打�
   将该列设为视图的首选排序依据并保留其他排序条件。
   <UiLabel name={m.query_view_table_clear_sort()} /> 可清除该列的排序。
 - <UiLabel name={m.query_view_table_edit_property()} />
-  会在表头旁打开属性的显示名称设置。 对于公式，该选项显示为
+  会在表头旁打开属性的显示名称设置。对于公式，该选项显示为
   <UiLabel name={m.query_view_table_edit_formula()} />
   ，同时还会打开公式表达式编辑器。
 
@@ -361,7 +361,7 @@ views:
 
 ### 文献笔记中的查询块 [#literature-note-block]
 
-默认文献笔记模板会在 Annotations 标题下方放置一个查询块。该查询块会显示该笔记对应文献的标注。使用较早版本创建的文献笔记将在下次更新时获得该查询块。处于 Zotero 废纸篓中的文献不会在其中显示标注。参见[默认模板](/docs/reference/templates/defaults#content-template)。
+默认文献笔记模板会在 Annotations 标题下方放置一个查询块。该查询块会显示该笔记对应文献的标注。使用较早版本创建的文献笔记将在下次更新时获得该查询块。处于 Zotero 回收站中的文献不会在其中显示标注。参见[默认模板](/docs/reference/templates/defaults#content-template)。
 
 ## 将标注侧边栏另存为查询文件 [#save-sidebar]
 

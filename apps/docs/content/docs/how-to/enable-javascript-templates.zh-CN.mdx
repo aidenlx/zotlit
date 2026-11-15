@@ -16,12 +16,12 @@ JavaScript。该开关默认处于关闭状态。
 
 在 ZotLit 2.1 中，语言直接体现在文件名中：`zotlit-note.eta.md` 是 Eta 模板，而 `zotlit-note.liquid.md` 是 Liquid 模板。2.2 版本的模板文档则改在自身的清单（manifest）中声明语言，对应的键为 `language: eta`。
 
-受管属性条目通过其值成员声明语言：`expr`（Liquid）、`value`（JSON-e）或 `js`（JavaScript）。关于清单键与三种条目成员的详细说明，请参阅[配置方案文档](/docs/reference/templates/profile-document)。
+托管属性条目通过其值成员声明语言：`expr`（Liquid）、`value`（JSON-e）或 `js`（JavaScript）。关于清单键与三种条目成员的详细说明，请参阅[配置方案文档](/docs/reference/templates/profile-document)。
 
 ## 开关的作用范围 [#what-the-gate-covers]
 
 - **Eta 模板文档。** 清单中设置了 `language: eta` 的配置方案文档、引文文本或片段。
-- **`js` 属性条目。** 值成员为 `js` 的受管属性条目。
+- **`js` 属性条目。** 值成员为 `js` 的托管属性条目。
 
 无论开关开启还是关闭，`expr` 和 `value` 成员始终有效。当开关处于关闭状态时，Eta 文档永远不会被编译，`js` 条目也永远不会被执行求值。
 
@@ -57,7 +57,7 @@ JavaScript。该开关默认处于关闭状态。
 
 ## 关闭 [#turn-off]
 
-在同一个 <UiLabel name={m.settings_template_js_enable_name()} /> 分组中，点击 <UiLabel name={m.settings_template_js_turn_off()} />。该开关会立即关闭，无需确认弹窗。所有声明了 `language: eta` 的模板文档都将失效，所有使用 `js` 声明的受管属性条目也会停止求值，直到你重新开启该开关。
+在同一个 <UiLabel name={m.settings_template_js_enable_name()} /> 分组中，点击 <UiLabel name={m.settings_template_js_turn_off()} />。该开关会立即关闭，无需确认弹窗。所有声明了 `language: eta` 的模板文档都将失效，所有使用 `js` 声明的托管属性条目也会停止求值，直到你重新开启该开关。
 
 ## 按设备生效 [#per-device-scope]
 

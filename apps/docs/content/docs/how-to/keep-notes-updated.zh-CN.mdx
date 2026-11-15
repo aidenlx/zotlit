@@ -27,7 +27,7 @@ import { m } from "@/paraglide/messages.js";
    的对话框，复选框 <UiLabel name={m.modal_update_notes_create()} />
    默认未勾选。
 3. 选择 <UiLabel name={m.modal_update_notes_active()} />。
-   对于使用当前默认模板创建的笔记，会弹出提示 <UiLabel name={m.notice_updated_note_no_region()} />。属性将被刷新，正文文本保持你撰写的原样，而 **批注**（Annotations）分节是一个本就保持最新的实时视图。对于包含受管区域的笔记，提示则为 <UiLabel name={m.notice_updated_note()} />
+   对于使用当前默认模板创建的笔记，会弹出提示 <UiLabel name={m.notice_updated_note_no_region()} />属性将被刷新，正文文本保持你撰写的原样，而 **Annotations** 分节是一个本就保持最新的实时视图。对于包含托管区域的笔记，提示则为 <UiLabel name={m.notice_updated_note()} />
    更新操作会刷新 ZotLit 管理的属性；你自己撰写的内容和自行添加的属性均保持不变。
    - 或者选择 <UiLabel name={m.modal_update_notes_all()} />：这将更新你[文库范围](/docs/reference/settings#library-scope)内现有的所有文献笔记。确认对话框会提示 <UiLabel name={m.batch_update_existing_confirm_intro({ count: "…" })} />；没有笔记的文献会列在 <UiLabel name={m.batch_update_group_no_note({ count: "…" })} /> 下且不会被处理。
 
@@ -36,7 +36,7 @@ import { m } from "@/paraglide/messages.js";
 
 | 命令                                                            | 变更内容                                                                | 保留内容                             |
 | --------------------------------------------------------------- | ----------------------------------------------------------------------- | ------------------------------------ |
-| <Command inline name={m.command_update_note_name()} />          | 属性；若笔记包含受管区域，也包括受管区域                                | 你在受管区域外撰写的所有内容         |
+| <Command inline name={m.command_update_note_name()} />          | 属性；若笔记包含托管区域，也包括托管区域                                | 你在托管区域外撰写的所有内容         |
 | <Command inline name={m.command_update_note_metadata_name()} /> | 仅属性。提示 <UiLabel name={m.notice_updated_note_metadata()} />        | 整个正文                             |
 | <Command inline name={m.command_overwrite_note_name()} />       | 整个正文：替换为根据该笔记模板重新渲染的内容。ZotLit 自身的属性会被刷新 | 你自行添加的属性。运行前会有确认提示 |
 
@@ -66,7 +66,7 @@ import { m } from "@/paraglide/messages.js";
 | ---------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | 单篇笔记                                 | 打开该笔记，运行 <Command inline name={m.command_update_notes_name()} />，选择 <UiLabel name={m.modal_update_notes_active()} />。                                                                  |
 | 所有现有笔记                             | 运行 <Command inline name={m.command_update_notes_name()} />，保持 <UiLabel name={m.modal_update_notes_create()} /> 未勾选，选择 <UiLabel name={m.modal_update_notes_all()} />。                   |
-| 仅更新属性（针对在 Zotero 中选中的文献） | <UiLabel name={m["zotero.menu_submenu.label"]()} /> → <UiLabel name={m["zotero.menu_item_update_metadata.label"]()} />。此操作不会创建新笔记，且保留正文原样，因此受管区域的更改不会同步到正文中。 |
+| 仅更新属性（针对在 Zotero 中选中的文献） | <UiLabel name={m["zotero.menu_submenu.label"]()} /> → <UiLabel name={m["zotero.menu_item_update_metadata.label"]()} />。此操作不会创建新笔记，且保留正文原样，因此托管区域的更改不会同步到正文中。 |
 
 确认对话框提示为 <UiLabel name={m.batch_update_existing_confirm_intro({ count: "…" })} />；没有笔记的文献会出现在 <UiLabel name={m.batch_update_group_no_note({ count: "…" })} /> 下且不会被更改。在网页版模板工作台保存模板后，点击提示中的 <UiLabel name={m.notice_workbench_profile_saved_action()} /> 也会打开此确认对话框且不创建新笔记。Zotero 分类菜单项 <UiLabel name={m["zotero.menu_collection_update_all.label"]()} /> 则会为尚无笔记的文献创建笔记，因此不属于“仅针对现有笔记”的操作。
 
@@ -75,15 +75,15 @@ import { m } from "@/paraglide/messages.js";
 
 ## 其他常见情况 [#if-you-see-something-else]
 
-- **<UiLabel name={m.notice_updated_note_no_region()} />** 对于使用当前默认模板创建的笔记，这是正常结果：**批注** 分节是实时视图，会自动保持最新。如果该笔记是用 ZotLit v1 创建的，正文未被重建是因为 v1 笔记没有受管区域；运行 <Command inline name={m.command_overwrite_note_name()} /> 可使用默认配置方案重建正文，但这会丢弃旧的正文文本。
-- **笔记中包含 `%%zt-managed%%` 和 `%%/zt-managed%%` 行。** 该笔记是由早期默认模板或带有受管块的配置方案创建的。<Command inline name={m.command_update_note_name()} /> 仅重写这两行之间的内容；两行之外的文本保持原样，其内部的查询视图也会保留工具栏中保存的设置。若要阻止 ZotLit 更新该分节，删除这两行注释即可。
-- **命令面板中没有更新命令，或 <Command inline name={m.command_update_notes_name()} /> 中没有 <UiLabel name={m.modal_update_notes_active()} /> 按钮。** 活动文件缺少 `zotero-key` 属性，因此不是文献笔记。请先打开文献笔记。
-- **笔记中的图片显示为 <UiLabel name={m.excerpt_image_unavailable()} /> 并附有指向来源的链接**。 该图片无法生成，且笔记中此前没有可保留的快照，但笔记的其余部分已完成更新。请参阅[摘录图片导入结果](/docs/reference/excerpt-images#import-outcomes)。
-- **以“摘录图片：……”开头的提示通知**。 这统计了未能全新生成的图片数量。“从笔记中保留且未刷新”表示 ZotLit 保留了笔记中已有的快照。请参阅[摘录图片导入结果](/docs/reference/excerpt-images#import-outcomes)。
+- **<UiLabel name={m.notice_updated_note_no_region()} />** 对于使用当前默认模板创建的笔记，这是正常结果：**Annotations** 分节是实时视图，会自动保持最新。如果该笔记是用 ZotLit v1 创建的，正文未被重建是因为 v1 笔记没有托管区域；运行 <Command inline name={m.command_overwrite_note_name()} /> 可使用默认配置方案重建正文，但这会丢弃旧的正文文本。
+- **笔记中包含 `%%zt-managed%%` 和 `%%/zt-managed%%` 行**。该笔记是由早期默认模板或带有托管块的配置方案创建的。<Command inline name={m.command_update_note_name()} /> 仅重写这两行之间的内容；两行之外的文本保持原样，其内部的查询视图也会保留工具栏中保存的设置。若要阻止 ZotLit 更新该分节，删除这两行注释即可。
+- **命令面板中没有更新命令，或 <Command inline name={m.command_update_notes_name()} /> 中没有 <UiLabel name={m.modal_update_notes_active()} /> 按钮**。活动文件缺少 `zotero-key` 属性，因此不是文献笔记。请先打开文献笔记。
+- **笔记中的图片显示为 <UiLabel name={m.excerpt_image_unavailable()} /> 并附有指向来源的链接**。该图片无法生成，且笔记中此前没有可保留的快照，但笔记的其余部分已完成更新。请参阅[摘录图片导入结果](/docs/reference/excerpt-images#import-outcomes)。
+- **以“摘录图片：……”开头的提示通知**。这统计了未能全新生成的图片数量。“保留了笔记中的原图，未能刷新”表示 ZotLit 保留了笔记中已有的快照。请参阅[摘录图片导入结果](/docs/reference/excerpt-images#import-outcomes)。
 - **图片显示为 <UiLabel name={m.excerpt_image_import_disabled()} />** 在 <SettingsPath page={m.settings_page_attachments()} /> 下开启 <UiLabel name={m.settings_attachment_import_name()} />，然后再次更新笔记。
 - **提示通知：<UiLabel name={m.batch_all_no_library_in_scope()} />** 所选的 Zotero 文库均不在 ZotLit 读取的数据库中，因此不会打开对话框。请检查你的[文库范围设置](/docs/reference/settings#library-scope)。如果仅缺少部分文库，更新仍会继续，确认对话框会列出跳过了多少个文库。
-- **Zotero 提示所选内容过多，或要求开启服务器**。 较多的选择项需要通过本地服务器发送给 Obsidian。请在 Obsidian 中开启本地服务器，或在 Zotero 中选择较少的文献。请参阅[设置实时更新](/docs/how-to/set-up-live-updates)。
-- **Zotero 每次打开 Obsidian 时都会请求确认。** 这是 Zotero 针对 `obsidian://` 链接的内置安全提示。请参阅[取消 Zotero 安全提示](/docs/how-to/suppress-zotero-security-prompt)。
+- **Zotero 提示所选内容过多，或要求开启服务器**。较多的选择项需要通过本地服务器发送给 Obsidian。请在 Obsidian 中开启本地服务器，或在 Zotero 中选择较少的文献。请参阅[设置实时更新](/docs/how-to/set-up-live-updates)。
+- **Zotero 每次打开 Obsidian 时都会请求确认**。这是 Zotero 针对 `obsidian://` 链接的内置安全提示。请参阅[取消 Zotero 安全提示](/docs/how-to/suppress-zotero-security-prompt)。
 
 ## 下一步 [#next]
 

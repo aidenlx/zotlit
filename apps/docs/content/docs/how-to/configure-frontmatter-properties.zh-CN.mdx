@@ -55,7 +55,7 @@ import { m } from "@/paraglide/messages.js";
 
 ## 将 Zotero 标签添加到笔记属性中 [#zotero-tags]
 
-使用 `obsidian_tag` 过滤器创建受管的 `tags` 字段。该过滤器从 `zt.tags` 读取 Zotero 标签对象，并返回 Obsidian 标签值数组。
+使用 `obsidian_tag` 过滤器创建托管的 `tags` 字段。该过滤器从 `zt.tags` 读取 Zotero 标签对象，并返回 Obsidian 标签值数组。
 
 <Steps>
   <Step>
@@ -91,7 +91,7 @@ tags:
 
 该过滤器会根据 Obsidian 的标签规则规范化空格及其他字符。frontmatter 中的标签值不需要以 `#` 开头。有关所有规范化规则，请参阅 [`obsidian_tag` 过滤器参考](/docs/reference/templates/syntax#obsidian-tag)。
 
-如需借助 Agent 完成配置，请安装 [ZotLit 模板 skill](/docs/install-skill)，并让 Agent 使用表达式 `zt.tags | obsidian_tag` 添加受管的 `tags` 字段。[模板工作台 CLI](/docs/reference/template-workbench-cli) 可供 Agent 配置该字段并测试渲染结果。
+如需借助 Agent 完成配置，请安装 [ZotLit 模板 skill](/docs/install-skill)，并让 Agent 使用表达式 `zt.tags | obsidian_tag` 添加托管的 `tags` 字段。[模板工作台 CLI](/docs/reference/template-workbench-cli) 可供 Agent 配置该字段并测试渲染结果。
 
 ## 编辑或移除字段 [#edit-or-remove-a-field]
 
@@ -126,11 +126,11 @@ tags:
 
 这会重新计算所有字段表达式，并根据每个字段的合并策略将结果写入当前笔记的 frontmatter。
 
-内置字段也是常规条目，因此你可以在此编辑或移除 `citekey`。有关默认配置方案声明的内容，请参阅[默认字段](/docs/reference/templates/frontmatter#default-fields)。
+内置字段也是常规配置项，因此你可以在此编辑或移除 `citekey`。有关默认配置方案声明的内容，请参阅[默认字段](/docs/reference/templates/frontmatter#default-fields)。
 
 ## 基于 Agent 的配置 [#agent-based-configuration]
 
-配备 ZotLit 模板 skill 的 Agent 可以通过[模板工作台 CLI](/docs/reference/template-workbench-cli) 配置受管 frontmatter 字段模板。
+配备 ZotLit 模板 skill 的 Agent 可以通过[模板工作台 CLI](/docs/reference/template-workbench-cli) 配置托管 frontmatter 字段模板。
 
 <Callout type="info" title="JavaScript 字段与功能开关">
   属性通过单个成员声明其值。`expr` 保存一个 Liquid 表达式，`value` 保存一个
@@ -146,7 +146,7 @@ tags:
 <Cards>
   <Card
     title="安装 ZotLit skill"
-    description="让 Agent 配置和测试受管 frontmatter 字段。"
+    description="让 Agent 配置和测试托管 frontmatter 字段。"
     href="/docs/install-skill"
   />
   <Card
@@ -166,7 +166,7 @@ tags:
   />
   <Card
     title="模板工作台 CLI"
-    description="通过 Obsidian CLI 配置受管 frontmatter 字段模板。"
+    description="通过 Obsidian CLI 配置托管 frontmatter 字段模板。"
     href="/docs/reference/template-workbench-cli"
   />
 </Cards>

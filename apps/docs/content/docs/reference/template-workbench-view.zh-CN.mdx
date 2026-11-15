@@ -18,9 +18,9 @@ import { m } from "@/paraglide/messages.js";
 
 | 文档     | 标签页标题                                               | 标签页                                              | 预览                           |
 | -------- | -------------------------------------------------------- | --------------------------------------------------- | ------------------------------ |
-| 配置方案 | 配置方案名称，后接 `Profile`                             | 六个                                                | 单篇文献的文献笔记             |
+| 配置方案 | 配置方案名称，后接 `· 配置方案`                          | 六个                                                | 单篇文献的文献笔记             |
 | 引文文本 | <UiLabel name={m.template_workbench_title_citation()} /> | 一个，<UiLabel name={m.workbench_tab_citation()} /> | 单条插入的引用                 |
-| 片段     | 片段名称，后接 `Partial`                                 | 一个，<UiLabel name={m.workbench_tab_partial()} />  | 某个模板调用该片段时的渲染结果 |
+| 片段     | 片段名称，后接 `· 片段`                                  | 一个，<UiLabel name={m.workbench_tab_partial()} />  | 某个模板调用该片段时的渲染结果 |
 
 你输入的每一个字符都会实时预览，包括尚未保存的修改。编辑依托 Obsidian 的自动保存机制，并支持其撤销和重做。包含错误的文档仍可正常编辑与保存，编辑器中会显示相应的诊断信息。
 
@@ -143,7 +143,7 @@ Obsidian 会将“预览”面板的显示状态、宽度以及位于编辑器�
 
 窗格标题栏标明了当前读取的根节点：<UiLabel name={m.workbench_fields_root_note()} />、<UiLabel name={m.workbench_fields_root_annotation()} />、<UiLabel name={m.workbench_fields_root_filename()} /> 或 <UiLabel name={m.workbench_fields_root_citation()} />。
 
-根节点会跟随当前正在编辑的配置方案部分：笔记正文及其属性列出笔记根节点，“标注分节”列出标注根节点，清单中的 `filename` 值列出笔记名称根节点，“引文文本”则列出引用根节点。
+根节点会跟随当前正在编辑的配置方案部分：笔记正文及其属性列出笔记根节点，“标注分节”列出标注根节点，清单中的 `filename` 值列出笔记名称根节点，“引文文本”则列出引文根节点。
 
 独立的浏览器会从其旁边的模板工作台视图中获取根节点。当锚定在某个标注上时，列表上方会显示面包屑路径 <UiLabel name={m.template_data_explorer_note_root()} />，其返回按钮（工具提示为 <UiLabel name={m.template_data_explorer_back_to_note_root()} />）可将列表切回笔记根节点。
 
@@ -165,7 +165,7 @@ Obsidian 会将“预览”面板的显示状态、宽度以及位于编辑器�
 <UiLabel name={m.workbench_explorer_section_organization()} />、
 <UiLabel name={m.workbench_explorer_section_links()} /> 和
 <UiLabel name={m.workbench_explorer_section_record()} />
-之下。引用根节点目前暂无其他分节。
+之下。引文根节点目前暂无其他分节。
 
 点击分节标题可以折叠或展开该分节。窗格选择控件旁的按钮可全部展开或全部折叠所有分节，工具提示分别为 <UiLabel name={m.workbench_explorer_expand_all()} /> 或 <UiLabel name={m.workbench_explorer_collapse_all()} />。窗格菜单中也提供同样的操作。
 
@@ -275,7 +275,7 @@ Obsidian 会将“预览”面板的显示状态、宽度以及位于编辑器�
 
 ## 片段 [#partial]
 
-片段在唯一的 <UiLabel name={m.workbench_tab_partial()} /> 标签页中打开。其标签页标题为片段名称后接 `Partial`。
+片段在唯一的 <UiLabel name={m.workbench_tab_partial()} /> 标签页中打开。其标签页标题为片段名称后接 `· 片段`。
 
 片段自身不包含任何数据：它借助调用它的模板所提供的数据进行渲染。因此，以 <UiLabel name={m.workbench_partial_result_heading()} /> 为标题的预览会询问你以哪个调用者的身份进行渲染。当“预览”面板显示时，视图的窗格菜单提供 <UiLabel name={m.template_workbench_preview_as_note()} />、<UiLabel name={m.template_workbench_preview_as_annotation()} /> 和 <UiLabel name={m.template_workbench_preview_as_citation()} />。它默认以“笔记”身份打开，并针对每个文件分别记住你的选择。ZotLit 绝不会根据调用该片段的模板去猜测调用者身份。
 
@@ -335,7 +335,7 @@ Obsidian 会将“预览”面板的显示状态、宽度以及位于编辑器�
   />
   <Card
     title="模板工作台 CLI"
-    description="允许 Agent 通过 Obsidian CLI 检查并测试模板。"
+    description="允许智能体通过 Obsidian CLI 检查并测试模板。"
     href="/docs/reference/template-workbench-cli"
   />
 </Cards>

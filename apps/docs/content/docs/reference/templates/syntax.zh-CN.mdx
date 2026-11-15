@@ -334,9 +334,9 @@ annotation 参数是必填的。缺失或为 null 时会抛出错误。
 文献引用标识为 null 的条目会被忽略，其余条目保持原顺序。
 
 <Callout type="warn" title="包含前注的形式需要 natbib 或 BibLaTeX">
-  LaTeX 内核自带的 `\cite` 只接收一个可选参数。上述双参数形式 `\cite[see][p. 3]
-  {smith2024}` 必须在 natbib 或 BibLaTeX 环境下编译，这两个宏包重定义了 `\cite`
-  以同时接收两个参数。无前缀的引用最多输出一个可选参数，可在原生 LaTeX
+  上述双参数形式 `\cite[see][p. 3]{smith2024}` 必须在 natbib 或 BibLaTeX
+  环境下编译：LaTeX 内核自带的 `\cite` 只接收一个可选参数，而这两个宏包重定义了
+  `\cite` 以同时接收两个参数。无前缀的引用最多输出一个可选参数，可在原生 LaTeX
   文档中直接工作。
 </Callout>
 
@@ -427,7 +427,7 @@ annotation 参数是必填的。缺失或为 null 时会抛出错误。
 | `!!!`               | _（丢弃）_         | 规格化后无保留字符                  |
 
 `obsidian_tag` 专门针对 Obsidian 的标签规则进行规格化。如果只是进行通用的数组文本替换而无需针对标签规则处理，请使用 `arr_replace`。
-有关受管的 `tags` 属性字段配置，请参阅[将 Zotero 标签添加到笔记属性](/docs/how-to/configure-frontmatter-properties#zotero-tags)。
+有关托管的 `tags` 属性字段配置，请参阅[将 Zotero 标签添加到笔记属性](/docs/how-to/configure-frontmatter-properties#zotero-tags)。
 
 ### `{% suffix %}`：文件名冲突防范 [#suffix-filename-collision-guard]
 

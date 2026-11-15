@@ -123,7 +123,7 @@ import { m } from "@/paraglide/messages.js";
   </Step>
 </Steps>
 
-<Callout type="info" title="将日志恢复关闭">
+<Callout type="info" title="重新关闭日志记录">
   不再需要持续记录日志后，请将 <UiLabel name={m.settings_log_level_name()} />{" "}
   调回 **info** 并关闭
   <UiLabel name={m.settings_log_to_file_name()} />。
@@ -188,8 +188,8 @@ import { m } from "@/paraglide/messages.js";
 
     前往 **帮助 > 调试输出记录**（Help > Debug Output Logging）并点击 **启用日志并重启…**（Restart with Logging Enabled…）。
 
-    <Callout type="warn" title="请勿使用排障模式">
-      此时会弹出一个确认对话框。请不要选择 **在排障模式下重启**（Restart in Troubleshooting Mode）：该模式会禁用所有插件（包括 Companion），从而无法捕获任何调试输出。
+    <Callout type="warn" title="请勿使用故障排除模式">
+      此时会弹出一个确认对话框。请不要选择 **以故障排除模式重启**（Restart in Troubleshooting Mode）：该模式会禁用所有插件（包括 Companion），从而无法捕获任何调试输出。
     </Callout>
 
   </Step>

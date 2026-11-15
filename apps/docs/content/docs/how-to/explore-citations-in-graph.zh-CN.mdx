@@ -31,14 +31,14 @@ Obsidian 原生功能全部保留：搜索、颜色分组、深度、出链与�
 
 ZotLit 会在图谱控制面板中添加六个选项。点击任意图谱右上角的设置图标即可打开该面板。
 
-| 分组 | 选项                                                             | 默认值 | 作用                                                             |
-| ---- | ---------------------------------------------------------------- | ------ | ---------------------------------------------------------------- |
-| 筛选 | <UiLabel name={m.graph_option_pandoc_citations_name()} />        | 开启   | 为每个 `[@doe2024]` 引用绘制一条连线。                           |
-| 筛选 | <UiLabel name={m.graph_option_wikilink_citations_name()} />      | 开启   | 为每个指向文献笔记的无别名链接绘制一条连线。                     |
-| 筛选 | <UiLabel name={m.graph_option_citation_connected_only_name()} /> | 关闭   | 隐藏除文献笔记、被引文献节点以及引用它们的笔记之外的所有节点。   |
-| 显示 | <UiLabel name={m.graph_option_author_title_labels_name()} />     | 关闭   | 在文献笔记和被引文献节点上显示作者、年份和简短标题。             |
-| 显示 | <UiLabel name={m.graph_option_color_citation_links_name()} />    | 关闭   | 为引用连线使用单独的颜色着色，包括被归类为引用的现有 Wiki 链接。 |
-| 显示 | <UiLabel name={m.graph_option_citation_popover_name()} />        | 关闭   | 为文献笔记和被引文献节点启用引用悬停预览。                       |
+| 分组 | 选项                                                             | 默认值 | 作用                                                           |
+| ---- | ---------------------------------------------------------------- | ------ | -------------------------------------------------------------- |
+| 筛选 | <UiLabel name={m.graph_option_pandoc_citations_name()} />        | 开启   | 为每个 `[@doe2024]` 引用绘制一条连线。                         |
+| 筛选 | <UiLabel name={m.graph_option_wikilink_citations_name()} />      | 开启   | 为每个指向文献笔记的无别名链接绘制一条连线。                   |
+| 筛选 | <UiLabel name={m.graph_option_citation_connected_only_name()} /> | 关闭   | 隐藏除文献笔记、被引文献节点以及引用它们的笔记之外的所有节点。 |
+| 显示 | <UiLabel name={m.graph_option_author_title_labels_name()} />     | 关闭   | 在文献笔记和被引文献节点上显示作者、年份和简短标题。           |
+| 显示 | <UiLabel name={m.graph_option_color_citation_links_name()} />    | 关闭   | 为引用连线单独着色，包括被归类为引用的现有 Wiki 链接。         |
+| 显示 | <UiLabel name={m.graph_option_citation_popover_name()} />        | 关闭   | 为文献笔记和被引文献节点启用引用悬停预览。                     |
 
 仅当在 <SettingsPath page={m.settings_page_citations()} /> 中开启 <UiLabel name={m.settings_citation_wikilink_citations_name()} /> 时，才会显示 <UiLabel name={m.graph_option_wikilink_citations_name()} /> 选项。关闭该设置后，`[[wikilink]]` 不再视作引用，保留其原生含义。
 
@@ -68,7 +68,7 @@ Obsidian 的**仅现有文件**（Existing files only）会隐藏被引文献节
 
 开启 <UiLabel name={m.graph_option_color_citation_links_name()} /> 可为引用连线单独着色。关闭时，所有连线均采用原生颜色。悬停在连接的节点上时，连线保持 Obsidian 的高亮颜色。
 
-有关分组起始颜色、被引文献节点颜色以及引用连线颜色的详细说明，请参阅[主题 Hook](/docs/reference/theme-hooks#graph)。
+有关分组起始颜色、被引文献节点颜色以及引用连线颜色的详细说明，请参阅[主题钩子](/docs/reference/theme-hooks#graph)。
 
 ## 将文献笔记作为一个分组着色 [#color-your-literature-notes-as-a-group]
 
@@ -132,7 +132,7 @@ Obsidian 的**仅现有文件**（Existing files only）会隐藏被引文献节
 
 该预设仅作用于由该命令打开的图谱标签页。单独打开的普通图谱保持其自身默认值。将图谱加入书签可在日后恢复所选选项。若删除了文献笔记分组，再次运行该命令会重新恢复它。
 
-在加入作者和标题标签之前保存或收藏的图谱会保留旧版标签。再次运行引用关系图谱命令即可应用当前预设，或者在该图谱中直接开启 <UiLabel name={m.graph_option_author_title_labels_name()} />。
+在加入作者和标题标签之前保存或加入书签的图谱会保留旧版标签。再次运行引用关系图谱命令即可应用当前预设，或者在该图谱中直接开启 <UiLabel name={m.graph_option_author_title_labels_name()} />。
 
 <Callout type="info">
   局部引用关系图谱不会隐藏孤立节点。Obsidian 的局部关系图谱面板根本没有
@@ -209,7 +209,7 @@ Obsidian 的**仅现有文件**（Existing files only）会隐藏被引文献节
     href="/docs/reference/citation-links"
   />
   <Card
-    title="主题 Hook"
+    title="主题钩子"
     description="通过主题或 CSS 代码片段重新定义图谱的节点和连线颜色。"
     href="/docs/reference/theme-hooks#graph"
   />

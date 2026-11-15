@@ -55,7 +55,7 @@ ZotLit 在保存时会保留文件中的所有其他键。
 | 键           | 取值                                                                                                                                                                                                                        |
 | ------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `type`       | 布局方式：`annotations`、`table`、`list` 或 `cards`。必填。                                                                                                                                                                 |
-| `name`       | 视图名称。必填，且不能与文件中的其他视图同名。当两个视图同名时，文件将在对应行位置显示错误提示。                                                                                                                            |
+| `name`       | 视图名称。必填，且不能与文件中的其他视图同名。当两个视图同名时，文件将显示错误提示来代替各行。                                                                                                                              |
 | `from`       | 每行对应的记录类型：`annotations`、`attachments` 或 `items`。必填。                                                                                                                                                         |
 | `filters`    | 该视图专属的筛选器。参见[筛选器](#filters)。                                                                                                                                                                                |
 | `sort`       | `property` 与 `direction` 对的列表。排在前面的键优先排序。`direction` 为 `ASC` 或 `DESC`；默认为 `ASC`。条目视图还可以按[仓库属性](#vault-sort)排序。                                                                       |
@@ -67,7 +67,7 @@ ZotLit 在保存时会保留文件中的所有其他键。
 
 `property` 的值为视图记录的属性路径，与 [ZotLit Query](/docs/reference/commands#query-cli) 中的命名一致。例如，在条目视图中 `title` 为文献标题，而在标注视图中 `item.title` 为文献标题。
 
-`order` 还支持 `vault.literatureNote`（在条目表格中）、表示[仓库属性](#vault)的 `vault.<name>`（在条目视图中），以及表示[公式](#formulas)的 `formula.<name>`。`sort` 和 `groupBy` 目前暂不支持公式：按公式排序或分组的视图将在行位置显示错误。`groupBy` 同样不支持仓库属性。
+`order` 还支持 `vault.literatureNote`（在条目表格中）、表示[仓库属性](#vault)的 `vault.<name>`（在条目视图中），以及表示[公式](#formulas)的 `formula.<name>`。`sort` 和 `groupBy` 目前暂不支持公式：按公式排序或分组的视图将显示错误来代替各行。`groupBy` 同样不支持仓库属性。
 
 ### 布局与记录 [#layouts]
 
@@ -78,7 +78,7 @@ ZotLit 在保存时会保留文件中的所有其他键。
 | `list`        | `annotations`、`attachments` 或 `items` |
 | `cards`       | `annotations`、`attachments` 或 `items` |
 
-若视图的 `type` 与 `from` 不匹配，将在行位置显示提示信息。
+若视图的 `type` 与 `from` 不匹配，将显示提示信息来代替各行。
 
 ### 布局选项 [#layout-options]
 
@@ -106,7 +106,7 @@ filters:
         - tags.contains("result")
 ```
 
-`and` 匹配符合所有条目的记录。`or` 匹配符合至少一项的记录。筛选器编辑器会将 `not` 分组作为单个表达式条件打开。
+`and` 匹配符合其中所有条件的记录。`or` 匹配符合至少一项的记录。筛选器编辑器会将 `not` 分组作为单个表达式条件打开。
 
 筛选器可以通过 `this.item` 和 `this.attachment` 引用查询上下文（Query Context）：
 
@@ -292,7 +292,7 @@ views:
 
 ZotLit 会以当前应用的语言写入视图名称。
 
-## 相关内容 [#see-also]
+## 参见 [#see-also]
 
 <Cards>
   <Card

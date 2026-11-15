@@ -85,12 +85,12 @@ Pandoc Reference List 可以将 `[[@doe2024]]` 视为引用。而 ZotLit 仅在 
 
 ## 常见问题与排查 [#if-you-see-something-else]
 
-- **参考文献侧边栏显示“Reference Error**” → 继续操作前请修复所有 Reference Error；参见[检查、复制与排查参考文献](/docs/how-to/review-copy-troubleshoot-references)。
-- **侧边栏提示“@\{citekey\} matches multiple items in your Zotero library.**” → 在同一个文库或选定范围内的两个文库中，有两篇文献共用了该标识。ZotLit 不会按文库顺序自动选取。请在 Zotero 中为其中一篇文献分配不同的标识，或缩小 <UiLabel name={m.settings_library_scope_name()} /> 的范围；参见[冲突的文献引用标识](/docs/reference/citation-links#ambiguous-key)。
+- **参考文献侧边栏显示引用错误** → 继续操作前请修复所有引用错误；参见[查看、复制与排查参考文献](/docs/how-to/review-copy-troubleshoot-references)。
+- **侧边栏提示“@\{citekey\} 在 Zotero 文库中对应多个条目。”** → 在同一个文库或选定范围内的两个文库中，有两篇文献共用了该标识。ZotLit 不会按文库顺序自动选取。请在 Zotero 中为其中一篇文献分配不同的标识，或缩小 <UiLabel name={m.settings_library_scope_name()} /> 的范围；参见[冲突的文献引用标识](/docs/reference/citation-links#ambiguous-key)。
 - **两个插件同时影响引用的外观** → Pandoc Reference List 仍处于启用状态。请在**设置 > 第三方插件**中将其关闭，并仅用 ZotLit 进行测试。
 - **ZotLit 过滤器报错 `csl-ambiguous`** → 笔记中同时存在 `csl` 和 `zotlit-csl`。请仅保留其中一个。
 
-## 后续步骤 [#next]
+## 下一步 [#next]
 
 - [导出带引文的笔记](/docs/how-to/export-note-with-citations) — 使用 ZotLit 的 <Command inline name={m.command_pandoc_export_name()} /> 将笔记导出为 Word。
 - [使用原生 Pandoc 导出](/docs/how-to/export-with-native-pandoc) — 保留参考文献文件、多个输入源、CSL 路径或 URL 以及其他 Pandoc 选项。

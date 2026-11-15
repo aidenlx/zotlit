@@ -27,7 +27,7 @@ ZotLit 2.2.3 支持 Zotero 9 和 Zotero 10，并需要运行在 Windows、macOS 
 
 ## 关闭 Zotero 时 [#with-zotero-closed]
 
-在关闭 Zotero 的情况下，你依然可以使用文库视图、搜索分类，以及在 Obsidian 中打开带有标注的 PDF。ZotLit 直接从磁盘读取 Zotero 的数据库文件，这项操作无需任何附加插件。
+在关闭 Zotero 的情况下，你依然可以使用文库视图、搜索文库，以及在 Obsidian 中打开带有标注的 PDF。ZotLit 直接从磁盘读取 Zotero 的数据库文件，这项操作无需任何附加插件。
 
 当你从 Obsidian 编辑标注或将草稿导出为 Word 时，需要保持 Zotero 运行。在 Windows 上配合 Zotero 10 使用时，或者在 Linux 上使用 ext4 等文件系统时，ZotLit 显示你在 Zotero 中所作更改可能会有微小延迟。安装 Companion 可以解决此问题——它会让 Zotero 在每次更改后不久将最新的更改写入主数据库文件；而在 macOS 上则无需如此。
 
@@ -35,7 +35,7 @@ ZotLit 2.2.3 支持 Zotero 9 和 Zotero 10，并需要运行在 Windows、macOS 
 
 ZotLit 仅针对 Zotero 9 和 Zotero 10 的数据库进行过测试。若使用更旧或更新的 Zotero，ZotLit 仍会尝试读取数据库并在日志中写入警告：“Zotero schema version is outside the range ZotLit is verified against”（Zotero 架构版本不在 ZotLit 验证的范围内）。在此情况下读取的内容未经验证。
 
-Companion 无法安装在 Zotero 8 或更早版本上，因为它仅支持 Zotero 9.0 至 10.x。如果在 Zotero 8 或更早版本上，请在正式依赖 ZotLit 之前将 Zotero 更新至 9 或 10。
+Companion 无法安装在 Zotero 8 或更早版本上，因为它仅支持 Zotero 9.0 至 10.x。如果你使用的是 Zotero 8 或更早版本，请在正式使用 ZotLit 之前将 Zotero 更新至 9 或 10。
 
 ## Obsidian 版本过旧时 [#when-obsidian-is-too-old]
 
@@ -65,6 +65,6 @@ ZotLit 仅针对 Zotero 9 和 10 进行过测试，且 Companion 插件无法安
 
 你需要与已安装的 ZotLit 插件版本相匹配的 Companion 版本，即 ZotLit 2.2 需要 Companion 2.2。在更新 Companion 之前，实时更新和处理多个条目的操作将停止工作，ZotLit 会提示你进行更新。
 
-## 后续操作 [#next-step]
+## 下一步 [#next-step]
 
 如果你刚开始使用 ZotLit，请先从 <LessonLink slug="connect-zotero-to-obsidian" /> 开始，或前往安装配置指南[安装 ZotLit](/docs/install-zotlit) 与[安装 Companion](/docs/install-companion)。

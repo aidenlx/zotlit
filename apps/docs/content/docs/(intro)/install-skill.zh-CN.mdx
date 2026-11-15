@@ -1,6 +1,6 @@
 ---
 title: "安装 ZotLit Skills"
-searchTitle: "在 Zotero 文库中使用 Claude Code 或 Codex"
+searchTitle: "配合 Zotero 文库使用 Claude Code 或 Codex"
 description: "让 Claude Code、Codex 或 pi 在 Obsidian 中配合 Zotero 文库工作：安装涵盖模板、文库查询、引用与 Pandoc 的四项 skill。"
 ---
 
@@ -12,12 +12,12 @@ import { Callout } from "@/components/callout";
 
 一次安装即可提供四项 skill。根据你的工作需求选择安装：
 
-| Skill              | 对你的研究所起的作用                                                                           | 示例请求                                 | 了解更多                                                                   |
-| ------------------ | ---------------------------------------------------------------------------------------------- | ---------------------------------------- | -------------------------------------------------------------------------- |
-| `zotlit-template`  | 创建、编辑并测试塑造文献笔记的模板，并解释模板错误。                                           | “在我的笔记标题下方添加 Zotero 标签。”   | [Template Workbench CLI](/docs/reference/template-workbench-cli)           |
-| `zotlit-query`     | 搜索你的 Zotero 文献、文件和标注，用于文献综述、阅读计划以及查找缺失或损坏的 PDF。             | “我的毕业论文分类中有哪些文献没有 PDF？” | [查询 Zotero 文库](/docs/how-to/query-zotero-library)                      |
-| `zotlit-citations` | 查找哪些笔记引用了某篇文献、某篇笔记引用了什么内容、标注在哪里被使用，以及排查引用失效的原因。 | “我的哪些笔记引用了 Smith 2020？”        | [检查与排查参考文献问题](/docs/how-to/review-copy-troubleshoot-references) |
-| `zotlit-pandoc`    | 为你的手稿配置、刷新并运行原生 Pandoc 工作流，并诊断导出问题。                                 | “为我的章节草稿配置原生 Pandoc 导出。”   | [使用原生 Pandoc 导出](/docs/how-to/export-with-native-pandoc)             |
+| Skill              | 对你的研究所起的作用                                                                           | 示例请求                                 | 了解更多                                                                     |
+| ------------------ | ---------------------------------------------------------------------------------------------- | ---------------------------------------- | ---------------------------------------------------------------------------- |
+| `zotlit-template`  | 创建、编辑并测试塑造文献笔记的模板，并解释模板错误。                                           | “在我的笔记标题下方添加 Zotero 标签。”   | [模板工作台 CLI](/docs/reference/template-workbench-cli)                     |
+| `zotlit-query`     | 搜索你的 Zotero 文献、文件和标注，用于文献综述、阅读计划以及查找缺失或损坏的 PDF。             | “我的毕业论文分类中有哪些文献没有 PDF？” | [查询 Zotero 文库](/docs/how-to/query-zotero-library)                        |
+| `zotlit-citations` | 查找哪些笔记引用了某篇文献、某篇笔记引用了什么内容、标注在哪里被使用，以及排查引用失效的原因。 | “我的哪些笔记引用了 Smith 2020？”        | [查看、复制与排查参考文献](/docs/how-to/review-copy-troubleshoot-references) |
+| `zotlit-pandoc`    | 为你的手稿配置、刷新并运行原生 Pandoc 工作流，并诊断导出问题。                                 | “为我的章节草稿配置原生 Pandoc 导出。”   | [使用原生 Pandoc 导出](/docs/how-to/export-with-native-pandoc)               |
 
 ## 开始之前 [#before-you-start]
 
@@ -81,7 +81,7 @@ import { Callout } from "@/components/callout";
 
 > 告诉我你拥有哪些 ZotLit skills，然后检查 ZotLit 是否在此仓库中正常响应。请不要更改任何文件。
 
-智能体应当说出你安装的 ZotLit skills 名称，并列出 Obsidian 为该仓库报告的 ZotLit 命令。你的文件不会受到任何修改。
+智能体应当列出你安装的 ZotLit skills 名称，以及 Obsidian 为该仓库报告的 ZotLit 命令。你的文件不会受到任何修改。
 
 ## 发送你的第一批请求 [#make-your-first-requests]
 
@@ -92,13 +92,13 @@ import { Callout } from "@/components/callout";
 - **引用：**“使用 ZotLit citations skill 找出所有引用了 Smith 2020 的笔记，并显示每次引用所在的上下文句子。”
 - **Pandoc：**“使用 ZotLit Pandoc skill 为我的章节草稿配置原生 Pandoc 导出，然后将第 1 章转换为 Word。”
 
-模板 skill 会对照真实的 Zotero 条目校验每次编辑，并汇报其验证过的输出结果。Pandoc skill 在替换已有输出文件前会先行询问。
+模板 skill 会对照真实的 Zotero 条目校验每次编辑，并反馈其验证过的输出结果。Pandoc skill 在替换已有输出文件前会先行询问。
 
 ## 另请参阅 [#see-also]
 
 <Cards>
   <Card
-    title="Template Workbench CLI"
+    title="模板工作台 CLI"
     description="了解模板 skill、CLI 以及两者的安全边界如何协同运作。"
     href="/docs/reference/template-workbench-cli"
   />
@@ -108,7 +108,7 @@ import { Callout } from "@/components/callout";
     href="/docs/how-to/query-zotero-library"
   />
   <Card
-    title="检查与排查参考文献问题"
+    title="查看、复制与排查参考文献"
     description="查看笔记引用的内容并修复无法解析的引用。"
     href="/docs/how-to/review-copy-troubleshoot-references"
   />

@@ -50,7 +50,7 @@ settings）会将这六个选项与原生选项一同重置为默认值。
 
 ![编辑器中打开的配置方案文档，旁边是文献笔记配置方案设置页面，列出了默认配置方案、图书配置方案和 book-details 片段](/img/changelog/literature-note-profiles.webp)
 
-2.1 版本由多个独立文件组合构建一篇文献笔记：笔记文件、受控区域文件、文件名文件、标注文件以及保存在设置中的属性字段列表。2.2 版本则将整篇笔记归入每个配置方案单独对应的 Markdown 文档中。模板文件夹中的每个 `zotlit-profile.<slug>.md` 统一整合了笔记名称、笔记文件夹、属性、笔记正文以及标注格式。
+2.1 版本由多个独立文件组合构建一篇文献笔记：笔记文件、托管区域文件、文件名文件、标注文件以及保存在设置中的属性字段列表。2.2 版本则将整篇笔记归入每个配置方案单独对应的 Markdown 文档中。模板文件夹中的每个 `zotlit-profile.<slug>.md` 统一整合了笔记名称、笔记文件夹、属性、笔记正文以及标注格式。
 
 另有两个辅助文件使体系更加完整：`zotlit-citation.md` 保存在整个仓库中统一生效的每次插入引文的文本，而每个 `zotlit-partial.<name>.md` 保存多个配置方案共享的模板文本。[配置方案文档](/docs/reference/templates/profile-document)详细介绍了这三类文档的格式。
 
@@ -110,7 +110,7 @@ settings）会将这六个选项与原生选项一同重置为默认值。
 
 ### 2.1 模板文件被文档取代 [#21-template-files-give-way-to-documents]
 
-升级不会自动转换任何内容。你的 `zotlit-note.liquid.md`、`zotlit-content.liquid.md`、`zotlit-filename.liquid.md`、`zotlit-annotation.liquid.md`、两个引文文件以及用作片段的任何文件，在主动转换之前仍会继续加载并正常渲染。更新后，欢迎视图会提示一次 <UiLabel name={m.welcome_template_conversion_title()} />，设置中也会通过 <UiLabel name={m.settings_template_conversion_reminder_action()} /> 再次提示。点击一次即可将笔记、受控区域、文件名和标注文件合并为 `zotlit-profile.default.md`，将两个引文文件合并为 `zotlit-citation.md`，并将其余文件分别转换为独立的片段。ZotLit 在写入任何内容之前都会验证输出与原有渲染结果逐字节一致，然后将旧文件移入 Obsidian 配置的回收站。转换过程需要从你的 Zotero 文库中选取一个条目进行对比验证，如果你自定义过标注文件，还需要选取一个标注。
+升级不会自动转换任何内容。你的 `zotlit-note.liquid.md`、`zotlit-content.liquid.md`、`zotlit-filename.liquid.md`、`zotlit-annotation.liquid.md`、两个引文文件以及用作片段的任何文件，在主动转换之前仍会继续加载并正常渲染。更新后，欢迎视图会提示一次 <UiLabel name={m.welcome_template_conversion_title()} />，设置中也会通过 <UiLabel name={m.settings_template_conversion_reminder_action()} /> 再次提示。点击一次即可将笔记、托管区域、文件名和标注文件合并为 `zotlit-profile.default.md`，将两个引文文件合并为 `zotlit-citation.md`，并将其余文件分别转换为独立的片段。ZotLit 在写入任何内容之前都会验证输出与原有渲染结果逐字节一致，然后将旧文件移入 Obsidian 配置的回收站。转换过程需要从你的 Zotero 文库中选取一个条目进行对比验证，如果你自定义过标注文件，还需要选取一个标注。
 
 如果继续使用旧文件，会产生两个影响：设置中旧的配置行已移除，因此应用内不再提供属性字段列表的编辑器；在运行转换之前，笔记无法使用自定义配置方案——ZotLit 会拒绝创建该笔记并提示先转换旧模板。在转换完成前，配置方案页面不会显示添加和导入按钮，所有配置方案文件操作均保持禁用；如果需要，快捷切换选择器仍可创建配置方案。你的默认文献笔记会完全保持原样正常工作。
 

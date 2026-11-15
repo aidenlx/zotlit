@@ -35,13 +35,13 @@ import { m } from "@/paraglide/messages.js";
 
 ## ZotLit 要求的结构 [#shape]
 
-配置方案文档按顺序包含四个部分：清单（manifest）、笔记源码、可选的受管块（managed block）以及标注分节。[配置方案文档](/docs/reference/templates/profile-document#document-structure)详细介绍了各部分、其分界线以及示例文件。
+配置方案文档按顺序包含四个部分：清单（manifest）、笔记源码、可选的托管块（managed block）以及标注分节。[配置方案文档](/docs/reference/templates/profile-document#document-structure)详细介绍了各部分、其分界线以及示例文件。
 
 保存之前，必须满足以下所有条件：
 
 - 文件的第一行必须严格为 `---`，且后续有一行 `---` 用于闭合清单。
 - `id` 为 12 位字母或数字，且该文件夹中没有其他配置方案文档使用相同的 ID。共享同一 ID 的配置方案都会被 ZotLit 排除。
-- 笔记源码最多包含一个受管块，以 `{% managed %}` 开头，以 `{% endmanaged %}` 结尾。更新笔记时，ZotLit 仅重新渲染该块，并保留源码的其余部分不变。有关更新会重写哪些内容，请参见[文献笔记与受管区域](/docs/reference/literature-notes)。
+- 笔记源码最多包含一个托管块，以 `{% managed %}` 开头，以 `{% endmanaged %}` 结尾。更新笔记时，ZotLit 仅重新渲染该块，并保留源码的其余部分不变。有关更新会重写哪些内容，请参见[文献笔记与托管区域](/docs/reference/literature-notes)。
 - 笔记源码之后必须且只能出现一行 `--- zotlit:annotation ---`。
 - `id: default` 的文档既不能包含匹配条件，也不能包含绑定。
 - ZotLit 写入的属性应位于清单中，而不是笔记正文中。有关条目形式、合并策略和保留键，请参见[属性](/docs/reference/templates/frontmatter)。
@@ -55,8 +55,8 @@ import { m } from "@/paraglide/messages.js";
 | 文件未以清单开头                        | <UiLabel name={m.workbench_problem_invalid_document()} />             |
 | 清单不是有效的 YAML，或某个键未通过验证 | <UiLabel name={m.workbench_problem_invalid_manifest()} />             |
 | 清单片段被命名为 `annotation`           | <UiLabel name={m.workbench_problem_reserved_annotation_partial()} />  |
-| 笔记源码包含多个受管块                  | <UiLabel name={m.workbench_problem_duplicate_managed_block()} />      |
-| 受管块未正确开启或闭合                  | <UiLabel name={m.workbench_problem_invalid_managed_block()} />        |
+| 笔记源码包含多个托管块                  | <UiLabel name={m.workbench_problem_duplicate_managed_block()} />      |
+| 托管块未正确开启或闭合                  | <UiLabel name={m.workbench_problem_invalid_managed_block()} />        |
 | 出现了除标注行之外的其他分节标题        | <UiLabel name={m.workbench_problem_unknown_section_header()} />       |
 | 缺少标注分节                            | <UiLabel name={m.workbench_problem_missing_annotation_section()} />   |
 | 标注分节出现多次                        | <UiLabel name={m.workbench_problem_duplicate_annotation_section()} /> |
@@ -68,7 +68,7 @@ import { m } from "@/paraglide/messages.js";
 <Cards>
   <Card
     title="配置方案文档"
-    description="清单、笔记源码、受管块与标注分节。"
+    description="清单、笔记源码、托管块与标注分节。"
     href="/docs/reference/templates/profile-document"
   />
   <Card

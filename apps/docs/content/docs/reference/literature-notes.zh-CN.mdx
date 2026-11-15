@@ -1,6 +1,6 @@
 ---
-title: "文献笔记与受控区域"
-description: "ZotLit 如何识别文献笔记，并通过受控区域将生成的内容与你自己的文字分隔开来。"
+title: "文献笔记与托管区域"
+description: "ZotLit 如何识别文献笔记，并通过托管区域将生成的内容与你自己的文字分隔开来。"
 ---
 
 import { Card, Cards } from "fumadocs-ui/components/card";
@@ -23,11 +23,11 @@ zotero-key: ABC123XY
 
 仅当当前活动文件包含可解析的 `zotero-key` 时，更新与覆盖命令才会出现在命令面板（Command palette）和右键菜单中。
 
-## 受控区域 [#the-managed-region]
+## 托管区域 [#the-managed-region]
 
-每篇文献笔记都受一个[配置方案](/docs/reference/templates/how-templates-work#profiles)管理。配置方案提供笔记源码——即 ZotLit 渲染到笔记中的文本——且笔记源码可以用受控块 `{% managed %}` 和 `{% endmanaged %}` 标记其中一部分。默认（Default）配置方案没有受控块：其正文仅在 ZotLit 创建笔记时渲染一次，之后便完全归你所有。有关承载源码的文档，请参见[配置方案文档](/docs/reference/templates/profile-document)；有关 ZotLit 如何定位该文档，请参见[模板工作原理](/docs/reference/templates/how-templates-work)。
+每篇文献笔记都受一个[配置方案](/docs/reference/templates/how-templates-work#profiles)管理。配置方案提供笔记源码——即 ZotLit 渲染到笔记中的文本——且笔记源码可以用托管块 `{% managed %}` 和 `{% endmanaged %}` 标记其中一部分。默认（Default）配置方案没有托管块：其正文仅在 ZotLit 创建笔记时渲染一次，之后便完全归你所有。有关承载源码的文档，请参见[配置方案文档](/docs/reference/templates/profile-document)；有关 ZotLit 如何定位该文档，请参见[模板工作原理](/docs/reference/templates/how-templates-work)。
 
-当 ZotLit 创建或覆盖文献笔记时，它会渲染笔记源码。如果笔记源码包含受控块，其输出会放入笔记正文的注释标记中：
+当 ZotLit 创建或覆盖文献笔记时，它会渲染笔记源码。如果笔记源码包含托管块，其输出会放入笔记正文的注释标记中：
 
 ```markdown
 %%zt-managed%%
@@ -35,33 +35,33 @@ zotero-key: ABC123XY
 %%/zt-managed%%
 ```
 
-ZotLit 掌控这两个标记之间的所有内容。你自行撰写的文字应置于受控区域的上方或下方。
+ZotLit 掌控这两个标记之间的所有内容。你自行撰写的文字应置于托管区域的上方或下方。
 
-### 受控区域包含哪些内容 [#what-the-region-contains]
+### 托管区域包含哪些内容 [#what-the-region-contains]
 
-受控区域包含管理该笔记的配置方案中受控块的输出内容。默认配置方案没有受控块，因此新建的默认笔记没有受控区域。其 **Annotations** 分节包含一个实时的[查询块](/docs/reference/how-queries-work)，以可交互卡片的形式展示你的标注，无需更新即可保持最新。使用较早版本默认配置创建的笔记可能仍保留这些标记；在这些笔记中，该区域承载着该分节的内容。
+托管区域包含管理该笔记的配置方案中托管块的输出内容。默认配置方案没有托管块，因此新建的默认笔记没有托管区域。其 **Annotations** 分节包含一个实时的[查询块](/docs/reference/how-queries-work)，以可交互卡片的形式展示你的标注，无需更新即可保持最新。使用较早版本默认配置创建的笔记可能仍保留这些标记；在这些笔记中，该区域承载着该分节的内容。
 
 如果你自定义了配置方案，将标注渲染为文本而非查询块，则每个标注都会通过配置方案的标注分节（Annotation Section）进行渲染。请参见[默认模板](/docs/reference/templates/defaults#content-template)。
 
-受控块之外的文本仅在创建时渲染一次。在默认配置方案中，这包括标题、Zotero 反向链接以及附件文件链接。附件链接指向原始文件，不会将其复制到仓库中。对于 Zotero 链接文件，原始文件可以存放在外部文件夹中。请参见 [Zotero 的链接文件指南](https://www.zotero.org/support/attaching_files#adding_linked_files)。除非关闭了 <UiLabel name={m.settings_reader_open_file_links_name()} />，否则点击指向 Zotero 文库中 PDF 的链接会[在 Obsidian 中打开](/docs/how-to/open-pdf-in-obsidian)。后续更新不会改动这些内容。
+托管块之外的文本仅在创建时渲染一次。在默认配置方案中，这包括标题、Zotero 反向链接以及附件文件链接。附件链接指向原始文件，不会将其复制到仓库中。对于 Zotero 链接文件，原始文件可以存放在外部文件夹中。请参见 [Zotero 的链接文件指南](https://www.zotero.org/support/attaching_files#adding_linked_files)。除非关闭了 <UiLabel name={m.settings_reader_open_file_links_name()} />，否则点击指向 Zotero 文库中 PDF 的链接会[在 Obsidian 中打开](/docs/how-to/open-pdf-in-obsidian)。后续更新不会改动这些内容。
 
-### 更新如何使用受控区域 [#how-updates-use-the-region]
+### 更新如何使用托管区域 [#how-updates-use-the-region]
 
 <Command inline name={m.command_update_note_name()} /> 会使用最新的 Zotero
-元数据刷新属性，并重新渲染管理该笔记的配置方案中的受控块，用新输出替换受控区域。标记之外的所有内容均会原封不动地保留。ZotLit
+元数据刷新属性，并重新渲染管理该笔记的配置方案中的托管块，用新输出替换托管区域。标记之外的所有内容均会原封不动地保留。ZotLit
 正是通过这种方式引入新标注或更新的元数据，而不会干扰你自己的笔记、链接或标签。
 
-笔记源码中没有受控块的配置方案只会更新属性。笔记正文中没有需要替换的区域。内置的默认配置方案是唯一的例外：在仍带有标记的早期默认笔记上，更新会重新渲染带有标注分节的区域。
+笔记源码中没有托管块的配置方案只会更新属性。笔记正文中没有需要替换的区域。内置的默认配置方案是唯一的例外：在仍带有标记的早期默认笔记上，更新会重新渲染带有标注分节的区域。
 
 若要停止让 ZotLit 管理某个区域，只需删除 `%%zt-managed%%` 和 `%%/zt-managed%%` 这两行。下一次更新便不会改动正文。
 
 <Command inline name={m.command_update_note_metadata_name()} />
 是一项更轻量的操作。它仅刷新属性，绝不会改动笔记正文。
 
-## 没有受控区域的笔记 [#notes-without-a-managed-region]
+## 没有托管区域的笔记 [#notes-without-a-managed-region]
 
 <Callout type="info" title="使用 ZotLit v1 创建的笔记">
-  使用 ZotLit v1 创建的文献笔记带有 `zotero-key`，能被识别为文献笔记，但它们不包含受控区域标记。在 v1 笔记上运行 <Command inline name={m.command_update_note_name()} /> 会刷新其属性，而保持正文不变。ZotLit 会提示 <UiLabel name={m.notice_updated_note_no_region()} />。
+  使用 ZotLit v1 创建的文献笔记带有 `zotero-key`，能被识别为文献笔记，但它们不包含托管区域标记。在 v1 笔记上运行 <Command inline name={m.command_update_note_name()} /> 会刷新其属性，而保持正文不变。ZotLit 会提示 <UiLabel name={m.notice_updated_note_no_region()} />。
 
 若要在 v1 笔记上恢复完整的更新工作流，请参见[保持笔记最新](/docs/how-to/keep-notes-updated)。
 

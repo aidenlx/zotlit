@@ -138,7 +138,7 @@ obsidian zotlit:query-values kind=tags match=method
 obsidian zotlit:query group=date.year limit=1 fields=title,date.year
 ```
 
-在达到 limit 限制前，`count` 是精确的，因此 `limit=1` 可以保持输出简短。若要统计许多分组（例如文库中的每个标签），还可以添加 `fields='[]'`。这样每行仅包含记录的标识符：
+`count` 在应用 limit 之前计算，因此始终精确， `limit=1` 可以保持输出简短。若要统计许多分组（例如文库中的每个标签），还可以添加 `fields='[]'`。这样每行仅包含记录的标识符：
 
 ```bash
 obsidian zotlit:query group='tags[].name' fields='[]' limit=1

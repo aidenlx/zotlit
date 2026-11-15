@@ -47,7 +47,7 @@ Obsidian 笔记编辑器不再在模板文件中提供 Eta 标签补全建议，
 
 ### 2.1 模板文件转为配置方案文档 [#21-template-files-become-profile-documents]
 
-2.1 模板文件在转换之前仍可继续使用。欢迎视图与设置中提供了转换入口。转换会将笔记、受管区域、文件名以及标注文件合并到 `zotlit-profile.default.md` 中，将两个引文字件合并到 `zotlit-citation.md` 中，并将其余文件转为片段。ZotLit 在写入前会校验输出内容保持一致，随后将旧文件移至回收站。
+2.1 模板文件在转换之前仍可继续使用。欢迎视图与设置中提供了转换入口。转换会将笔记、托管区域、文件名以及标注文件合并到 `zotlit-profile.default.md` 中，将两个引文字件合并到 `zotlit-citation.md` 中，并将其余文件转为片段。ZotLit 在写入前会校验输出内容保持一致，随后将旧文件移至回收站。
 
 在完成转换之前，属性字段列表将没有编辑器可用，且你无法添加或导入自己的配置方案。参见[转换 2.1 模板文件](/docs/how-to/migrate-from-2.1-templates)。
 
@@ -61,7 +61,7 @@ Obsidian 笔记编辑器不再在模板文件中提供 Eta 标签补全建议，
 - 你已有的笔记会保留其标记，执行更新仍会刷新标记之间的文本。如果你使用的是默认模板，该文本现在为标注查询块：下一次更新会用该查询块替换原有的静态标注列表和子笔记列表。查询块中的标注仅在 Obsidian 内部显示，不会出现在搜索、Publish 或其他应用程序中。若要保留静态文本，请在更新前删除这两行标记。
 - 如果你自定义或复制了默认配置方案，请在其文档中添加 `{% managed %}` 块，以便继续刷新旧笔记。
 
-参见[保持笔记最新](/docs/how-to/keep-notes-updated)和[文献笔记与受管区域](/docs/reference/literature-notes)。
+参见[保持笔记最新](/docs/how-to/keep-notes-updated)和[文献笔记与托管区域](/docs/reference/literature-notes)。
 
 ### 仅在手动请求时导入子笔记 [#child-notes-import-only-when-you-ask]
 

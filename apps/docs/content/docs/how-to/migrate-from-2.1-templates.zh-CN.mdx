@@ -51,7 +51,7 @@ import { m } from "@/paraglide/messages.js";
 
 ZotLit 会在内存中构建新文档，并对照 Zotero 文库中的一个条目进行渲染。它会将笔记、更新、笔记名称、标注以及两种引文输出与你的 2.1 文件生成的结果进行逐字节比对。只有当每一项输出都完全一致时，它才会写入文件。
 
-输出匹配时，ZotLit 会写入 `zotlit-profile.default.md`、`zotlit-citation.md` 以及每个片段对应的文件。然后，它会将你的 2.1 文件移至 Obsidian 配置的回收站。该回收站是唯一的备份：ZotLit 不会保留旧文件的额外副本。如果某个文件无法移动到回收站，转换依然有效，转换后的文档也会生效。系统会弹出通知列出遗留的文件：<UiLabel name={m.notice_literature_note_template_conversion_pending_cleanup({ files: "…" })} />。设置横幅也会显示相同的列表，标题为 <UiLabel name={m.welcome_template_cleanup_body()} />。在横幅中选择 <UiLabel name={m.welcome_template_cleanup_retry()} /> 可再次尝试移动它们。仍无法移动的文件会保留在列表中。
+输出匹配时，ZotLit 会写入 `zotlit-profile.default.md`、`zotlit-citation.md` 以及每个片段对应的文件。然后，它会将你的 2.1 文件移至 Obsidian 配置的回收站。该回收站是唯一的备份：ZotLit 不会保留旧文件的额外副本。如果某个文件无法移动到回收站，转换依然有效，转换后的文档也会生效。系统会弹出通知列出遗留的文件：<UiLabel name={m.notice_literature_note_template_conversion_pending_cleanup({ files: "…" })} />设置横幅也会显示相同的列表，标题为 <UiLabel name={m.welcome_template_cleanup_body()} />在横幅中选择 <UiLabel name={m.welcome_template_cleanup_retry()} /> 可再次尝试移动它们。仍无法移动的文件会保留在列表中。
 
 有一种情况会保留原文件。如果你的两个引文文件使用了不同的模板语言，引文文本将转换为 Liquid，而 Eta 文件会保留在原位；ZotLit 会通过 <UiLabel name={m.notice_literature_note_template_conversion_kept({ files: "…" })} /> 提示相关文件。
 
@@ -59,19 +59,19 @@ ZotLit 会在内存中构建新文档，并对照 Zotero 文库中的一个条�
 
 每次转换被拒绝后，你的仓库和设置都会保持原样。每次拒绝都会弹出通知，且横幅中的按钮旁会保留相应说明，直到你再次重试。如果你不想修复某个 2.1 文件，可以将其移出模板文件夹：ZotLit 随后将针对该部分使用内置模板，转换完成后，你可以通过 <UiLabel name={m.settings_profile_edit()} /> 将更改复制到配置方案中。
 
-- **转换后的输出未能重现旧版输出。** <UiLabel name={m.notice_literature_note_template_conversion_mismatch({ difference: "…", files: "…" })} /> 这是最常见的拒绝情况，因为它是逐字节检查的结果。通知仅列出你需要编辑的文件，并指出存在差异的输出项：`create output`、`update output`、`filename output`、`annotation output`、`main citation output` 或 `alternate citation output`。修改该输出对应的 2.1 文件，使转换后的形式能够重现原输出，然后再次点击该按钮。
+- **转换后的输出未能重现旧版输出**。<UiLabel name={m.notice_literature_note_template_conversion_mismatch({ difference: "…", files: "…" })} /> 这是最常见的拒绝情况，因为它是逐字节检查的结果。通知仅列出你需要编辑的文件，并指出存在差异的输出项：`create output`、`update output`、`filename output`、`annotation output`、`main citation output` 或 `alternate citation output`。修改该输出对应的 2.1 文件，使转换后的形式能够重现原输出，然后再次点击该按钮。
 
-- **ZotLit 无法自动转换的布局结构。** <UiLabel name={m.notice_literature_note_template_conversion_unsupported({ detail: "…", files: "…" })} /> 转换仅支持 2.1 原生提供的结构：笔记文件中仅有一处内容插入点，且所有文件使用同一种模板语言。通知仅列出你需要编辑的文件并说明问题所在（若有行号也会注明）。如果模板渲染失败，或包含类似 `--- zotlit:notes ---` 这类 ZotLit 保留专用的行，也会出现此通知。修改相应文件使其符合规范，然后再次点击该按钮。当涉及 Eta 文件但 <UiLabel name={m.settings_template_js_enable_name()} /> 未开启时也会显示此通知；请在 <SettingsPath page={m.settings_page_advanced()} setting={m.settings_advanced_template_engine_heading()} /> 下开启该开关后重试。
+- **ZotLit 无法自动转换的布局结构**。<UiLabel name={m.notice_literature_note_template_conversion_unsupported({ detail: "…", files: "…" })} /> 转换仅支持 2.1 原生提供的结构：笔记文件中仅有一处内容插入点，且所有文件使用同一种模板语言。通知仅列出你需要编辑的文件并说明问题所在（若有行号也会注明）。如果模板渲染失败，或包含类似 `--- zotlit:notes ---` 这类 ZotLit 保留专用的行，也会出现此通知。修改相应文件使其符合规范，然后再次点击该按钮。当涉及 Eta 文件但 <UiLabel name={m.settings_template_js_enable_name()} /> 未开启时也会显示此通知；请在 <SettingsPath page={m.settings_page_advanced()} setting={m.settings_advanced_template_engine_heading()} /> 下开启该开关后重试。
 
-- **在开关关闭时使用了 JavaScript 编写的属性字段**。 <UiLabel name={m.notice_literature_note_template_conversion_frontmatter_inert({ fields: "…" })} /> 请在 <SettingsPath page={m.settings_page_advanced()} setting={m.settings_advanced_template_engine_heading()} /> 下开启 <UiLabel name={m.settings_template_js_enable_name()} />，然后再次点击该按钮。参见[启用 JavaScript 模板](/docs/how-to/enable-javascript-templates)。
+- **在开关关闭时使用了 JavaScript 编写的属性字段**。<UiLabel name={m.notice_literature_note_template_conversion_frontmatter_inert({ fields: "…" })} /> 请在 <SettingsPath page={m.settings_page_advanced()} setting={m.settings_advanced_template_engine_heading()} /> 下开启 <UiLabel name={m.settings_template_js_enable_name()} />，然后再次点击该按钮。参见[启用 JavaScript 模板](/docs/how-to/enable-javascript-templates)。
 
-- **没有用于验证的条目或标注**。 <UiLabel name={m.notice_literature_note_template_conversion_no_item()} /> 或 <UiLabel name={m.notice_literature_note_template_conversion_no_annotation()} />。请连接包含条目的 Zotero 文库，然后再次点击该按钮。仅当转换的文件中包含标注文件时，才会出现标注相关的提示。
+- **没有用于验证的条目或标注**。<UiLabel name={m.notice_literature_note_template_conversion_no_item()} /> 或 <UiLabel name={m.notice_literature_note_template_conversion_no_annotation()} />请连接包含条目的 Zotero 文库，然后再次点击该按钮。仅当转换的文件中包含标注文件时，才会出现标注相关的提示。
 
-- **转换后的目标文档已存在。** <UiLabel name={m.notice_literature_note_template_conversion_exists()} /> 重命名或移除冲突的文件，然后再次点击该按钮。即使冲突文件是 `zotlit-citation.md` 或某个片段，通知中也会提示“配置方案文档”。
+- **转换后的目标文档已存在**。<UiLabel name={m.notice_literature_note_template_conversion_exists()} /> 重命名或移除冲突的文件，然后再次点击该按钮。即使冲突文件是 `zotlit-citation.md` 或某个片段，通知中也会提示“配置方案文档”。
 
-- **模板之外的故障**。 <UiLabel name={m.notice_literature_note_template_conversion_failed({ detail: "…" })} /> ZotLit 无法读取 Zotero 或无法写入模板文件夹。本次尝试中已写入的所有文档都将被清理。排查通知指出的原因，然后再次点击该按钮。
+- **模板之外的故障**。<UiLabel name={m.notice_literature_note_template_conversion_failed({ detail: "…" })} /> ZotLit 无法读取 Zotero 或无法写入模板文件夹。本次尝试中已写入的所有文档都将被清理。排查通知指出的原因，然后再次点击该按钮。
 
-- **没有遗留的旧版模板可供转换**。 <UiLabel name={m.notice_literature_note_template_conversion_none()} /> ZotLit 未找到转换所需的任何文件，因此未写入任何内容，亦未做任何更改。继续使用内置模板即可。
+- **没有遗留的旧版模板可供转换**。<UiLabel name={m.notice_literature_note_template_conversion_none()} /> ZotLit 未找到转换所需的任何文件，因此未写入任何内容，亦未做任何更改。继续使用内置模板即可。
 
 ## 需要修复的属性 [#fix-properties]
 

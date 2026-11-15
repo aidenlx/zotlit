@@ -35,7 +35,7 @@ import { m } from "@/paraglide/messages.js";
 - **有一套配置方案匹配该文献**： ZotLit 会使用该配置方案创建笔记；提示中会标出匹配项。
 - **多套匹配或均不匹配**： 弹出选择器。选择要用于此笔记的配置方案，或关闭选择器以取消创建笔记。
 
-在选择器中，匹配的配置方案会显示徽标 <UiLabel name={m.modal_profile_match_candidate()} />。当没有配置方案匹配时，系统会预先选中 **Default**。当多套配置方案匹配时，搜索框中会显示 <UiLabel name={m.modal_profile_overlap_placeholder()} />。
+在选择器中，匹配的配置方案会显示徽标 <UiLabel name={m.modal_profile_match_candidate()} />。当没有配置方案匹配时，系统会预先选中**默认**配置方案。当多套配置方案匹配时，搜索框中会显示 <UiLabel name={m.modal_profile_overlap_placeholder()} />。
 
 要创建配置方案并配置其适用条件，请参阅[使用不同模板](/docs/how-to/use-different-templates)。有关如何选择配置方案的详细信息，请参阅[配置方案匹配参考](/docs/reference/settings#profile-match)。
 
@@ -64,7 +64,7 @@ ZotLit 会在[<UiLabel name={m.settings_library_scope_name()} />](/docs/referenc
 | Zotero                | 选中一篇文献，右键点击，在顶级菜单中选择 <UiLabel name={m["zotero.menu_item_open.label"]()} />。如果尚无笔记则创建，已有笔记则直接打开。 | ZotLit Companion 插件 |
 | Obsidian 中的文库视图 | 选中该文献所在行并按 `Enter`。打开笔记，或在缺失时创建笔记。请参阅[文库视图](/docs/how-to/use-library-view#rows)。                       | 无需额外配置          |
 
-若要更改 Zotero 在 Obsidian 中打开笔记的位置，请打开 Zotero 的设置（Settings），转到 <UiLabel name={m["zotero.prefs_pane_label"]()} /> 面板，找到 <UiLabel name={m["zotero.prefs_open_section"]()} />，并将 <UiLabel name={m["zotero.prefs_pane_type"]()} /> 设置为 <UiLabel name={m["zotero.prefs_pane_type_active.label"]()} />（默认值）、<UiLabel name={m["zotero.prefs_pane_type_tab.label"]()} />, <UiLabel name={m["zotero.prefs_pane_type_split.label"]()} /> 或 <UiLabel name={m["zotero.prefs_pane_type_window.label"]()} />。请参阅[面板类型选项](/docs/reference/protocol-links#pane-type)。
+若要更改 Zotero 在 Obsidian 中打开笔记的位置，请打开 Zotero 的设置（Settings），转到 <UiLabel name={m["zotero.prefs_pane_label"]()} /> 面板，找到 <UiLabel name={m["zotero.prefs_open_section"]()} />，并将 <UiLabel name={m["zotero.prefs_pane_type"]()} /> 设置为 <UiLabel name={m["zotero.prefs_pane_type_active.label"]()} />（默认值）、<UiLabel name={m["zotero.prefs_pane_type_tab.label"]()} />、<UiLabel name={m["zotero.prefs_pane_type_split.label"]()} /> 或 <UiLabel name={m["zotero.prefs_pane_type_window.label"]()} />。请参阅[面板类型选项](/docs/reference/protocol-links#pane-type)。
 
 </Accordion>
 <span id="bulk-profiles" data-accordion-value="Several papers at once" />
@@ -81,7 +81,7 @@ ZotLit 会在[<UiLabel name={m.settings_library_scope_name()} />](/docs/referenc
 
 在每种情况下，Obsidian 都会打开一个确认对话框，显示将要创建哪些笔记以及将要更新哪些笔记。检查列表并确认即可继续。
 
-当你配置了多个配置方案时，确认窗口会为新建笔记提供配置方案选择器（请参阅[批量配置方案](/docs/reference/settings#batch-profiles)）。若要了解现有笔记如何受到影响，请参阅[保持笔记同步更新](/docs/how-to/keep-notes-updated)。
+当你配置了多个配置方案时，确认窗口会为新建笔记提供配置方案选择器（请参阅[批量配置方案](/docs/reference/settings#batch-profiles)）。若要了解现有笔记如何受到影响，请参阅[保持笔记最新](/docs/how-to/keep-notes-updated)。
 
 </Accordion>
 </Accordions>
@@ -94,10 +94,10 @@ ZotLit 会在[<UiLabel name={m.settings_library_scope_name()} />](/docs/referenc
 - **弹出列表询问目标文献**。 有多个条目共用该文献引用标识。每一行均会显示其所属文库和条目标识符；选择正确的条目即可打开其笔记。请参阅[歧义文献引用标识](/docs/reference/citation-links#ambiguous-key)。
 - **弹出配置方案选择器**。 你配置了多个配置方案，且 ZotLit 无法自动选择。从列表中选择一个配置方案，或查看上方的[选择配置方案折叠面板](#choose-profile)。
 - **Zotero 提示选择范围过大，或提示开启服务器**。 大批量数据通过 ZotLit 的本地服务器传输到 Obsidian。在 Obsidian 中，前往 <SettingsPath page={m.settings_page_advanced()} /> 并在 <UiLabel name={m.settings_advanced_local_server_heading()} /> 分组中开启服务器，或者单次少选几篇文献。请参阅[设置实时更新](/docs/how-to/set-up-live-updates)。
-- **Zotero 每次打开 Obsidian 时都请求确认。** 这是 Zotero 打开 `obsidian://` 链接时的默认安全检查提示。请参阅[隐藏 Zotero 安全提示](/docs/how-to/suppress-zotero-security-prompt)。
+- **Zotero 每次打开 Obsidian 时都请求确认。** 这是 Zotero 打开 `obsidian://` 链接时的默认安全检查提示。请参阅[关闭 Zotero 安全提示](/docs/how-to/suppress-zotero-security-prompt)。
 
 ## 下一步 [#next]
 
-- [保持笔记同步更新](/docs/how-to/keep-notes-updated) — 在 Zotero 发生更改后同步更新笔记。
+- [保持笔记最新](/docs/how-to/keep-notes-updated) — 在 Zotero 发生更改后同步更新笔记。
 - [插入引用](/docs/how-to/insert-citations) — 在草稿中插入引用。
 - [导入 Zotero 笔记](/docs/how-to/import-zotero-notes) — 将 Zotero 中撰写的笔记导入仓库。
