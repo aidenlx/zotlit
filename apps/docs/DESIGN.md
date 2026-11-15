@@ -388,8 +388,11 @@ closing call. Sections run 1152px wide (`max-w-6xl`) with 32px side gutters
   Each object casts `--desk-shadow`. The desk is `aria-hidden`: the
   headline and the sections below carry its meaning.
 - **From 1024px to 1280px.** The text, then a two-column spread (960px wide
-  at most): the library sheet and the table at the top, the PDF and the
-  draft below, at full size. The draft plays its citation loop here too.
+  at most), arranged for its own grid: the library sheet over the draft on
+  the left, the table over the PDF on the right. Every card is 420px wide,
+  the tops of the first row align, each column keeps 56px between its cards,
+  and the cards turn at most 1.2°, the columns in opposite directions.
+  Nothing is cut off, and the draft plays its citation loop here too.
 - **Below 1024px.** The text, then the library sheet, the table and the PDF
   in a short fanned stack (460px wide at most).
 - **Hero motion.** Once on load, the objects drop onto the desk in order (library,

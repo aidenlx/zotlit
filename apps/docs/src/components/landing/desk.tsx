@@ -740,8 +740,10 @@ export function Desk() {
   );
 }
 
-/** From 1024px to 1280px: the library sheet and the table, then the PDF and
- * the draft, in two columns under the text. */
+/** From 1024px to 1280px: a tidy two-column spread under the text. The
+ * cards share one width and one gutter and turn only slightly, the left
+ * column one way and the right the other: the library sheet over the draft,
+ * the table over the PDF. */
 export function DeskSpread() {
   return (
     <div
@@ -749,20 +751,20 @@ export function DeskSpread() {
       className="pointer-events-none relative mx-auto mt-12 hidden h-[780px] w-full max-w-[960px] overflow-hidden select-none lg:block xl:hidden"
     >
       <Piece
-        x={-444}
-        y={24}
-        w={412}
-        r={-2.5}
+        x={-450}
+        y={28}
+        w={420}
+        r={-1.2}
         d={100}
         tape={<Tape>{m.docs_home_desk_library()}</Tape>}
       >
         <LibrarySheet />
       </Piece>
       <Piece
-        x={36}
-        y={40}
-        w={412}
-        r={1.8}
+        x={30}
+        y={28}
+        w={420}
+        r={1.2}
         d={300}
         tape={
           <Tape side="right" inset={24}>
@@ -773,32 +775,28 @@ export function DeskSpread() {
         <TableSheet />
       </Piece>
       <Piece
-        x={-392}
-        y={420}
-        w={316}
-        r={2.5}
+        x={-450}
+        y={458}
+        w={420}
+        r={0.8}
         d={500}
+        tape={<Tape>{m.docs_home_desk_cite()}</Tape>}
+      >
+        <DraftSheet />
+      </Piece>
+      <Piece
+        x={30}
+        y={363}
+        w={420}
+        r={-0.8}
+        d={700}
         tape={
-          <Tape side="right" inset={18}>
+          <Tape side="right" inset={24}>
             {m.docs_home_desk_read()}
           </Tape>
         }
       >
         <PdfPage />
-      </Piece>
-      <Piece
-        x={60}
-        y={466}
-        w={364}
-        r={-2}
-        d={900}
-        tape={
-          <Tape side="right" inset={22}>
-            {m.docs_home_desk_cite()}
-          </Tape>
-        }
-      >
-        <DraftSheet />
       </Piece>
     </div>
   );
