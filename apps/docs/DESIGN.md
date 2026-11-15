@@ -378,7 +378,7 @@ closing call. Sections run 1152px wide (`max-w-6xl`) with 32px side gutters
   citations in place ("Cite as you write") and the Word reference page
   ("Export and submit") lie below. Two blank sheets under the leads give
   depth. Each side group (left, right) is drawn at 0.84 towards its own
-  outer edge, so every object keeps at least 72px clear of the text at every
+  outer edge, so each of its objects keeps at least 72px clear of the text at every
   width while the text keeps its size; a soft clearing of the ground colour
   sits behind the headline. The note card and the Word page lie at full size
   above the clearing, hung from the hero's middle so they stay about 45px
