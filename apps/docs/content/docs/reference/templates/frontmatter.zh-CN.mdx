@@ -1,0 +1,244 @@
+---
+title: "属性"
+description: "文献笔记属性的字段定义、合并策略、保留键以及更新行为。"
+---
+
+import { Card, Cards } from "fumadocs-ui/components/card";
+import { Callout } from "@/components/callout";
+import { Command } from "@/components/command";
+import { SettingsPath } from "@/components/settings-path";
+import { UiLabel } from "@/components/ui-label";
+import { m } from "@/paraglide/messages.js";
+
+本页介绍 ZotLit 如何管理文献笔记上的 YAML 属性：ZotLit 所有的字段、配置方案声明的受管字段、合并策略以及笔记更新期间的行为。
+
+有关分步配置指南，请参阅[配置属性](/docs/how-to/configure-frontmatter-properties)。
+
+## 系统管理字段 [#system-managed-fields]
+
+ZotLit 会自行写入这些键。受管属性无法以它们为目标。
+
+| 字段             | 来源               | 描述                                                                  |
+| ---------------- | ------------------ | --------------------------------------------------------------------- |
+| `zotero-key`     | `zt.indexedKey`    | 文献笔记标识：我的文库为 `KEY`，群组文库为 `KEYgGROUPID`              |
+| `zotlit-profile` | 执行操作的配置方案 | 生成该笔记的配置方案，格式为名称与 12 位 ID。由默认配置方案生成时缺省 |
+| `zotlit-csl`     | 配置方案的引文样式 | 笔记引文与参考文献所渲染的 CSL ID。当配置方案未绑定样式时缺省         |
+
+## 用户配置字段 [#user-configured-fields]
+
+受管属性是[配置方案文档](/docs/reference/templates/profile-document)清单中 `frontmatter` 键下的有序条目列表。每个条目生成一个或同时生成多个属性。
+
+在模板工作台的 <UiLabel name={m.workbench_tab_properties()} /> 标签页中编辑此列表。在 <SettingsPath /> 的 <UiLabel name={m.settings_profile_document_name()} /> 行中，选择 <UiLabel name={m.settings_profile_edit()} />。
+
+每个条目都有可选的 `key`、可选的 `merge` 策略，以及恰好一个值成员。成员名称声明了语言，因此条目无需单独设置语言：
+
+| 成员    | 必填   | 描述                                                              |
+| ------- | ------ | ----------------------------------------------------------------- |
+| `key`   | 否     | 写入笔记的 YAML 属性名称。展开条目请省略此项                      |
+| `expr`  | 三选一 | Liquid 值表达式                                                   |
+| `value` | 三选一 | JSON-e 模板                                                       |
+| `js`    | 三选一 | JavaScript 表达式。在 JavaScript 模板开关关闭时处于非活动状态     |
+| `merge` | 否     | 笔记更新时条目的应用方式。`replace`（默认值）、`append` 或 `keep` |
+
+完整写出 `key`、`value` 和 `merge` 的条目示例：
+
+```yaml
+frontmatter:
+  - key: citekey
+    value: { "$eval": "zt.citationKey" }
+    merge: replace
+```
+
+编辑器中的 <UiLabel name={m.workbench_properties_format()} /> 控件对应不同的值成员：<UiLabel name={m.workbench_properties_format_value()} /> 写入 `expr`，<UiLabel name={m.workbench_properties_format_rule()} /> 写入 `value`，<UiLabel name={m.workbench_properties_format_text()} /> 写入包含原样文本的 `value`。`js` 条目则在 <UiLabel name={m.workbench_advanced()} /> 视图中编辑。
+
+`value` 可以使用任意 YAML 形式书写，例如[展开条目](#spread-entries)中的块映射。在编辑器中编辑 `value` 时，工作台会将其作为单行 JSON 保存在配置方案文档中。其他条目则保留其原有的书写形式。
+
+### 展开条目 [#spread-entries]
+
+没有 `key` 的条目是展开条目。其 `value` 或 `js` 成员求值为一个映射（mapping），生成的每个键都会作为字段放置在该条目的位置，并遵循该条目设定的合并策略。
+
+```yaml
+frontmatter:
+  - value:
+      title: { "$eval": "zt.title" }
+      "zotero/${zt.itemType}": true
+```
+
+在展开映射内部，求值为 false 的 `$if` 会忽略该键，并保留笔记中的现有值不变。`${}` 插值可用于构建键名。顶层 `$let` 可以在所有生成的字段间共享同一个计算结果。在条目根部求值为 false 的 `$if` 会产生空补丁，因此该条目不会写入任何内容。
+
+`expr` 始终只生成单个值，因此展开条目无法使用它：没有键的 `expr` 条目将无法通过校验。若展开条目的结果不是映射，或者生成了保留键或空键，则整个操作将被拒绝。诊断信息会按条目在列表中的位置（从 1 开始计数）指明具体条目。
+
+在编辑器中，<UiLabel name={m.workbench_properties_add_spread()} /> 可添加展开条目。该行会显示 <UiLabel name={m.workbench_properties_spread()} /> 并列出其生成的属性。
+
+### 默认字段 [#default-fields]
+
+默认配置方案开箱自带四个条目，其文档内容如下：
+
+```yaml
+frontmatter:
+  - key: title
+    expr: zt.title
+    merge: replace
+  - key: related
+    expr: zt.relatedItems | note_links
+    merge: replace
+  - key: collections
+    expr: zt.collections | collection_paths
+    merge: replace
+  - key: citekey
+    value: { "$eval": "zt.citationKey" }
+    merge: replace
+```
+
+当 Zotero 条目没有文献引用标识时，`citekey` 条目会写入 `citekey: null`。这四个字段都是普通的受管属性，你可以像编辑或删除其他条目一样对它们进行修改或移除。
+
+### Liquid 表达式 [#liquid-expressions]
+
+`expr` 成员是一个值表达式，而不是模板块。它使用与模板相同的过滤器词汇（参见[模板语法](/docs/reference/templates/syntax)），并返回带有类型的值（数组、数字、字符串），而非渲染后的文本。
+
+```
+zt.title                              -> "My Paper Title"
+zt.authors | join: ", "               -> "Jane Smith, Bob Jones"
+zt.tags | map: "name"                 -> ["methodology", "open access"]
+zt.tags | obsidian_tag                -> ["methodology", "open_access"]
+zt.collections | collection_paths     -> ["Project/Reading", "Research"]
+zt.date.year                          -> 2023
+```
+
+### JavaScript 表达式 [#javascript-expressions]
+
+`js` 成员包含一个 JavaScript 表达式。它需要开启 [JavaScript 模板](/docs/reference/templates/how-templates-work#javascript-templates)开关。任何有效的 JavaScript 表达式均可使用，完整的笔记上下文可通过 `zt` 访问：
+
+```
+zt.authors.map(c => c.fullName)   -> ["Jane Smith", "Bob Jones"]
+zt.tags.map(t => t.name)          -> ["methodology", "review"]
+zt.date?.year                     -> 2023
+```
+
+返回值会自动序列化为 YAML。
+
+## 合并策略 [#merge-strategies]
+
+每个条目选择一种合并策略，可在编辑器中通过 <UiLabel name={m.workbench_properties_merge()} /> 设置：
+
+| 策略      | 编辑器选项                                                | 行为                                                                                                                                                                                   |
+| --------- | --------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `replace` | <UiLabel name={m.workbench_properties_merge_replace()} /> | 无条件写入生成的值。现有值会被覆盖                                                                                                                                                     |
+| `append`  | <UiLabel name={m.workbench_properties_merge_append()} />  | 将现有数组中尚不存在的最新生成值追加到末尾。手动添加的内容予以保留。若现有值为空，则直接写入生成的值。现有值与生成值都必须为数组；若任一方不是数组（且现有值不为空），则该字段保持不变 |
+| `keep`    | <UiLabel name={m.workbench_properties_merge_keep()} />    | 仅在现有字段为空时写入生成的值。字段一旦有值，便绝不会被覆盖                                                                                                                           |
+
+### 缺失值 [#absent-values]
+
+只有 `value` 条目才能产生缺失（absence）。在根部未渲染任何内容的 JSON-e 模板（例如顶层 `$if` 为 false），不会产生任何值。
+
+缺失值是删除受管键的唯一方式。在 <UiLabel name={m.workbench_properties_merge_replace()} /> 策略下，缺失值会删除现有键；在 <UiLabel name={m.workbench_properties_merge_append()} /> 和 <UiLabel name={m.workbench_properties_merge_keep()} /> 策略下，则保留该键不变。
+
+### 何种情况视为空白 [#what-counts-as-blank]
+
+当满足以下条件之一时，该值视为空白（并被 <UiLabel name={m.workbench_properties_merge_append()} /> 与 <UiLabel name={m.workbench_properties_merge_keep()} /> 视为缺失）：
+
+- `null` 或 undefined
+- 空字符串（`""`）
+- 空数组（`[]`）
+- 空纯对象（`{}`）
+
+### 未定义的表达式 [#undefined-expressions]
+
+当 Liquid 或 JavaScript 表达式返回 `undefined` 时，无论合并策略为何，该字段均不受影响。只有已定义的值（包括显式的 `null`）才会进入合并逻辑。
+
+### 追加数组详情 [#append-arrays-detail]
+
+<UiLabel name={m.workbench_properties_merge_append()} />
+策略会原样保留现有条目（包括已存在的任何重复项），且仅追加数组中尚未包含的生成项。
+
+## 保留键 [#reserved-keys]
+
+ZotLit 会拒绝以下静态键或展开条目生成的键：
+
+| 键                | 保护的对象                                                                   |
+| ----------------- | ---------------------------------------------------------------------------- |
+| `zotero-key`      | 文献笔记标识。条目标识符，群组文库后会附带群组文库 ID                        |
+| `zotlit-profile`  | 记录生成该笔记的配置方案标记。缺省时选择默认配置方案                         |
+| `zotero-note-key` | 导入的子笔记标识。与 `zotero-key` 区分开，以确保该笔记绝不会被登记为文献笔记 |
+| `zotero-lastmod`  | 源子笔记的 `dateModified`，批量重新导入时据此跳过未更改的笔记                |
+| `zotlit-csl`      | 渲染该笔记引文与参考文献所用的 CSL 样式 ID，由配置方案的引文样式设定         |
+
+声明了保留键或重复静态键的配置方案文档将无法加载，ZotLit 会将其从可选配置方案中排除，而不会尝试修复。参见[配置方案](/docs/reference/templates/how-templates-work#profiles)。
+
+## 校验 [#validation]
+
+<UiLabel name={m.workbench_tab_properties()} /> 标签页会用
+<UiLabel name={m.workbench_properties_row_problem()} />
+标记失败的行，并在属性值的位置显示错误原因。完整的说明（指明失败的键和条目位置）位于编辑器的
+<UiLabel name={m.workbench_problems_heading()} /> 区域。
+
+校验分为三个阶段：
+
+1. **文档阶段。** 保留静态键、重复静态键或无键的 `expr` 条目会导致文档无法加载。
+2. **表达式阶段。** 无法编译的 `expr` 或 `js` 成员，或者无法求值的 `value`，会被编辑器标记为问题，并指明键名和条目位置。
+3. **写入阶段。** 结果超出属性值域的 `value` 或 `js` 条目、未生成映射的展开条目，或者生成的键属于保留键或为空，都会导致整个操作被拒绝。
+
+被拒绝的操作不会写入任何内容。ZotLit 绝不会对笔记应用部分补丁。在开关关闭时处于非活动状态的 `js` 条目会按键名拒绝，若该条目没有键则按条目位置拒绝。
+
+## 更新时的合并行为 [#merge-on-update]
+
+运行 <Command inline name={m.command_update_note_name()} /> 或 <Command inline name={m.command_update_note_metadata_name()} /> 时，ZotLit 会刷新属性：
+
+1. **受管条目**按其在[配置方案文档](/docs/reference/templates/profile-document)的 `frontmatter` 列表中出现的顺序重新求值，并按其合并策略应用。
+2. **系统标识**（`zotero-key`）被刷新。
+3. **非受管键：** 不在受管集合中的任何属性键（例如 `aliases`、`tags`、`cssclasses`）均予以保留。ZotLit 绝不会修改它不拥有的键。
+
+<Command inline name={m.command_overwrite_note_name()} /> 会替换笔记正文，
+但在属性上的行为完全相同：受管键被刷新， 非受管键予以保留。
+
+ZotLit 通过 Obsidian 的 `processFrontMatter` API 写入属性，该 API 会保留非受管键的键顺序和格式。在新建的笔记中，受管字段按照它们在配置方案文档的 `frontmatter` 列表中出现的顺序写入，紧随其后的是系统字段。列表中靠后的条目具有更高的优先级，因为每个条目都会在前序条目生成的值之上应用。
+
+从 `frontmatter` 列表中移除 `citekey` 或其他条目不会删除现有值。这些值会变成非受管属性并保留在笔记中。
+
+## JavaScript 模板开关 [#javascript-templates-gate]
+
+[JavaScript 模板](/docs/reference/templates/how-templates-work#javascript-templates)开关控制是否运行 `js` 条目：
+
+- **开关关闭：** `js` 条目处于非活动状态，不会被求值。任何依赖非活动条目的操作都会报错并列出这些键。`expr` 和 `value` 条目不受影响。
+- **开关开启：** `expr`、`value` 和 `js` 条目正常求值。
+
+该开关绝不会重新解释成员类型。`expr` 条目始终作为 Liquid 求值，`js` 条目始终作为 JavaScript 求值。
+
+在开关关闭时，使用 `js` 的展开条目会按其条目位置被拒绝，因为在运行之前无法得知其包含哪些键。
+
+<Callout type="warn" title="非活动条目会阻止笔记操作">
+  当任何属性条目使用 `js` 成员且开关处于关闭状态时，
+  文献笔记的创建和更新都会失败，并显示列出非活动键的错误。
+  请启用该开关，或将这些条目重写为 `expr` 或 `value`。参见 [启用 JavaScript
+  模板](/docs/how-to/enable-javascript-templates)。
+</Callout>
+
+## 另请参阅 [#see-also]
+
+<Cards>
+  <Card
+    title="配置方案文档"
+    description="配置方案文档的清单键、笔记源码与标注分节。"
+    href="/docs/reference/templates/profile-document"
+  />
+  <Card
+    title="配置属性"
+    description="分步添加、编辑和重排属性字段。"
+    href="/docs/how-to/configure-frontmatter-properties"
+  />
+  <Card
+    title="配置方案"
+    description="配置方案如何选择笔记的模板、文件夹和引文样式。"
+    href="/docs/reference/templates/how-templates-work#profiles"
+  />
+  <Card
+    title="数据参考"
+    description="各类模板中 zt 上可用的属性。"
+    href="/docs/reference/templates/data"
+  />
+  <Card
+    title="JavaScript 模板"
+    description="开关启用的功能、安全风险及禁用时的行为。"
+    href="/docs/reference/templates/how-templates-work#javascript-templates"
+  />
+</Cards>

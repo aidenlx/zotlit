@@ -1,0 +1,80 @@
+---
+title: "在多台设备上使用 ZotLit"
+description: "在跨设备同步仓库时，为每台电脑分别设置不同的 Zotero 配置文件或数据目录路径。"
+---
+
+import { Steps, Step } from "fumadocs-ui/components/steps";
+import { Card, Cards } from "fumadocs-ui/components/card";
+import { Callout } from "@/components/callout";
+import { SettingsPath } from "@/components/settings-path";
+import { UiLabel } from "@/components/ui-label";
+import { m } from "@/paraglide/messages.js";
+
+当你在多台电脑之间同步 Obsidian 仓库时，每台电脑上的 Zotero 安装位置可能并不相同。ZotLit 会按设备分别保存 Zotero 配置文件路径和数据目录路径，因此一台机器的路径绝不会通过仓库同步覆盖另一台机器的路径。
+
+编辑标注的授权也是按设备保存的。在每台电脑上允许一次编辑，并在 Zotero 提示时选择 **Always Allow** 即可。参见[在 Obsidian 中编辑 PDF 标注](/docs/how-to/edit-pdf-annotations)。
+
+## 默认安装：无需任何配置 [#default-installs-nothing-to-configure]
+
+若电脑上的 Zotero 安装在默认位置，ZotLit 会自动检测配置文件（通过 Zotero 的 `profiles.ini`）和数据目录。刚同步过来的仓库无需任何手动设置即可连接到 Zotero。
+
+如果每台电脑都使用默认的 Zotero 位置，你就无需做任何配置，不需要针对每台设备单独设置。
+
+## 为设备指定非默认 Zotero 位置 [#point-a-device-at-a-non-default-zotero-location]
+
+如果某台电脑上的 Zotero 配置文件或数据目录位于自定义位置，请告诉 ZotLit 在该设备上的具体路径。
+
+<Steps>
+  <Step>
+    ### 打开 Zotero 设置 [#open-the-zotero-settings]
+
+    在需要自定义路径的设备上，打开 <SettingsPath page={m.settings_page_zotero()} setting={m.settings_page_zotero_location()} />。
+
+  </Step>
+  <Step>
+    ### 设置 Zotero 配置文件 [#set-the-zotero-profile]
+
+    使用 <UiLabel name={m.settings_db_profile_dir_name()} /> 选择器，为该设备选择正确的配置文件目录。如果你只需要更改数据目录，可跳过此步。
+
+  </Step>
+  <Step>
+    ### 设置数据目录覆盖（如有需要） [#set-the-data-directory-override-if-needed]
+
+    如果 Zotero 数据目录也是非默认位置，使用 <UiLabel name={m.settings_db_data_dir_name()} /> 选择器选择正确的路径。
+
+  </Step>
+</Steps>
+
+所选路径仅适用于当前设备。同步同一仓库的其他设备仍会保留各自的路径（或继续使用自动检测）。
+
+<Callout type="info" title="清除设备覆盖">
+  要让设备恢复自动检测，只需将配置文件或数据目录选择器重置为其默认值即可。ZotLit
+  会在该设备上恢复自动检测。
+</Callout>
+
+## 当新设备无法找到 Zotero 时 [#when-a-new-device-cannot-find-zotero]
+
+如果你将仓库同步到了一台 Zotero 未安装在默认位置且未设置设备覆盖的电脑上，ZotLit 将无法定位数据库。此时[文库视图](/docs/how-to/use-library-view#not-found)会显示 <UiLabel name={m.library_view_not_found()} />，并提供 <UiLabel name={m.library_view_locate()} /> 来选择正确的路径。
+
+在未打开文库视图时，ZotLit 会显示一条通知：
+
+> <UiLabel name={m.notice_db_not_found_on_device()} />
+
+该通知包含一个 <UiLabel name={m.notice_db_not_found_action()} /> 操作，可直接打开文库视图。此类通知一次只显示一条，一旦 ZotLit 重新读取到数据库就会消失。在连接尚未解决期间，它会在每次启动时显示；自动检测成功或设置了有效的设备覆盖后则不会显示。
+
+你也可以像上文介绍的那样，直接在 <SettingsPath page={m.settings_page_zotero()} setting={m.settings_page_zotero_location()} /> 中设置路径。
+
+## 另请参阅 [#see-also]
+
+<Cards>
+  <Card
+    title="ZotLit 如何连接到 Zotero"
+    description="了解 ZotLit 如何定位并读取 Zotero 数据库，以及为何路径按设备独立保存。"
+    href="/docs/reference/zotero-connection"
+  />
+  <Card
+    title="设置"
+    description={`各项 ZotLit 设置的完整参考，包括 ${m.settings_page_zotero()} 页面。`}
+    href="/docs/reference/settings"
+  />
+</Cards>

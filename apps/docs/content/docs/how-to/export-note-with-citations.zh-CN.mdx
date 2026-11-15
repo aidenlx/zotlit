@@ -1,0 +1,134 @@
+---
+title: "导出带引文的笔记"
+searchTitle: "将 Obsidian 笔记导出为带参考文献的 Word 或 HTML"
+description: "将当前 Markdown 笔记连同引用和参考文献列表导出为 DOCX 或 HTML。"
+---
+
+import { Card, Cards } from "fumadocs-ui/components/card";
+import { Steps, Step } from "fumadocs-ui/components/steps";
+import { Callout } from "@/components/callout";
+import { Command } from "@/components/command";
+import { LessonLink } from "@/components/lesson-link";
+import { SettingsPath } from "@/components/settings-path";
+import { UiLabel } from "@/components/ui-label";
+import { m } from "@/paraglide/messages.js";
+
+首次将带有格式化引用的笔记导出为 Word，请参阅 <LessonLink slug="export-obsidian-to-word-with-citations" />。
+
+将当前活动的 Markdown 笔记导出为包含格式化引用和参考文献列表的 Word 文档或网页。
+
+如需与原生 Pandoc 进行对比指导，请按照[构建 Pandoc 引文工作流](/docs/how-to/pandoc-citation-workflow)进行操作。
+
+## 开始之前 [#before-you-start]
+
+你需要：
+
+- 打开了一篇 Markdown 笔记的 Obsidian 桌面端。
+- 在 <SettingsPath page={m.settings_page_citations()} setting={m.settings_citation_references_heading()} /> 下已安装 <UiLabel name={m.settings_citation_engine_name()} />。
+- Zotero 处于运行状态，以便 ZotLit 获取参考文献数据。
+
+ZotLit 会优先使用 Better BibTeX（如果可用）；否则，它将使用 Zotero 本地 API。
+
+## 导出笔记 [#export-the-note]
+
+<Steps>
+  <Step>
+    ### 打开导出对话框 [#open-the-export-modal]
+
+    打开命令面板（Command palette）并运行：
+
+    <Command name={m.command_pandoc_export_name()} />
+
+  </Step>
+  <Step>
+    ### 选择输出选项 [#select-the-output]
+
+    检查以下字段：
+
+    - <UiLabel name={m.pandoc_export_format_name()} /> 默认为 <UiLabel name={m.pandoc_export_format_docx()} />。若要输出 HTML，请选择 <UiLabel name={m.pandoc_export_format_html()} />。
+    - <UiLabel name={m.pandoc_export_style_name()} /> 初始为该笔记在 Obsidian 中使用的样式。选择器下方的提示说明了该样式的来源：
+      - <UiLabel name={m.pandoc_export_style_from_note()} /> 笔记自身包含 `zotlit-csl` 属性。
+      - <UiLabel name={m.pandoc_export_style_from_profile({ profile: "Research" })} /> 该笔记属于导入笔记，其配置方案决定了该样式。
+      - <UiLabel name={m.pandoc_export_style_from_vault()} /> 笔记使用仓库的 <UiLabel name={m.settings_citation_references_style_name()} />。
+    - <UiLabel name={m.pandoc_export_destination_name()} /> 默认为来源笔记的路径及主文件名。
+
+    根据需要修改格式、样式或保存目标位置。当你选择其他样式时，该行会显示 <UiLabel name={m.pandoc_export_style_changed({ style: "APA Style 7th edition" })} /> 对话框中的更改不会修改原笔记。
+
+  </Step>
+  <Step>
+    ### 执行导出 [#run-the-export]
+
+    点击 <UiLabel name={m.pandoc_export_confirm()} />。ZotLit 将解析引用、检索参考文献数据并转换完整笔记。
+
+  </Step>
+</Steps>
+
+导出目标位置将生成一个 `.docx` Word 文档或 `.html` 网页。输出内容包含格式化引用和参考文献列表。完成通知会标明文件名和样式，例如 <UiLabel name={m.notice_pandoc_export_done({ file: "Draft.docx", style: "APA Style 7th edition" })} />。
+
+导出不会修改来源笔记。参考文献列表会在导出的文档中生成；Markdown 笔记中仍保留原有的引用标记。若要将参考文献列表放到其他地方，可[从参考文献侧边栏中复制](/docs/how-to/review-copy-troubleshoot-references#copy-references)。
+
+## 哪些引用会被导出 [#which-citations-are-exported]
+
+内置导出具有独立的引用识别规则。以下设置不会影响导出内容：
+
+- <UiLabel name={m.settings_citation_pandoc_citations_name()} />
+- <UiLabel name={m.settings_citation_wikilink_citations_name()} />
+- <UiLabel name={m.settings_citation_show_formatted_name()} />
+- <UiLabel name={m.settings_citation_open_as_links_name()} />
+
+所有指向文献笔记的 Wiki 链接都会被导出。有效的引用片段标识（例如 `#cite:locator=33`）会补充具体的引文细节。
+
+字面 Pandoc 引用的各种合法形式均可被导出识别：`[@doe2024]`、`[@doe2024, p. 12]`、`[-@doe2024]` 以及文内行内形式 `@doe2024`。同时通过 Wiki 链接和字面文献引用标识引用的同一部作品，在参考文献列表中只占一项。
+
+每个文献引用标识必须对应 <UiLabel name={m.settings_library_scope_name()} /> 中的一个 Zotero 条目。若某个标识未匹配到条目或匹配到多个条目，导出将终止并列出相关标识。请参阅[解决导出错误](#fix-an-export-error)。
+
+笔记属性中的 `nocite` 属性可将对应条目加入参考文献列表，而无需在正文中引用。
+
+Pandoc 负责解析笔记，因此被视作普通文本的内容（如代码块内部或带有 `\` 转义的标识）不会作为引用导出。
+
+<Callout type="info">
+  导出是“全有或全无”的。只有在引用解析、参考文献检索和 Pandoc
+  转换全部成功后，ZotLit 才会写入目标文件。
+</Callout>
+
+## 解决导出错误 [#fix-an-export-error]
+
+| 现象                                                    | 解决方法                                                                                                                                                                                   |
+| ------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| ZotLit 提示安装 Pandoc 引擎                             | 打开 <SettingsPath page={m.settings_page_citations()} setting={m.settings_citation_references_heading()} />，然后安装该引擎。                                                              |
+| `#cite:` 片段格式错误、指向非文献笔记，或链接目标未解析 | 修正片段或链接目标。                                                                                                                                                                       |
+| ZotLit 无法读取 Zotero 数据库                           | 检查 <UiLabel name={m.settings_page_zotero()} /> 设置，然后重新运行导出。                                                                                                                  |
+| Zotero 中缺少文献笔记对应的条目                         | 恢复缺失的条目或更新文献笔记的 `zotero-key`。                                                                                                                                              |
+| Better BibTeX 中没有该文献笔记的文献引用标识            | 在 Better BibTeX 中分配文献引用标识，然后重新运行导出。                                                                                                                                    |
+| 没有 Zotero 条目匹配该字面文献引用标识                  | 检查标识的拼写，或扩大 <UiLabel name={m.settings_library_scope_name()} />。                                                                                                                |
+| 字面文献引用标识匹配到多个 Zotero 条目                  | 在 Zotero 中修改其中一个标识，或缩小 <UiLabel name={m.settings_library_scope_name()} />。                                                                                                  |
+| ZotLit 提示启动 Zotero                                  | 启动 Zotero 并在导出期间保持其运行。                                                                                                                                                       |
+| Zotero 本地 API 已禁用                                  | 在 Zotero 中，打开**设置 > 高级**（Settings > Advanced），启用**允许此计算机上的其他应用程序与 Zotero 进行通信**（Allow other applications on this computer to communicate with Zotero）。 |
+| Better BibTeX 或 Zotero 本地 API 拒绝了请求             | 检查错误信息中指出的来源，待其响应正常后重试。                                                                                                                                             |
+| Zotero 无法提供所选样式                                 | 在 Zotero 中安装该样式，或在对话框中选择其他样式。ZotLit 不会改用其他样式导出。                                                                                                            |
+| Pandoc 终止了转换                                       | 修正错误信息中指出的源文件或样式问题，然后重新运行导出。                                                                                                                                   |
+| ZotLit 无法写入导出的文档                               | 选择一个可写入的目标位置，然后重新运行导出。                                                                                                                                               |
+
+任何错误都会终止整个导出过程。ZotLit 不会写入仅包含部分参考文献的文档。
+
+若要使用用户自行安装的 Pandoc CLI 进行转换，请参阅[原生 Pandoc 工作流](/docs/reference/settings#native-pandoc)。该工作流使用 <UiLabel name={m.settings_citation_pandoc_files_name()} /> 而非本命令。
+
+## 另请参阅 [#see-also]
+
+<Cards>
+  <Card
+    title="文内引用渲染与导航的工作原理"
+    description="了解 Obsidian 内部使用的独立引用规则。"
+    href="/docs/reference/citation-links"
+  />
+  <Card
+    title="设置"
+    description="安装引擎并选择参考文献样式。"
+    href="/docs/reference/settings"
+  />
+  <Card
+    title="插入引用"
+    description="从 Zotero 文库中插入 Markdown 引用。"
+    href="/docs/how-to/insert-citations"
+  />
+</Cards>

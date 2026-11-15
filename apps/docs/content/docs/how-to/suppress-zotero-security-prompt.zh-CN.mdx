@@ -1,0 +1,85 @@
+---
+title: "关闭安全提示"
+description: "阻止 Zotero 每次打开 obsidian:// 链接时弹出确认对话框。"
+---
+
+import { Steps, Step } from "fumadocs-ui/components/steps";
+import { Card, Cards } from "fumadocs-ui/components/card";
+import { Callout } from "@/components/callout";
+
+每当 Zotero 打开 `obsidian://` URI 时（例如，在 Zotero 中点击指向 Obsidian 笔记的反向链接），都会弹出一个安全确认对话框。你可以通过在 Zotero 的 Config Editor 中添加首选项来关闭此对话框。
+
+该提示不同于标注编辑时的 Zotero 权限对话框。如[在 Obsidian 中编辑 PDF 标注](/docs/how-to/edit-pdf-annotations)所述，请在该对话框中选择 **Always Allow**。
+
+![询问是否打开 obsidian 链接的 Zotero 安全确认对话框](/img/how-to/protocol-choose-app.webp)
+
+## 添加协议处理程序首选项 [#add-the-protocol-handler-preference]
+
+<Steps>
+  <Step>
+    ### 打开 Zotero 设置 [#open-zotero-settings]
+
+    在 Zotero 中，打开**编辑 > 设置**（Edit > Settings，Windows/Linux）或 **Zotero > 设置**（Zotero > Settings，macOS）。
+
+  </Step>
+  <Step>
+    ### 打开 Config Editor [#open-the-config-editor]
+
+    选择**高级**（Advanced）面板，然后点击 **Config Editor**。点击 **Accept the Risk and Continue**。Config Editor 会在独立窗口中打开。
+
+  </Step>
+  <Step>
+    ### 搜索该首选项 [#search-for-the-preference]
+
+    在 **Search preference name** 中输入：
+
+    ```
+    network.protocol-handler.external.obsidian
+    ```
+
+    该首选项默认不存在，因此不会匹配到已保存的条目。Zotero 会为你输入的名称新增一行，并提供 **Boolean**、**Number** 和 **String** 三种类型。
+
+  </Step>
+  <Step>
+    ### 创建首选项 [#create-the-preference]
+
+    保持选中 **Boolean**，然后点击该行末尾的 **+**（Add）按钮。Zotero 会创建该首选项并将值设为 `true`。
+
+    ![Zotero Config Editor 显示新建的 network.protocol-handler.external.obsidian 首选项并设为 Boolean](/img/how-to/config-editor.webp)
+
+  </Step>
+</Steps>
+
+现在 Zotero 打开 `obsidian://` 链接时将不再弹出确认对话框。
+
+<Callout type="info" title="从 Zotero 外部触发的链接">
+  如果从其他应用程序（而非 Zotero 内部）打开链接时仍弹出提示，还可以创建首选项
+  `network.protocol-handler.prompt-from-external`：搜索该名称，保持选中
+  **Boolean**，然后点击 **+**（Add）。新建的首选项默认值为
+  `true`，点击该行末尾的 **Toggle** 按钮将其值更改为 `false`。
+</Callout>
+
+<Callout type="info" title="鸣谢">
+  操作步骤改编自
+  [zotero-markdb-connect](https://github.com/daeh/zotero-markdb-connect)。
+</Callout>
+
+## 另请参阅 [#see-also]
+
+<Cards>
+  <Card
+    title="保持笔记最新"
+    description="从 Zotero 右键菜单批量更新笔记。"
+    href="/docs/how-to/keep-notes-updated"
+  />
+  <Card
+    title="导入 Zotero 笔记"
+    description="从 Zotero 右键菜单批量重新导入笔记。"
+    href="/docs/how-to/import-zotero-notes"
+  />
+  <Card
+    title="探索模板数据"
+    description="从 Zotero 右键菜单打开数据浏览器。"
+    href="/docs/how-to/explore-template-data"
+  />
+</Cards>

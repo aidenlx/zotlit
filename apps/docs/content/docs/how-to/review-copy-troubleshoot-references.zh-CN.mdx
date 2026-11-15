@@ -1,0 +1,152 @@
+---
+title: 查看、复制与排查参考文献
+searchTitle: 在 Obsidian 中查看与排查 Zotero 参考文献
+description: 使用参考文献侧边栏，更改单篇笔记的引文呈现方式，复制条目，并解决参考文献错误。
+---
+
+import { Steps, Step } from "fumadocs-ui/components/steps";
+import { Card, Cards } from "fumadocs-ui/components/card";
+import { Command } from "@/components/command";
+import { LessonLink } from "@/components/lesson-link";
+import { SettingsPath } from "@/components/settings-path";
+import { UiLabel } from "@/components/ui-label";
+import { m } from "@/paraglide/messages.js";
+
+要练习引用文献和检查参考文献，请跟随 <LessonLink slug="cite-in-obsidian-with-zotero" />。
+
+参考本指南查看当前笔记的参考文献，并修正 ZotLit 无法解析或排版的条目。
+
+## 查看参考文献 [#review-the-references]
+
+<Steps>
+  <Step>
+    ### 打开参考文献侧边栏 [#open-the-references-sidebar]
+
+    打开你要查看的 Markdown 笔记。运行：
+
+    <Command name={m.command_open_references_view_name()} />
+
+    侧边栏会跟随当前笔记。排版后的列表使用所选的 CSL 样式和参考文献排序规则。
+
+  </Step>
+  <Step>
+    ### 查找各处引用位置 [#find-each-citation-occurrence]
+
+    点击条目右侧的折叠箭头。ZotLit 会将编辑器跳转到该条目的下一处出现位置。
+
+    再次点击可在后续各处出现位置之间循环跳转。遍历到最后一处后会回到第一处。
+
+  </Step>
+  <Step>
+    ### 打开关联条目 [#open-the-related-item]
+
+    将鼠标悬停在条目上或用键盘聚焦它，即可显示该行的操作项。
+
+    - <UiLabel name={m.references_open_note()} /> 打开该笔记。若该 Zotero 条目尚未创建文献笔记，ZotLit 会先创建它。
+    - <UiLabel name={m.references_open_in_zotero()} /> 在 Zotero 中选中该条目。
+    - <UiLabel name={m.library_view_show_in_library()} /> 在文库视图中定位并高亮闪烁该文献。
+    - <UiLabel name={m.references_open_attachment()} /> 打开其附件。当存在多个附件时，ZotLit 会打开选择菜单。
+
+    仅当条目有可打开的附件时，附件操作才会显示。
+
+  </Step>
+  <Step>
+    ### 在编辑器中检查引文 [#inspect-a-citation-from-the-editor]
+
+    在 <SettingsPath page={m.settings_page_citations()} setting={m.settings_citation_hover_heading()} /> 下，将 <UiLabel name={m.settings_citation_hover_action_name()} /> 设为 <UiLabel name={m.settings_citation_hover_action_popover()} />。
+
+    悬停在排版后的引文上。弹出框会显示各被引条目的完整参考文献条目，以及相同的文献笔记、Zotero、<UiLabel name={m.library_view_show_in_library()} /> 和附件操作项。
+
+    使用 <UiLabel name={m.settings_citation_hover_mod_page_name()} /> 可分别控制 <UiLabel name={m.settings_citation_hover_mod_source_name()} />、<UiLabel name={m.settings_citation_hover_mod_live_preview_name()} /> 和阅读视图下的悬停触发方式。
+
+  </Step>
+</Steps>
+
+## 更改单篇笔记的引文呈现方式 [#change-one-notes-presentation]
+
+打开笔记，然后运行：
+
+<Command name={m.command_set_citation_presentation_name()} />
+
+你也可以从当前笔记的**更多选项**（More options）菜单中选择 <UiLabel name={m.command_set_citation_presentation_name()} />。
+
+1. 选择已在 Zotero 中安装的 <UiLabel name={m.citation_presentation_style_name()} />，或保持使用仓库样式。
+2. 输入 <UiLabel name={m.citation_presentation_language_name()} />，例如 `en-US`、`de` 或 `zh-CN`。
+3. 选择 <UiLabel name={m.citation_presentation_confirm()} />。
+
+该样式将应用于此笔记的文内引用、<UiLabel name={m.references_view_name()} /> 侧边栏、<UiLabel name={m.settings_citation_hover_action_popover()} />、复制的参考文献列表、内置导出以及[原生 Pandoc](/docs/how-to/export-with-native-pandoc) 运行流程。<UiLabel name={m.citation_presentation_language_name()} /> 会为整篇导出的文档设置 Pandoc `lang`，而不仅限于其中的引文。
+
+点击 <UiLabel name={m.citation_presentation_language_name()} /> 旁的重置按钮。其悬停提示为 <UiLabel name={m.citation_presentation_language_reset()} />。这会从笔记中移除 `lang`，引文排版将转为使用仓库的 <UiLabel name={m.settings_citation_locale_name()} />。
+
+## 复制参考文献 [#copy-references]
+
+### 复制完整参考文献列表 [#copy-the-complete-bibliography]
+
+在 <UiLabel name={m.references_view_name()} /> 侧边栏工具栏中选择 <UiLabel name={m.references_copy_bibliography()} />。ZotLit 会按参考文献排序规则复制排版好的条目，不包含标题。
+
+剪贴板中同时包含富文本和纯文本。纯文本条目之间由空行分隔。
+
+### 复制单条文献 [#copy-one-entry]
+
+在侧边栏中选中文中某一条目的文本。使用操作系统的常规复制快捷键即可。
+
+点击该行的折叠箭头用于跳转到引用位置，不会复制该条目。
+
+## 解决“复制参考文献”操作被禁用的问题 [#fix-a-disabled-copy-bibliography-action]
+
+悬停在被禁用的操作项上可查看具体原因。
+
+| 提示文本                                                     | 应对方法                                 |
+| ------------------------------------------------------------ | ---------------------------------------- |
+| <UiLabel name={m.references_copy_blocked_no_note()} />       | 打开需要复制参考文献的 Markdown 笔记。   |
+| <UiLabel name={m.references_copy_blocked_no_references()} /> | 在当前笔记中添加已被识别的引用。         |
+| <UiLabel name={m.references_copy_blocked_pending()} />       | 等待当前排版流程完成。                   |
+| <UiLabel name={m.references_copy_blocked_unavailable()} />   | 安装或恢复 Pandoc 引擎以及可用样式。     |
+| <UiLabel name={m.references_copy_blocked_failed()} />        | 检查引擎和所选样式，待侧边栏刷新后重试。 |
+| <UiLabel name={m.references_copy_blocked_errors()} />        | 修正侧边栏中列出的所有参考文献错误。     |
+
+当当前笔记、样式、语言或 Zotero 数据发生变动时，该操作也会暂时不可用。请等待新的参考文献列表排版完成。
+
+## 修复参考文献错误 [#fix-reference-errors]
+
+每个参考文献错误都与具体的源码出现位置紧密关联。使用该行的折叠箭头可直接跳转到该位置。
+
+| 侧边栏状态                                                               | 原因                                                                              | 恢复方法                                                                                           |
+| ------------------------------------------------------------------------ | --------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------- |
+| `@key matches no item in your Zotero library.`                           | <UiLabel name={m.settings_library_scope_name()} /> 中没有条目具备该文献引用标识。 | 修正该标识，将对应文库添加到范围中，或将该标识分配给目标条目。                                     |
+| `@key matches multiple items in your Zotero library.`                    | 范围内有多个条目共用同一个文献引用标识。                                          | 为每个条目赋予不同的标识，或缩小 <UiLabel name={m.settings_library_scope_name()} /> 直至标识唯一。 |
+| `This link has an invalid citation fragment.`                            | 文献笔记链接包含格式错误的 `#cite:` 片段。                                        | 修正该片段。对于页码定位，请使用 `#cite:locator=33`。                                              |
+| `{linkpath} points to an item that is no longer in your Zotero library.` | 文献笔记的 `zotero-key` 已无法对应到任何条目。                                    | 恢复该 Zotero 条目或修正文献笔记的对应标识。                                                       |
+
+存在歧义的行会列出所有匹配条目及其所属文库和条目标识符。在文献引用标识能够唯一定位到一个条目之前，<UiLabel name={m.references_open_note()} /> 会一直保持不可用。
+
+## 修复呈现错误 [#fix-presentation-errors]
+
+| 提示横幅                                                     | 恢复方法                                                                                                                                                                          |
+| ------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **This note's citation and references style is unavailable** | 修正笔记中的 `zotlit-csl`，在 Zotero 中安装该样式，或使用仓库样式。                                                                                                               |
+| **This note's document language is invalid**                 | 将 `lang` 设置为标准语言代码（如 `de-DE`），或直接移除该属性。                                                                                                                    |
+| **ZotLit could not format these references**                 | 在 <SettingsPath page={m.settings_page_citations()} setting={m.settings_citation_references_heading()} /> 下检查所选样式和 <UiLabel name={m.settings_citation_engine_name()} />。 |
+| **The Pandoc engine is unavailable**                         | 打开相同的设置页面，修复或重新安装该引擎。                                                                                                                                        |
+
+当排版输出不可用时，侧边栏会显示简略列表。在 ZotLit 生成无参考文献错误的完整参考文献列表之前，“复制”将保持禁用状态。
+
+## 另请参阅 [#see-also]
+
+<Cards>
+  <Card
+    title="文内引用的工作原理"
+    description="了解来源构成、排序规则、解析机制以及导航行为。"
+    href="/docs/reference/citation-links"
+  />
+  <Card
+    title="插入引用"
+    description="插入字面 Pandoc 引用或文献笔记引用。"
+    href="/docs/how-to/insert-citations"
+  />
+  <Card
+    title="导出带引文的笔记"
+    description="使用 ZotLit 内置的 DOCX 或 HTML 工作流导出当前笔记。"
+    href="/docs/how-to/export-note-with-citations"
+  />
+</Cards>

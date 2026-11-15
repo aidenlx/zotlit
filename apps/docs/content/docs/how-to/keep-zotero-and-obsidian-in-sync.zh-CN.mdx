@@ -1,0 +1,84 @@
+---
+title: "保持同步"
+searchTitle: "同步 Zotero 与 Obsidian：保持笔记最新"
+description: "安装 ZotLit Companion，让 Zotero 的最新更改同步到 Obsidian，并通过 Zotero 菜单打开笔记。"
+---
+
+import { Card, Cards } from "fumadocs-ui/components/card";
+import { Steps, Step } from "fumadocs-ui/components/steps";
+import { Callout } from "@/components/callout";
+import { UiLabel } from "@/components/ui-label";
+import { m } from "@/paraglide/messages.js";
+
+ZotLit 直接从 Zotero 数据库读取文库。浏览[文库视图](/docs/how-to/use-library-view)、搜索以及阅读 PDF 无需其他配置。ZotLit Companion 作为 Zotero 插件，补充了三项功能：
+
+- 保持 Zotero 数据库文件为最新状态，以便 ZotLit 能读取到你在 Zotero 中刚做的更改。
+- 在 Zotero 菜单中添加 ZotLit 操作，例如打开或更新条目的文献笔记。
+- 可以通过可选的实时更新，在更改发生时即刻推送到 Obsidian。
+
+若你需要其中任何功能，请参阅本指南。
+
+## 确认是否需要 Companion [#when]
+
+ZotLit 能否读取到你最新的 Zotero 更改，取决于它在你的电脑上如何读取数据库。
+
+<Callout type="warn" title="Windows 以及使用 ext4 的 Linux">
+  在 Windows 以及 ext4 等不支持文件克隆的 Linux 文件系统上，ZotLit
+  仅读取主数据库文件 `zotero.sqlite`。Zotero 10
+  及更高版本会先将每次更改保存到其旁边的日志文件 `zotero.sqlite-wal`
+  中，稍后再将更改复制到主文件中：当日志变大、Zotero 空闲以及 Zotero
+  关闭时。在此之前，文库视图以及你更新的笔记可能会显示旧数据。Companion 会让
+  Zotero 在每次更改后不久将更改写入主文件，因此请在这些系统上安装它。Zotero 9
+  通常会直接将更改写入主文件。
+</Callout>
+
+在 macOS 以及支持文件克隆的 Linux 文件系统（如 Btrfs 和启用了 reflink 的 XFS）上，ZotLit 会读取一份已包含最新更改的数据库副本。除非你需要 Zotero 菜单操作或实时更新，否则在这些系统上无需安装 Companion。
+
+[ZotLit 如何连接到 Zotero](/docs/reference/zotero-connection#reading-the-zotero-database)详细说明了各种读取模式。
+
+## 安装 Companion [#install]
+
+<Steps>
+  <Step>
+    ### 在 Zotero 中安装插件 [#install-the-add-on-in-zotero]
+
+    按照[安装 ZotLit Companion](/docs/install-companion)中的说明下载 `.xpi` 文件，并在 Zotero 的**工具 > 插件**（Tools > Plugins）中进行安装。
+
+  </Step>
+  <Step>
+    ### 确认数据库保持最新 [#confirm-that-it-keeps-the-database-current]
+
+    在 Zotero 的设置中，打开 <UiLabel name={m["zotero.prefs_pane_label"]()} /> 面板。在 <UiLabel name={m["zotero.prefs_database_section"]()} /> 下，保持 <UiLabel name={m["zotero.prefs_wal_checkpoint.label"]()} /> 处于启用状态。新安装默认已启用该选项。
+
+  </Step>
+</Steps>
+
+## 从 Zotero 中运行 ZotLit 操作 [#zotero-actions]
+
+安装 Companion 后，在 Zotero 中右键点击某个条目，打开 <UiLabel name={m["zotero.menu_submenu.label"]()} /> 子菜单。其中的操作可以打开、更新和导入文献笔记，并在 Obsidian 中打开条目的 PDF。这些操作通过 `obsidian://` 链接与 Obsidian 通信，因此无需在 Obsidian 中进行额外设置。
+
+要从 Zotero 中更新笔记，请参阅[保持笔记最新](/docs/how-to/keep-notes-updated)。有关这些链接本身的说明，请参阅[协议链接](/docs/reference/protocol-links)。
+
+## 实时获取更改（可选） [#live-updates]
+
+实时更新可以在你阅读和批注时将 Zotero 中的更改推送到 Obsidian，并让标注视图跟随 Zotero 阅读器。该功能需要 Companion 以及 Obsidian 中的 ZotLit 服务器，两者默认均为关闭状态。请参阅[设置实时更新](/docs/how-to/set-up-live-updates)。
+
+## 另请参阅 [#see-also]
+
+<Cards>
+  <Card
+    title="解决 Zotero 更改未显示的问题"
+    description="当 Zotero 的更改仍未同步到 Obsidian 时的解决方法。"
+    href="/docs/how-to/fix-stale-data"
+  />
+  <Card
+    title="安装 ZotLit Companion"
+    description="下载并安装 Zotero 插件。"
+    href="/docs/install-companion"
+  />
+  <Card
+    title="ZotLit 如何连接到 Zotero"
+    description="数据库读取、Zotero 操作与实时更新如何协同工作。"
+    href="/docs/reference/zotero-connection"
+  />
+</Cards>
