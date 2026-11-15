@@ -1,0 +1,42 @@
+---
+version: "2.2.4"
+companion: "2.2.4"
+date: "2026-11-15"
+description: "Bases-style Table headers, smoother long lists"
+---
+
+import { UiLabel } from "@/components/ui-label";
+import { m } from "@/paraglide/messages.js";
+
+This release brings Obsidian Bases-style column headers to Table views and makes long lists and embedded views scroll smoothly. ZotLit Companion 2.2.4 ships with it and only updates documentation links, so Companion versions 2.2.0 to 2.2.3 keep working.
+
+## What's New
+
+### Table column headers work like in Obsidian Bases
+
+Select a column header in a Table view to sort by that column. Each click steps through sorting A to Z, sorting Z to A, and removing the sort. Columns with an active sort show a small chevron at the end of the header: up for A to Z, down for Z to A.
+
+The column menu now opens on right-click (tap on mobile) and includes:
+
+- <UiLabel name={m.query_view_table_hide_column()} />
+- <UiLabel name={m.query_view_table_group_by()} />, for properties the view can
+  group by
+- <UiLabel name={m.query_view_table_sort_az()} /> and
+  <UiLabel name={m.query_view_table_sort_za()} />, with a check mark for the
+  active sort, and <UiLabel name={m.query_view_table_clear_sort()} />
+- <UiLabel name={m.query_view_table_edit_property()} /> (or
+  <UiLabel name={m.query_view_table_edit_formula()} /> for a formula), which
+  opens the display name and formula beside the header
+
+See [Table columns](/docs/how-to/use-query-files#table-columns).
+
+### Long lists scroll smoothly
+
+The Papers, Table, and List layouts now draw only the rows near the screen in the Library View, in query file tabs, and in embeds. Collapsing a sidebar no longer freezes Obsidian in a large library, and dragging the scroll bar reaches the end of the list.
+
+Embedded views now load as they come near the screen and keep their height while loading so surrounding text does not jump.
+
+### Other improvements
+
+- The documentation now has a Simplified Chinese edition at [/zh-CN/docs](/zh-CN/docs), and ZotLit's help links open it when Obsidian is set to Simplified Chinese (and so do ZotLit Companion's links when Zotero is).
+- When a view has no sort or group rules, both menus show a placeholder row to pick a property, and the delete button removes the grouping.
