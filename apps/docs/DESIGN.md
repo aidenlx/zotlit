@@ -375,7 +375,7 @@ closing call. Sections run 1152px wide (`max-w-6xl`) with 32px side gutters
   Reproducibility.zotquery table ("Compare your papers") lead at the
   top; the PDF page with the reader's marks ("Read and highlight"), the
   literature-note index card ("Take literature notes"), the draft with its
-  citations in place ("Cite as you write") and the Word reference page
+  citation picker ("Cite as you write") and the Word reference page
   ("Export and submit") lie below. Two blank sheets under the leads give
   depth. Each side group (left, right) is drawn at 0.84 towards its own
   outer edge, so each of its objects keeps at least 72px clear of the text at every
@@ -393,7 +393,10 @@ closing call. Sections run 1152px wide (`max-w-6xl`) with 32px side gutters
   table, PDF, note card, draft, references; 100–1100 ms delays): a 38px
   fall with a 5° turn and a 7% shrink over 780 ms. Then the ratings fill in,
   the table's cell focus lands and the highlighter sweeps across "research desk" (at
-  2.3 s). From 1280px the
+  2.3 s). As the draft lands, a caret shows, `[@ten` types one character at
+  a time, the citation picker opens, its first row is picked, and the picker
+  closes as "(Rougier et al., 2014)." takes the key's place (1.9–3.8 s); the
+  final state shows the citation alone. From 1280px the
   objects drift with a fine pointer, each by its depth, up to 8px. All of it
   is CSS under `motion-safe:`, except the drift, which writes `translate` on
   each object in one animation frame. The prerendered page and reduced

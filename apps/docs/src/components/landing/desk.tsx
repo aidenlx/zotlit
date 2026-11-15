@@ -1,8 +1,8 @@
 // The research desk around the hero's headline: six objects, each built in
 // HTML on the docs Fixture's data and named by a strip of washi tape. The
 // Library View sheet and the Reproducibility.zotquery table lead; the PDF
-// page, the literature-note card, the draft with its citations and the Word
-// reference page lie around them.
+// page, the literature-note card, the draft with its citation picker and the
+// Word reference page lie around them.
 //
 // From 1280px the desk lies on a 1440 × 832 stage that scales in steps with
 // the window. Below 1280px, the library sheet, the table and the PDF sit in a
@@ -504,7 +504,11 @@ function NoteCard() {
 const CITATION =
   "text-fd-primary underline decoration-fd-primary/40 decoration-dotted underline-offset-[3px]";
 
-/** The chapter draft, with its citations in place. */
+/**
+ * The chapter draft: one citation in place, a second one typed, picked from
+ * the suggestion list and put in. The list shows only while the key is being
+ * picked; the final frame has both citations in place.
+ */
 function DraftSheet() {
   return (
     <div
@@ -519,11 +523,43 @@ function DraftSheet() {
       <p className="mt-2 font-serif text-[16px] font-semibold text-fd-foreground">
         3.3 Keeping each figure reproducible
       </p>
-      <p className="mt-1.5 text-[13px] leading-[1.65] text-fd-foreground">
-        Every figure in this chapter is rebuilt from its raw data by one script{" "}
-        <span className={CITATION}>(Sandve et al., 2013)</span>. Their layout
-        follows <span className={CITATION}>(Rougier et al., 2014)</span>.
-      </p>
+      <div className="relative mt-1.5 text-[13px] leading-[1.65] text-fd-foreground">
+        <p>
+          Every figure in this chapter is rebuilt from its raw data by one
+          script <span className={CITATION}>(Sandve et al., 2013)</span>. Their
+          layout follows{" "}
+          {/* The typed key and the citation that replaces it share one cell. */}
+          <span className="inline-grid">
+            <span className="opacity-0 [grid-area:1/1] motion-safe:animate-desk-typed">
+              <span className="inline-block overflow-hidden align-bottom font-mono text-[12px] whitespace-nowrap text-fd-primary motion-safe:animate-desk-type">
+                [@ten
+              </span>
+              <span className="ms-px inline-block h-[15px] w-[1.5px] translate-y-[3px] bg-fd-foreground motion-safe:animate-desk-blink" />
+            </span>
+            <span className="[grid-area:1/1] motion-safe:animate-desk-cited">
+              <span className={CITATION}>(Rougier et al., 2014)</span>.
+            </span>
+          </span>
+        </p>
+        <div className="absolute top-full left-[6%] mt-1.5 w-[268px] origin-[12%_0] overflow-hidden rounded-md border border-fd-border bg-fd-card opacity-0 [box-shadow:var(--desk-shadow)] motion-safe:animate-desk-suggest">
+          <div className="bg-fd-muted px-3 py-2 motion-safe:animate-desk-pick">
+            <p className="text-[12px] leading-snug font-medium text-fd-foreground">
+              Ten Simple Rules for Better Figures
+            </p>
+            <p className="text-[11px] text-fd-muted-foreground">
+              Rougier et al. (2014)
+            </p>
+          </div>
+          <div className="px-3 py-2">
+            <p className="text-[12px] leading-snug text-fd-foreground">
+              Ten Simple Rules for Reproducible Computational Research
+            </p>
+            <p className="text-[11px] text-fd-muted-foreground">
+              Sandve et al. (2013)
+            </p>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }

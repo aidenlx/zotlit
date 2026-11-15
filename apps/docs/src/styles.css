@@ -211,7 +211,10 @@
      prerendered page and reduced motion show the final frame.
      The desk: each object drops onto the desk at its angle (`--desk-r`); the
      highlighter sweeps across the headline; the table's ratings fill in, the
-     cell focus lands.
+     cell focus lands; a citation key is typed in the draft, the citation
+     picker pops open, and it closes as the citation takes the key's place.
+     Only the citation stays: the typed key and the picker show only while
+     their animation runs.
      @see apps/docs/DESIGN.md → Landing */
   /* `backwards`, not `both`: the last keyframe equals the object's own
      transform, so once the drop ends no fill holds the object on a
@@ -222,6 +225,18 @@
     both;
   --animate-desk-fill: desk-fill 300ms ease-out both;
   --animate-desk-focus: desk-focus 2400ms steps(1) 1500ms both;
+  /* The draft lands at 1680 ms. The caret shows at 1900 ms, `[@ten` types
+     one character every 110 ms from 2050 ms, the picker opens at 2350 ms
+     (after "[@t") and its first row is picked at 3450 ms; at 3750 ms the
+     picker closes and the citation takes the key's place.
+     No fill on the key and the picker: outside their run they fall back to
+     their own `opacity-0`. The citation waits hidden (`backwards`). */
+  --animate-desk-typed: desk-typed 1850ms linear 1900ms;
+  --animate-desk-type: desk-type 550ms steps(5) 2050ms backwards;
+  --animate-desk-suggest: desk-suggest 1400ms linear 2350ms;
+  --animate-desk-pick: desk-pick 300ms ease-out 3450ms;
+  --animate-desk-cited: desk-cited 220ms ease-out 3750ms backwards;
+  --animate-desk-blink: desk-blink 0.9s steps(1) infinite;
   @keyframes desk-drop {
     from {
       opacity: 0;
@@ -253,6 +268,44 @@
     }
     10% {
       opacity: 1;
+    }
+  }
+  @keyframes desk-typed {
+    from,
+    to {
+      opacity: 1;
+    }
+  }
+  @keyframes desk-type {
+    from {
+      width: 0;
+    }
+    to {
+      width: 5ch;
+    }
+  }
+  @keyframes desk-suggest {
+    from {
+      opacity: 0;
+      transform: translateY(-4px) scale(0.97);
+    }
+    12%,
+    93% {
+      opacity: 1;
+      transform: none;
+    }
+    to {
+      opacity: 0;
+    }
+  }
+  @keyframes desk-pick {
+    50% {
+      background-color: var(--desk-selected);
+    }
+  }
+  @keyframes desk-cited {
+    from {
+      opacity: 0;
     }
   }
   @keyframes desk-blink {
