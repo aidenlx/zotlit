@@ -16,6 +16,7 @@ import type { ReactNode } from "react";
 import { DocsImage } from "@/components/docs-image";
 import { fumadocsTranslations } from "@/lib/fumadocs-translations";
 import { i18n } from "@/lib/i18n";
+import { rememberLanguageChoice } from "@/lib/language-choice";
 import {
   deLocalizeHref,
   getLocale,
@@ -92,7 +93,10 @@ export function LocaleProvider({ children }: { children: ReactNode }) {
         i18n={{
           ...i18nProvider(translations, getLocale()),
           onLocaleChange(locale) {
-            if (isLocale(locale)) void setLocale(locale);
+            if (!isLocale(locale)) return;
+            // Choosing English here also stops the Chinese-edition suggestion.
+            rememberLanguageChoice(locale);
+            void setLocale(locale);
           },
         }}
       >

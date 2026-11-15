@@ -57,9 +57,16 @@ Owned layout slots:
   (`min-height`), so the strip wraps instead of overflowing on narrow
   viewports, and a resize-synced `--fd-banner-height` keeps sticky offsets
   tracking the wrapped height. Consumed by
-  `src/components/locale-fallback-notice.tsx`: on a `/zh-CN` page with no
-  Chinese file, the strip says English is shown and links to the English page.
-  It has no close button, since it belongs to that page.
+  `src/components/language-banner.tsx`, one strip with two states:
+  - On a `/zh-CN` page with no Chinese file, the strip says English is shown
+    and links to the English page. It has no close button, since it belongs
+    to that page.
+  - On an English page with a Chinese edition, the strip offers that edition,
+    in Chinese, to a reader whose browser puts Chinese first. The strip is in
+    the prerendered HTML, and a `<head>` script (`src/lib/language-choice.ts`)
+    shows it before the first paint, so it never moves the page. Closing it,
+    or choosing English in the language menu, stops it. The Workbench app
+    shell has no strip.
 
 ## Tokens
 

@@ -14,6 +14,8 @@
   <a href="https://zotlit.aidenlx.site/docs">📖 Docs</a>
   ·
   <a href="https://zotlit.aidenlx.site/community">💬 Community</a>
+  ·
+  <a href="https://zotlit.aidenlx.site/zh-CN/docs" lang="zh-CN">简体中文文档</a>
 </p>
 
 <p>
