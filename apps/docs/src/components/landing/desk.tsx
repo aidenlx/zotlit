@@ -57,7 +57,7 @@ function Tape({
 }) {
   return (
     <span
-      className="absolute -top-3 z-10 px-3 py-[5px] font-mono text-[10.5px] leading-none font-medium tracking-[0.12em] whitespace-nowrap text-fd-foreground/80 uppercase"
+      className="absolute -top-3 z-10 px-3 py-[5px] font-mono text-[10.5px] leading-none font-medium tracking-[0.12em] whitespace-nowrap text-fd-foreground/80 uppercase zh:text-xs zh:leading-none zh:tracking-normal"
       style={{
         [side]: inset,
         background: "var(--desk-tape)",
@@ -286,8 +286,8 @@ function LibrarySheet({ compact = false }: { compact?: boolean }) {
 /** The query file as a table: the rating column is the reader's own, filled in as they read. */
 function TableSheet({ compact = false }: { compact?: boolean }) {
   const cols = compact
-    ? "minmax(0,1fr) 48px 84px"
-    : "minmax(0,1fr) 50px 104px 96px";
+    ? "minmax(0,1fr) 48px 92px"
+    : "minmax(0,1fr) 50px 104px 100px";
   const cell = compact ? "truncate px-2 py-[6px]" : "truncate px-2 py-[10px]";
   const own = "bg-(--desk-own)";
   const tool = "inline-flex items-center gap-1";
@@ -510,7 +510,7 @@ function DraftSheet() {
         "rounded-md border border-fd-border bg-fd-card px-5 pt-4 pb-5",
       )}
     >
-      <p className="font-mono text-[10px] tracking-[0.12em] text-fd-muted-foreground uppercase">
+      <p className="font-mono text-[10px] tracking-[0.12em] text-fd-muted-foreground uppercase zh:font-sans zh:text-[11px] zh:tracking-normal">
         {m.docs_home_desk_draft_chapter()}
       </p>
       <p className="mt-2 font-serif text-[16px] font-semibold text-fd-foreground">

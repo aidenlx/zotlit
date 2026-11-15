@@ -74,7 +74,7 @@ export function Hero() {
         <div className="flex w-full max-w-[640px] flex-col items-center xl:[zoom:var(--desk-s)]">
           <h1
             id="landing-title"
-            className="font-serif text-[2.6rem] leading-[1.12] font-medium tracking-[-0.02em] text-balance text-fd-foreground sm:text-6xl"
+            className="font-serif text-[2.6rem] leading-[1.12] font-medium tracking-[-0.02em] text-balance text-fd-foreground sm:text-6xl zh:leading-[1.3] zh:tracking-normal zh:wrap-anywhere zh:break-keep"
           >
             <Message
               text={m.docs_home_title({ mark: "{mark}" })}
@@ -83,7 +83,7 @@ export function Hero() {
               }}
             />
           </h1>
-          <p className="mt-7 max-w-[34rem] text-lg text-pretty text-fd-muted-foreground sm:text-xl">
+          <p className="mt-7 max-w-[34rem] text-lg text-pretty text-fd-muted-foreground sm:text-xl zh:wrap-anywhere zh:break-keep">
             {m.docs_home_lede()}
           </p>
           <Actions className="mt-9" />

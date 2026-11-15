@@ -176,6 +176,17 @@ Chinese text follows these rules:
   `src/lib/prose.ts` and `src/components/docs-page.tsx`).
 - **Tracking.** Chinese text in content sets at zero tracking; the prose h4
   label drops its tracking under `zh:`.
+- **Labels.** Han has no case, so the label voice's uppercase and wide
+  tracking carry no meaning in Chinese: a Chinese label (nav link, washi tape,
+  sheet label) sets at zero tracking under `zh:tracking-normal`, a sheet label
+  in the Chinese sans, and a tape at 12px (`zh:text-xs`) so its strokes stay
+  legible on the scaled desk.
+- **Display headings.** Landing headings set at 1.3 leading and zero tracking,
+  and break only between words (`zh:leading-[1.3] zh:tracking-normal
+  zh:break-keep zh:wrap-anywhere`), so `text-balance` never splits a word or a
+  highlighted term. Chinese headings and short leads end without a full stop.
+- **Landing body.** The landing root sets the text-base and text-lg leading to
+  1.75 and text-xl to 1.7 under `zh:`.
 - **Punctuation.** Double quotation marks, the dash and the ellipsis take the
   Chinese face's glyphs: a punctuation-only face leads each Chinese stack,
   because the Latin faces also cover these code points. In the serif they are
