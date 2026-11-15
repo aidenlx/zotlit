@@ -11,7 +11,7 @@ import { m } from "@/paraglide/messages.js";
 
 ZotLit 仅在你明确要求时才会将文本从 Zotero 复制到 Obsidian。双向均不会进行自动同步。
 
-## 破坏性变更 [#breaking-changes]
+## 不兼容变更 [#breaking-changes]
 
 ### 默认文献笔记正文在创建后归你完全掌控 [#the-default-literature-note-body-is-yours-after-creation]
 
@@ -68,7 +68,7 @@ ZotLit 写入笔记中的每个标注现在均使用指定该标注的 `zotero:/
 命令具有同样的作用。此前，只有在快速切换器中按下 `Alt+Enter`
 才能实现此操作。请参阅[在文库中显示文献](/docs/how-to/use-library-view#show-in-library)。
 
-![一篇学位论文章节，在 Rougier 等人的引文上方打开了引用弹出框，其文库按钮上带有“在 Zotero 文库中显示”提示工具，旁边是文库视图，选中了该文献所在行，列表下方显示其详细信息](/img/changelog/show-in-library.webp)
+![一篇学位论文章节，在 Rougier 等人的引文上方打开了引用弹出框，其文库按钮上带有“在 Zotero 文库中显示”悬停提示，旁边是文库视图，选中了该文献所在行，列表下方显示其详细信息](/img/changelog/show-in-library.webp)
 
 文库视图会清除当前的搜索和筛选条件，确保文献不被隐藏，然后高亮闪烁该文献所在的行。当该文献不存在于你的任何文库中时，视图会保留搜索和筛选条件，并显示 <UiLabel name={m.library_view_reveal_not_found()} />
 
@@ -87,7 +87,7 @@ ZotLit 写入笔记中的每个标注现在均使用指定该标注的 `zotero:/
   秒内即可出现，而之前需要约 10 秒。
 - 包含大量引用的笔记在打开和更新时速度更快。
 
-![学位论文章节旁窄面板中的文库视图，所选文献的详情以全宽显示在列表下方，搜索行末尾的开关上带有“显示条目详情”提示工具](/img/changelog/library-view-details-toggle.webp)
+![学位论文章节旁窄面板中的文库视图，所选文献的详情以全宽显示在列表下方，搜索行末尾的开关上带有“显示条目详情”悬停提示](/img/changelog/library-view-details-toggle.webp)
 
 ![以表达式形式编写的查询视图筛选器，字段名、函数、数字和文本以不同颜色显示，“year”下方带有波浪下划线和错误提示，补全列表展开且“tags”排在顶部](/img/changelog/filter-expression-editor.webp)
 

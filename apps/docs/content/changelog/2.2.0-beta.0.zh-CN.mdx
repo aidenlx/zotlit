@@ -84,7 +84,7 @@ settings）会将这六个选项与原生选项一同重置为默认值。
 
 ![模板工作台布局，包含字段面板、显示带有字段悬停卡片的 Liquid 模板的配置方案编辑器，以及笔记预览面板](/img/changelog/template-workbench-layout.webp)
 
-你的模板现在拥有专门的专属视图，编辑器一侧显示字段，另一侧显示生成的笔记。<Command inline>ZotLit: Switch to template workbench view</Command> 会在当前活动笔记中打开该文档，而 <Command inline name={m.template_workbench_open_layout()} /> 会同时打开全部三个面板（若原本需要共享窗口，则会在独立窗口中打开）。在文献笔记中执行 <Command inline>ZotLit: Customize this note's template</Command>，会直接打开生成该笔记的配置方案，并预先选中该篇文献。
+你的模板现在拥有专门的专属视图，编辑器一侧显示字段，另一侧显示生成的笔记。<Command inline>ZotLit: Switch to template workbench view</Command> 会在当前活动笔记中打开该文档，而 <Command inline name={m.template_workbench_open_layout()} /> 会同时打开全部三个面板（若原本需要共享窗口，则会在独立窗口中打开）。在文献笔记中执行 <Command inline>ZotLit: 自定义此笔记的模板</Command>，会直接打开生成该笔记的配置方案，并预先选中该篇文献。
 
 工作台采用三栏布局：<UiLabel name={m.workbench_fields_heading()} /> 面板列出了模板可读取的 Zotero 数据，中间栏用于编辑文档，<UiLabel name={m.workbench_result_heading()} /> 面板显示最终输出的笔记。各面板通过 Obsidian 的原生联动标签页关联，因此在其中一个面板中选择文献或标注，其他面板会同步联动。
 
@@ -118,7 +118,7 @@ settings）会将这六个选项与原生选项一同重置为默认值。
 
 [转换 2.1 模板文件](/docs/how-to/migrate-from-2.1-templates)详细列出了具体操作步骤以及每个旧文件的去向。
 
-### 遇到未知或模糊标识时导出带引文的笔记将中止 [#export-with-citations-stops-on-an-unknown-or-ambiguous-key]
+### 遇到未知或有歧义的标识时导出带引文的笔记将中止 [#export-with-citations-stops-on-an-unknown-or-ambiguous-key]
 
 <Command inline name={m.command_pandoc_export_name()} /> 现在按照 Pandoc
 的方式解析笔记，因此字面量 `@citation-key` 文本也能进入参考文献列表。通过 Wiki
@@ -127,13 +127,13 @@ settings）会将这六个选项与原生选项一同重置为默认值。
 
 带来的变化是：如果某个引用标识在你的文库范围内匹配不到条目，或者匹配到了多个条目，导出将直接中止并列出这些标识。在 2.1 中，此类笔记导出时会带有 Pandoc 的未定义引用输出且没有参考文献列表，表面上看起来像是成功了。请在 Zotero 中检查拼写，或在 <SettingsPath page={m.settings_page_zotero()} /> 下扩大文库范围。[导出带引文的笔记](/docs/how-to/export-note-with-citations)介绍了这一工作流。
 
-### 弃用代理模板命令 [#the-agent-template-commands-are-retired]
+### 弃用 Agent 模板命令 [#the-agent-template-commands-are-retired]
 
 ZotLit 的 `obsidian` CLI 命名空间中的以下九个命令现在会拒绝所有调用并提示命令已弃用：
 
 `zotlit:template-schema`、`zotlit:template-render`、`zotlit:template-document-render`、`zotlit:template-source`、`zotlit:frontmatter-status`、`zotlit:frontmatter-eval`、`zotlit:frontmatter-set`、`zotlit:frontmatter-remove`、`zotlit:frontmatter-reorder`。
 
-此前通过这些命令编写模板的代理程序必须迁移至：用于读取保存的文档及其有效性的 `zotlit:template-inspect`；用于列出条目真实字段值的 `zotlit:template-data`；以及用于渲染各部分并报告错误的 `zotlit:template-check`。属性在配置方案文档中编辑，并通过 `output=frontmatter` 进行检查。这些是命令行命令，而不是命令面板中的命令。[模板工作台 CLI](/docs/reference/template-workbench-cli) 解释了操作循环，[模板工作台 CLI 参考](/docs/reference/template-workbench-cli#retired)列出了现行命令与其取代的弃用命令的对照表。
+此前通过这些命令编写模板的 Agent 必须迁移至：用于读取保存的文档及其有效性的 `zotlit:template-inspect`；用于列出条目真实字段值的 `zotlit:template-data`；以及用于渲染各部分并报告错误的 `zotlit:template-check`。属性在配置方案文档中编辑，并通过 `output=frontmatter` 进行检查。这些是命令行命令，而不是命令面板中的命令。[模板工作台 CLI](/docs/reference/template-workbench-cli) 解释了操作循环，[模板工作台 CLI 参考](/docs/reference/template-workbench-cli#retired)列出了现行命令与其取代的弃用命令的对照表。
 
 ### 设置选项卡重新整理 [#the-settings-tab-is-reorganized]
 

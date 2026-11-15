@@ -104,7 +104,7 @@ Obsidian 笔记编辑器不再在模板文件中提供 Eta 标签补全建议，
 
 参见[在文库视图中浏览文库](/docs/how-to/use-library-view)。
 
-### 在 Obsidian 中阅读和批注 PDF [#read-and-annotate-pdfs-in-obsidian]
+### 在 Obsidian 中阅读和标注 PDF [#read-and-annotate-pdfs-in-obsidian]
 
 ![在 Obsidian 的 PDF 阅读器中打开的文献，显示来自 Zotero 的高亮与下划线，某个高亮的浮窗显示其评论和标签，标注视图将每条标注列为卡片](/img/changelog/pdf-reader-annotations.webp)
 
@@ -135,11 +135,11 @@ Obsidian 笔记编辑器不再在模板文件中提供 Eta 标签补全建议，
 
 ### 关系图谱中的引用关系 [#citations-in-the-graph-view]
 
-![全局关系图谱显示连接文献笔记的引用连线以及淡显的被引作品节点，旁边为该笔记的局部关系图谱与参考文献侧边栏](/img/changelog/graph-view-citations.webp)
+![全局关系图谱显示连接文献笔记的引用连线以及淡显的被引文献节点，旁边为该笔记的局部关系图谱与参考文献侧边栏](/img/changelog/graph-view-citations.webp)
 
-- Obsidian 的关系图谱会在笔记与其引用的每一部作品之间绘制一条连线。没有文献笔记的被引作品会显示为淡显的被引作品节点。
+- Obsidian 的关系图谱会在笔记与其引用的每一部作品之间绘制一条连线。没有文献笔记的被引文献会显示为淡显的被引文献节点。
 - 关系图谱的筛选与显示设置项中提供了引用类型选择、作者和标题标签、为引用连线着色以及悬停弹出框选项。
-- 点击被引作品节点可为其创建文献笔记。右键点击可选择在 Zotero 中打开或复制其文献引用标识。
+- 点击被引文献节点可为其创建文献笔记。右键点击可选择在 Zotero 中打开或复制其文献引用标识。
 - <Command inline name={m.command_open_citation_graph_name()} /> 与
   <Command inline name={m.command_open_local_citation_graph_name()} />
   会打开排布为研究图谱的关系图谱。
@@ -165,7 +165,7 @@ Obsidian 笔记编辑器不再在模板文件中提供 Eta 标签补全建议，
 ![模板工作台布局展示了字段面板、显示带有字段悬停卡片的 Liquid 模板配置方案编辑器，以及笔记预览面板](/img/changelog/template-workbench-layout.webp)
 
 - 在桌面端视图中编辑配置方案，一侧显示字段，另一侧显示实时笔记预览。<Command inline name={m.template_workbench_open_layout()} /> 会同时打开全部三个面板。
-- 在文献笔记中，<Command inline>ZotLit: Customize this note's template</Command> 会在选中该文献的情况下打开其配置方案，点击 <UiLabel name={m.template_workbench_update_this_note()} /> 可将修改应用到该笔记。
+- 在文献笔记中，<Command inline>ZotLit: 自定义此笔记的模板</Command> 会在选中该文献的情况下打开其配置方案，点击 <UiLabel name={m.template_workbench_update_this_note()} /> 可将修改应用到该笔记。
 - 选项卡涵盖笔记、属性、标注、名称和文件夹以及匹配。名称和文件夹选项卡展示笔记在仓库中所获得的完整路径。
 - 编辑器支持 Liquid 和 Eta 高亮，提供字段与片段补全建议，并列出文档中的问题及其所在位置。
 - 使用 <UiLabel name={m.template_workbench_extract_partial()} /> 可将选中文本提取为片段。

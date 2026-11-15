@@ -42,7 +42,7 @@ import { m } from "@/paraglide/messages.js";
   - `(`、`[` 和引号现在会自动闭合。选中文本后输入相应符号即可直接包裹所选内容。
   - 输入框为空时会显示提示 <UiLabel name={m.workbench_match_expression_placeholder()} />。
   - 点击 <UiLabel name={m.workbench_match_edit_visually()} /> 可将空白表达式转换为一条空白条件行。
-  - 当表达式无法转为可视化形式时，按钮的提示工具条会显示 <UiLabel name={m.workbench_match_edit_visually_unavailable()} />。
+  - 当表达式无法转为可视化形式时，按钮的悬停提示会显示 <UiLabel name={m.workbench_match_edit_visually_unavailable()} />。
 - 提升了查询视图在大型文库下的运行速度。在包含 10 万条记录的测试文库中，首屏加载、排序和常见标题搜索的速度提升了约 3 至 4 倍。按标签或分类筛选也更快。范围极宽的搜索耗时与之前相同。
 - 工作台的 <UiLabel name={m.workbench_tab_annotation()} /> 标签页现在会提示：所做编辑将应用于此后插入的每一条标注。其帮助文本指明了 <UiLabel name={m.workbench_annotation_example()} /> 面板的位置。
 
@@ -53,5 +53,5 @@ import { m } from "@/paraglide/messages.js";
 - 点击 <UiLabel name={m.welcome_template_conversion_action()} /> 时，其他原因导致的转换失败此前没有任何直观提示。现在会弹出通知说明错误原因。如果问题源于模板文件，通知中还会提供将该文件移出模板文件夹以使用内置模板的选项。
 - 模板工作台预览中包含引文且未安装 Pandoc 引擎时，此前界面会损坏，且引文样式标题显示为“undefined”。现在预览能够保持正常显示并给出提示。<UiLabel name={m.workbench_preview_open_settings()} /> 可带你跳转到 <UiLabel name={m.settings_citation_engine_name()} /> 设置项。
 - 部分磁盘格式不区分大小写（macOS 和 Windows 的常见默认设置）。在此类环境下，如果模板文件夹设置为 `templates`，而仓库中同时存在 `Templates` 文件夹，会导致模板自定义功能失效并提示“Could not create the template document”。现在 ZotLit 可以正确识别已存在的文件夹，笔记也能正常移动到此类文件夹中。
-- 弹出层内部控件（例如查询视图筛选器和属性弹出面板）的提示工具条此前会显示在弹出层后方。现在它们能正常显示在最上方。
+- 弹出层内部控件（例如查询视图筛选器和属性弹出面板）的悬停提示此前会显示在弹出层后方。现在它们能正常显示在最上方。
 - 筛选表达式中的函数参数提示此前会随光标移动而闪烁跳动。现在它能稳定停留在固定位置。
