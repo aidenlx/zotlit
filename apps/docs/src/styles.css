@@ -313,23 +313,59 @@
   /* Sans is the app-wide default: preflight's html font-family rule reads
      --default-font-family, which resolves to --font-sans, so Inter reaches
      everywhere — portaled dialogs and the not-found page included. */
-  --font-sans:
-    "Inter Variable", "Inter Fallback", ui-sans-serif, system-ui, sans-serif,
-    "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
+  --font-sans: var(--zt-font-sans);
   --font-brand: "Archivo ZotLit", ui-sans-serif, system-ui, sans-serif;
   /* IBM Plex Mono is the "Machine" voice — overriding --font-mono here reroutes
      both the `font-mono` utility and every var(--font-mono) reference (code,
      kbd, version chips, meta lines, uppercase apparatus labels) onto it. */
-  --font-mono:
+  --font-mono: var(--zt-font-mono);
+  /* Serif is opt-in per surface, so --font-serif names the stack rather than
+     riding on <html>. */
+  --font-serif: var(--zt-font-serif);
+}
+
+/* The role stacks. `@theme inline` writes each value into the utilities, so
+   the roles above name these tokens, and a Chinese page swaps the stacks. */
+:root {
+  --zt-font-sans:
+    "Inter Variable", "Inter Fallback", ui-sans-serif, system-ui, sans-serif,
+    "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
+  --zt-font-mono:
     "IBM Plex Mono", "IBM Plex Mono Fallback", ui-monospace, SFMono-Regular,
     Menlo, Consolas, "Liberation Mono", monospace;
-  /* Serif is opt-in per surface, so --font-serif names the stack rather than
-     riding on <html>; the system-serif tail carries a surface until Gelasio
-     swaps in. */
-  --font-serif:
+  /* The system-serif tail carries a surface until Gelasio swaps in. */
+  --zt-font-serif:
     "Gelasio Variable", "Gelasio Fallback", "Iowan Old Style", Charter, Georgia,
     serif;
 }
+
+/* Simplified Chinese (`<html lang="zh-CN">`). Each role keeps its Latin face
+   first, so a Latin word in Chinese text stays in Gelasio, Inter or Plex Mono,
+   and the Chinese face of the same voice follows. The punctuation faces lead
+   because the Latin faces also cover the quotation marks, the dash and the
+   ellipsis. Installed copies of Source Han / Noto CJK come before the Noto
+   Serif SC webfont, so a reader who has them downloads nothing.
+   `src/fonts-zh-cn.css` registers the Chinese faces.
+   @see apps/docs/DESIGN.md → Type system */
+:root:lang(zh) {
+  --zt-font-sans:
+    "ZotLit CJK Punctuation Sans", "Inter Variable", "Inter Fallback",
+    "PingFang SC", "Hiragino Sans GB", "Source Han Sans SC", "Noto Sans CJK SC",
+    "Microsoft YaHei", ui-sans-serif, system-ui, sans-serif,
+    "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
+  --zt-font-mono:
+    "IBM Plex Mono", "IBM Plex Mono Fallback", ui-monospace, SFMono-Regular,
+    Menlo, Consolas, "Liberation Mono", "PingFang SC", "Hiragino Sans GB",
+    "Source Han Sans SC", "Noto Sans CJK SC", "Microsoft YaHei", monospace;
+  --zt-font-serif:
+    "ZotLit CJK Punctuation Serif", "Gelasio Variable", "Gelasio Fallback",
+    "Source Han Serif SC", "Noto Serif CJK SC", "Noto Serif SC Variable",
+    "Songti SC", serif;
+}
+
+/* `zh:` styles an element in Chinese text, e.g. the looser Chinese leading in
+   `src/lib/prose.ts`. */
+@custom-variant zh (&:lang(zh));
 
 @theme {
   /* A lesson part fades and rises 6px as it comes on screen. @see DESIGN.md → Learn */
@@ -350,6 +386,27 @@
 
 html {
   scrollbar-gutter: stable;
+}
+
+/* Chinese text. Chinese has no italic, so an italic run (a lede, a caption)
+   keeps the true Latin italic and sets its Chinese upright, and emphasis
+   takes emphasis dots under the text. Line breaks follow the strict kinsoku
+   rules, which keep closing punctuation off the start of a line.
+   `text-autospace` puts a small gap between Chinese and Latin letters or
+   digits, and `text-spacing-trim` closes the blank half of adjacent
+   full-width punctuation; an engine without them sets the text unchanged.
+   @see apps/docs/DESIGN.md → Type system */
+:lang(zh) {
+  font-synthesis-style: none;
+  line-break: strict;
+  text-autospace: normal;
+  text-spacing-trim: normal;
+}
+
+:lang(zh) em {
+  font-style: normal;
+  text-emphasis: filled dot;
+  text-emphasis-position: under right;
 }
 
 html > body[data-scroll-locked] {

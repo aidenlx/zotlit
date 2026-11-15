@@ -14,6 +14,7 @@ import { LocaleFallbackNotice } from "@/components/locale-fallback-notice";
 import { LocaleProvider } from "@/components/locale-provider";
 import { Message } from "@/components/message";
 import { Toaster } from "@/components/ui/toast";
+import zhCnFontsCss from "@/fonts-zh-cn.css?url";
 import { Header } from "@/layouts/home/slots/header";
 import { baseOptions } from "@/lib/layout.shared";
 import { getPageLocaleState } from "@/lib/locale-state";
@@ -89,6 +90,11 @@ function RootDocument({ children }: { children: React.ReactNode }) {
     <html lang={localeState.contentLocale} suppressHydrationWarning>
       <head>
         <HeadContent />
+        {/* Chinese content alone links the Chinese faces, so an English page
+            downloads no CJK font. @see apps/docs/DESIGN.md → Font loading */}
+        {localeState.contentLocale === "zh-CN" && (
+          <link rel="stylesheet" href={zhCnFontsCss} />
+        )}
       </head>
       <body className="flex min-h-screen flex-col">
         {/* The search dialog fetches `/api/search`, the fumadocs default. */}

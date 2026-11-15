@@ -26,6 +26,9 @@ export const ztProse = [
   "prose-code:rounded-none",
   "prose-ul:my-[0.75em] prose-ol:my-[0.75em] prose-li:my-[0.25em] prose-li:leading-[1.6]",
   "[&_li_p]:my-[0.375em] [&_li_ul]:my-[0.25em] [&_li_ol]:my-[0.25em]",
+  // Chinese glyphs fill the em box, so Chinese text takes looser leading and
+  // no tracking. The body paragraphs already sit at 1.75.
+  "zh:prose-h1:leading-[1.35] zh:prose-h4:tracking-normal zh:prose-blockquote:leading-[1.8] zh:prose-li:leading-[1.75]",
 ].join(" ");
 
 /**
