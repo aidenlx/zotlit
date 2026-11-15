@@ -1,15 +1,19 @@
 // External URLs surfaced by the Welcome View — docs, community, and news links.
+// The docs-site links follow the reader's language, so each is read when used.
 
-import { DOCS_SITE_URL } from "@/lib/constants";
+import { docsUrl } from "@/lib/docs-url";
 
-export const DOCS_HOME = `${DOCS_SITE_URL}/docs`;
-export const DOCS_GETTING_STARTED = `${DOCS_SITE_URL}/learn`;
-export const DOCS_TEMPLATES = `${DOCS_SITE_URL}/docs/reference/templates`;
-export const DOCS_CITATIONS = `${DOCS_SITE_URL}/docs/how-to/insert-citations`;
-export const MIGRATION_GUIDE = `${DOCS_SITE_URL}/docs/how-to/migrate-from-v1`;
-export const BLOG = `${DOCS_SITE_URL}/blog`;
-export const CHANGELOG = `${DOCS_SITE_URL}/changelog`;
+export const docsHomeUrl = (): string => docsUrl("/docs");
+export const gettingStartedUrl = (): string => docsUrl("/learn");
+export const templatesDocsUrl = (): string =>
+  docsUrl("/docs/reference/templates");
+export const citationsDocsUrl = (): string =>
+  docsUrl("/docs/how-to/insert-citations");
+export const migrationGuideUrl = (): string =>
+  docsUrl("/docs/how-to/migrate-from-v1");
+export const blogUrl = (): string => docsUrl("/blog");
+export const changelogUrl = (): string => docsUrl("/changelog");
 export const GITHUB = "https://github.com/aidenlx/zotlit";
-export const COMMUNITY = `${DOCS_SITE_URL}/community`;
+export const communityUrl = (): string => docsUrl("/community");
 export const BUG_REPORT = `https://github.com/aidenlx/zotlit/discussions/new?category=bug-reports`;
 export const SPONSOR = "https://github.com/sponsors/aidenlx";

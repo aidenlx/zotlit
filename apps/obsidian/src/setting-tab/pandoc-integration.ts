@@ -3,7 +3,7 @@ import { Effect } from "effect";
 import type { Setting, SettingDefinitionGroup } from "obsidian";
 
 import { awaitConfirm } from "@/lib/confirm";
-import { DOCS_SITE_URL } from "@/lib/constants";
+import { docsUrl } from "@/lib/docs-url";
 import { withLogCategory } from "@/lib/effect-log-category";
 import * as m from "@/lib/i18n/generated/messages";
 import { BaseNotice } from "@/lib/notice";
@@ -33,9 +33,7 @@ export function pandocIntegrationDefinition(
             button
               .setButtonText(m.settings_citation_pandoc_tutorial_open())
               .onClick(() =>
-                window.open(
-                  `${DOCS_SITE_URL}/docs/how-to/pandoc-citation-workflow`,
-                ),
+                window.open(docsUrl("/docs/how-to/pandoc-citation-workflow")),
               ),
           );
         },

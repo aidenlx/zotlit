@@ -20,7 +20,6 @@ import { HttpClient, HttpClientError } from "effect/http";
 import {
   LanguagePackSchemaVersionError,
   languageEndonym,
-  resolveLocale,
   validateLanguagePack,
 } from "@zotlit/obsidian-i18n";
 import type {
@@ -35,6 +34,7 @@ import { RELEASE_ORIGIN, resourceReleaseUrl } from "@/lib/constants";
 import { bridgeLog, withLogCategory } from "@/lib/effect-log";
 import { catalog } from "@/lib/i18n/generated/catalog";
 import { runtime } from "@/lib/i18n/generated/runtime";
+import { resolvePluginLocale } from "@/lib/i18n/locale";
 import { DeviceStorage } from "@/lib/obsidian-device-storage";
 import { ObsidianEnv } from "@/lib/obsidian-env";
 
@@ -47,7 +47,6 @@ export type Locale = LocaleKeys<
 >;
 
 const NAMESPACE = "zotlit";
-const ALIASES = { zh: "zh-CN" } as const;
 const CONSENT_ACCEPTED = "accepted";
 const CONSENT_DECLINED = "declined";
 
@@ -204,7 +203,7 @@ export const startLanguagePack = Effect.fn("LanguagePack.start")(function* (
   runtime.setLogger(
     bridgeLog({ runSync: Effect.runSyncWith(yield* Effect.context()) }, "i18n"),
   );
-  const locale = resolveLocale(language, catalog, ALIASES);
+  const locale = resolvePluginLocale(language);
   // Applied before any situation is observable, so the consent copy a
   // first-run user reads is already in their language with no pack installed.
   runtime.setTargetLocale(locale);

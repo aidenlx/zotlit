@@ -11,7 +11,7 @@ import type { WorkbenchItemChoice } from "@zotlit/workbench/ui";
 
 import { Icon } from "@/components/obsidian/icon";
 import { selectionControl } from "@/components/obsidian/selection-control";
-import { DOCS_SITE_URL } from "@/lib/constants";
+import { docsUrl } from "@/lib/docs-url";
 import * as m from "@/lib/i18n/generated/messages";
 import * as workbenchM from "@/lib/i18n/generated/workbench-messages";
 
@@ -182,7 +182,7 @@ export function ItemSelectionList({
           {m.workbench_choose_preview_data()}{" "}
           <a
             className="external-link"
-            href={`${DOCS_SITE_URL}/docs/how-to/explore-template-data`}
+            href={docsUrl("/docs/how-to/explore-template-data")}
             target="_blank"
             rel="noreferrer"
           >

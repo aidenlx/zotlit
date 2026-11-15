@@ -7,7 +7,7 @@ import type {
   SettingGroupItem,
 } from "obsidian";
 
-import { DOCS_COMPANION, DOCS_SITE_URL } from "@/lib/constants";
+import { companionDocsUrl, docsUrl } from "@/lib/docs-url";
 import * as m from "@/lib/i18n/generated/messages";
 import { withProgress } from "@/lib/notifier";
 import type {
@@ -68,7 +68,7 @@ export function databaseSyncItems(
         setting.addButton((button) =>
           button
             .setButtonText(m.settings_db_companion_install())
-            .onClick(() => window.open(DOCS_COMPANION)),
+            .onClick(() => window.open(companionDocsUrl())),
         );
       },
     },
@@ -87,9 +87,7 @@ export function databaseSyncItems(
         setting.addButton((button) =>
           button
             .setButtonText(m.settings_db_stale_help_action())
-            .onClick(() =>
-              window.open(`${DOCS_SITE_URL}/docs/how-to/fix-stale-data`),
-            ),
+            .onClick(() => window.open(docsUrl("/docs/how-to/fix-stale-data"))),
         );
       },
     },

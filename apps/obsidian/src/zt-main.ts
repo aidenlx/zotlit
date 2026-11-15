@@ -6,9 +6,9 @@ import type { CliCommand, CliHost } from "@/lib/cli-command";
 import { handlerCheckedFlags, printableCliHandler } from "@/lib/cli-rejection";
 import {
   ANNOTATION_SUGGESTER_ENABLED,
-  DOCS_SITE_URL,
   WEB_WORKBENCH_ENABLED,
 } from "@/lib/constants";
+import { docsUrl } from "@/lib/docs-url";
 import * as m from "@/lib/i18n/generated/messages";
 import { revealSetting } from "@/lib/open-settings";
 import { logLateRelease, UnloadAwarePlugin } from "@/lib/plugin-lifecycle";
@@ -96,9 +96,7 @@ function showInstallerUpdateNotice(): BaseNotice {
         button
           .setButtonText(m.notice_installer_update_learn_more())
           .onClick(() => {
-            window.open(
-              `${DOCS_SITE_URL}/docs/how-to/update-obsidian-installer`,
-            );
+            window.open(docsUrl("/docs/how-to/update-obsidian-installer"));
           });
       });
       renderer.addAction((button) => {

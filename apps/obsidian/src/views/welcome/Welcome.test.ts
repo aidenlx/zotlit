@@ -10,7 +10,7 @@ import { createRoot } from "react-dom/client";
 import type { Root } from "react-dom/client";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { DOCS_COMPANION } from "@/lib/constants";
+import { companionDocsUrl } from "@/lib/docs-url";
 import * as m from "@/lib/i18n/generated/messages";
 import { ViewRegistryProvider } from "@/lib/view-atoms";
 import type { LiteratureNoteTemplateMigrationResult } from "@/services/template/migration";
@@ -272,7 +272,7 @@ describe("Welcome setup checklist", () => {
     await act(() =>
       button(companion, m.welcome_action_install_companion())?.click(),
     );
-    expect(actions.openExternal).toHaveBeenCalledWith(DOCS_COMPANION);
+    expect(actions.openExternal).toHaveBeenCalledWith(companionDocsUrl());
   });
 
   it("marks ZotLit Companion done once Zotero lists it as installed", async () => {
