@@ -23,7 +23,7 @@ ZotLit 的开发者并不维护 Zotero Integration。本页内容仅汇总了 Zo
 | "Cannot connect to Zotero. Please ensure it is running and the Better BibTeX plugin is installed" | Zotero 已打开，且 Better BibTeX 插件已在 Zotero 中安装并启用。                                                                                                      | Zotero Integration 源代码和 README      |
 | "Import failed for" 及笔记路径，"check developer console for details"                             | 打开 Obsidian 的开发者控制台查看错误详情。检查模板中是否存在拼写错误。检查所选的参考文献样式是否已在 Zotero 中安装。运行 Data explorer 命令查看 Zotero 发送的数据。 | 其源代码及常见问题解答                  |
 | 插入引文或参考文献列表时报错                                                                      | Zotero 中已选择“快速复制”（Quick Copy）样式，且在 Zotero 中选中条目后可以通过**编辑**（Edit）菜单复制引文。                                                         | 其 README                               |
-| 插件无法加载                                                                                      | Obsidian 安装程序版本为 0.13.24 或更高。                                                                                                                            | 其 README                               |
+| 插件无法加载                                                                                      | Obsidian 安装包版本为 0.13.24 或更高。                                                                                                                              | 其 README                               |
 | "Unexpected end of JSON input"                                                                    | 更新 Zotero Integration。2024 年 1 月的三次 Better BibTeX 更新曾导致此问题；维护者已于 2024 年 1 月 4 日发布修复版本。                                              | 其问题追踪器中的 Issue #329，维护者回复 |
 | "No citation found for" 及文献引用标识                                                            | 此提示来自 Pandoc Reference List 插件。其 README 要求使用 Pandoc 2.11 或更高版本并配置参考文献文件路径。                                                            | Pandoc Reference List 源代码和 README   |
 
@@ -41,7 +41,7 @@ Zotero Integration 的 README 和文档未注明适用的 Zotero 版本。其最
 ## 在 ZotLit 中完成同样的工作 [#doing-the-same-job-in-zotlit]
 
 - 连接 Zotero：ZotLit 直接读取 Zotero 数据库。连接不依赖 Better BibTeX，浏览、搜索和阅读时无需打开 Zotero。
-- 导入高亮：高亮和评论保存在文献笔记的特定受管区域内。更新时仅会重写该部分；受管区域之外自行撰写的内容原样保留。
+- 导入高亮：高亮和评论保存在文献笔记的特定托管区域内。更新时仅会重写该部分；托管区域之外自行撰写的内容原样保留。
 - 插入引用：在笔记中输入 `[@` 即可选择文献。
 - 模板系统：ZotLit 使用 Liquid；Zotero Integration 使用 Nunjucks。迁移指南中提供了两者语法的对应表。
 - 现有笔记：全部为标准的 Markdown 文件，完整保存在你的仓库中。
@@ -51,7 +51,7 @@ Zotero Integration 的 README 和文档未注明适用的 Zotero 版本。其最
 - ZotLit 支持读取 Zotero 9 和 Zotero 10。
 - 可选安装的 ZotLit Companion 插件支持 Zotero 9 和 10。
 - 在 Obsidian 中编辑高亮需要使用 Zotero 10。
-- ZotLit 需要 Obsidian 1.15.1 或更高版本，且安装程序版本不低于 1.13.4。
+- ZotLit 需要 Obsidian 1.15.1 或更高版本，且安装包版本不低于 1.13.4。
 - 若使用的是 Zotero 8 或更早版本，请在安装 ZotLit 前先升级 Zotero。
 
 ## 常见问题 [#questions]

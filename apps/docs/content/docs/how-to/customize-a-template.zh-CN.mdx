@@ -78,7 +78,7 @@ import { m } from "@/paraglide/messages.js";
 - **首次创建文档时报错** → 点击错误提示旁的重试操作。
 - **预览为空或未显示文献** → 点击 <UiLabel name={m.workbench_choose_item()} />，从你的文库中选择一篇文献或选择一个内置示例。
 - **预览失败** → 重试预览，或使用 <UiLabel name={m.workbench_choose_item()} /> 选择另一篇文献。你可以继续编辑。
-- **编辑正文后笔记未发生变化** → 运行 <Command inline name={m.command_update_note_name()} /> 以刷新属性。如果你的配置方案没有受管块（managed block），ZotLit 会提示 <UiLabel name={m.notice_updated_note_no_managed_block()} />。正文编辑会自动应用到新笔记；若要重建现有笔记的正文，请运行 <Command inline name={m.command_overwrite_note_name()} />，该命令将在确认后替换正文。
+- **编辑正文后笔记未发生变化** → 运行 <Command inline name={m.command_update_note_name()} /> 以刷新属性。如果你的配置方案没有托管块（managed block），ZotLit 会提示 <UiLabel name={m.notice_updated_note_no_managed_block()} />正文编辑会自动应用到新笔记；若要重建现有笔记的正文，请运行 <Command inline name={m.command_overwrite_note_name()} />，该命令将在确认后替换正文。
 - **Eta 模板没有任何效果** → Eta 模板需要开启 <UiLabel name={m.settings_template_js_enable_name()} /> 设置。如果未开启，Eta 模板将无法执行，且不会回退到内置文本。参见[启用 JavaScript 模板](/docs/how-to/enable-javascript-templates)。
 - **片段调用处标记为** <UiLabel name={m.workbench_partial_missing()} /> → 片段已被重命名或删除。请修改模板调用处的片段名称，或重新创建该片段文件。
 - **片段字段输出为空** → Liquid 调用中缺少数据参数；请写为 `{% render "name" with zt as zt %}`。
@@ -86,5 +86,5 @@ import { m } from "@/paraglide/messages.js";
 ## 下一步 [#next]
 
 - [为不同笔记使用不同模板](/docs/how-to/use-different-templates) — 添加第二个配置方案，例如专门用于图书。
-- [配置文档属性](/docs/how-to/configure-frontmatter-properties) — 使用“属性”标签页自定义文献笔记的元数据。
+- [配置 Frontmatter 属性](/docs/how-to/configure-frontmatter-properties) — 使用“属性”标签页自定义文献笔记的元数据。
 - [探索模板数据](/docs/how-to/explore-template-data) — 浏览模板中可用的所有字段。

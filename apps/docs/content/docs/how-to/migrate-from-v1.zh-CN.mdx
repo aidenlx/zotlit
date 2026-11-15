@@ -15,9 +15,9 @@ ZotLit v2 会就地替换 v1。设置会在首次加载时自动迁移，但如�
 
 <Callout type="info" title="需要你注意的事项">
 
-- **恢复笔记生成所需操作：** 将模板文件重命名为 v2 规范命名，将 `it.*` 替换为 `zt.*`，并[启用 <UiLabel name={m.settings_template_js_enable_name()} /> 开关](/docs/how-to/enable-javascript-templates)。若缺少这些步骤，v2 将回退到内置默认模板，不会体现你的自定义内容。
-- **自动完成（无需操作**）： 设置（包括文件夹路径和自定义属性字段）会在首次加载时自动迁移。
-- **可选操作：** 对 v1 笔记运行 <Command inline name={m.command_overwrite_note_name()} />，以添加用于增量更新正文的托管区域。这需要包含托管块的模板，例如重命名后的 `zotlit-content` 文件；内置默认模板不包含托管块。
+- **恢复笔记生成所需操作**：将模板文件重命名为 v2 规范命名，将 `it.*` 替换为 `zt.*`，并[启用 <UiLabel name={m.settings_template_js_enable_name()} /> 开关](/docs/how-to/enable-javascript-templates)。若缺少这些步骤，v2 将回退到内置默认模板，不会体现你的自定义内容。
+- **自动完成（无需操作）**：设置（包括文件夹路径和自定义属性字段）会在首次加载时自动迁移。
+- **可选操作**：对 v1 笔记运行 <Command inline name={m.command_overwrite_note_name()} />，以添加用于增量更新正文的托管区域。这需要包含托管块的模板，例如重命名后的 `zotlit-content` 文件；内置默认模板不包含托管块。
 
 </Callout>
 
@@ -133,9 +133,9 @@ V2 通过 `zotero-key` 属性值识别你现有的文献笔记。它们会显示
 
 v1 中的两项工作流未延续到 v2 中。
 
-**标注合并**。 v1 可以合并来自多个 PDF 附件的标注，或在更新时对其去重。v2 不再包含此工作流。标注将按照其在 Zotero 中的呈现方式按附件分别渲染。
+**标注合并**。v1 可以合并来自多个 PDF 附件的标注，或在更新时对其去重。v2 不再包含此工作流。标注将按照其在 Zotero 中的呈现方式按附件分别渲染。
 
-**基于主题的导入。** v1 允许将笔记订阅到某个 Zotero 标签（`#zt-topic/<name>`），从而带有该标签的新条目会自动作为文献笔记导入。v2 不再包含此工作流。
+**基于主题的导入**。v1 允许将笔记订阅到某个 Zotero 标签（`#zt-topic/<name>`），从而带有该标签的新条目会自动作为文献笔记导入。v2 不再包含此工作流。
 
 ## 另请参阅 [#see-also]
 

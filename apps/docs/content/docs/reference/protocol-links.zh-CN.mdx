@@ -35,7 +35,7 @@ obsidian://zotlit/open?item=<id>&source-id=<hash>&paneType=tab
 
 省略该参数将保持每个操作的常规放置方式：`open`、`update` 和 `open-attachment` 会替换最近活动的标签页，而 `explore` 会复用侧边栏中已有的模板数据浏览器。超出这三个值之外的取值会显示 <UiLabel name={m.notice_protocol_invalid()} /> 并终止操作。
 
-ZotLit Companion 会将其自身 Zotero 菜单所打开的链接附带该参数。在 Zotero 设置中的 <UiLabel name={m["zotero.prefs_pane_label"]()} /> 面板下的 <UiLabel name={m["zotero.prefs_open_section"]()} /> 分节中，<UiLabel name={m["zotero.prefs_pane_type"]()} /> 用于选择窗格。<UiLabel name={m["zotero.prefs_pane_type_active.label"]()} /> 为默认设置，不会在链接中附加该参数。
+ZotLit Companion 会在其自身 Zotero 菜单打开的链接中附加该参数。在 Zotero 设置中的 <UiLabel name={m["zotero.prefs_pane_label"]()} /> 面板下的 <UiLabel name={m["zotero.prefs_open_section"]()} /> 分节中，<UiLabel name={m["zotero.prefs_pane_type"]()} /> 用于选择窗格。<UiLabel name={m["zotero.prefs_pane_type_active.label"]()} /> 为默认设置，不会在链接中附加该参数。
 
 要选择笔记在 Obsidian 中的显示位置，请在 Zotero 设置中打开 <UiLabel name={m["zotero.prefs_pane_label"]()} /> 面板。在 <UiLabel name={m["zotero.prefs_open_section"]()} /> 下，将 <UiLabel name={m["zotero.prefs_pane_type"]()} /> 设置为 <UiLabel name={m["zotero.prefs_pane_type_active.label"]()} />（默认）、<UiLabel name={m["zotero.prefs_pane_type_tab.label"]()} />、<UiLabel name={m["zotero.prefs_pane_type_split.label"]()} /> 或 <UiLabel name={m["zotero.prefs_pane_type_window.label"]()} />。
 
@@ -74,7 +74,7 @@ obsidian://zotlit/update?item=<id>&source-id=<hash>
 | ----------- | -------------------- | ---- | -------------------------------------------------------------------------- |
 | `item`      | 整数                 | 是   | Zotero 条目 ID                                                             |
 | `source-id` | 8 字符十六进制       | 是   | Zotero 安装标识符                                                          |
-| `scope`     | `full` 或 `metadata` | 否   | 更新范围。默认：`full`（属性 + 受控正文区域）。`metadata` 仅更新属性。     |
+| `scope`     | `full` 或 `metadata` | 否   | 更新范围。默认：`full`（属性 + 托管正文区域）。`metadata` 仅更新属性。     |
 | `profile`   | 12 字符 ID           | 否   | 用于创建或更新笔记的配置方案，以配置方案 ID 指定。                         |
 | `paneType`  | 窗格类型值           | 否   | 笔记打开位置：`tab`、`split` 或 `window`。参见[链接打开位置](#pane-type)。 |
 
@@ -296,7 +296,7 @@ zotero://open/library/items/<attachmentKey>?annotation=<annotationKey>&page=<pag
 
 ### 旧版文件链接 [#zotero-open-links-file-links]
 
-由早期 ZotLit 编写的笔记会将标注改为链接到附件文件，形式为 `file:///…/paper.pdf#page=N&zt-annotation=<key>`。这些链接仍会像以前一样在 Obsidian 阅读器中打开并定位到该标注。由于它们包含编写它们的那台计算机上的文件路径，因此在 Zotero 存储文件夹位于不同路径的计算机上无法打开任何内容。参见[在 Obsidian 中打开条目的 PDF](/docs/how-to/open-pdf-in-obsidian#file-links)。
+由早期 ZotLit 编写的笔记则将标注链接到附件文件，形式为 `file:///…/paper.pdf#page=N&zt-annotation=<key>`。这些链接仍会像以前一样在 Obsidian 阅读器中打开并定位到该标注。由于它们包含编写它们的那台计算机上的文件路径，因此在 Zotero 存储文件夹位于不同路径的计算机上无法打开任何内容。参见[在 Obsidian 中打开条目的 PDF](/docs/how-to/open-pdf-in-obsidian#file-links)。
 
 ## 另请参阅 [#see-also]
 

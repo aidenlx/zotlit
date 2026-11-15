@@ -67,7 +67,7 @@ import { m } from "@/paraglide/messages.js";
 2. 在文本中输入 `[[`，选择文献笔记，并保持链接不带别名：`This finding follows the earlier analysis [[Doe 2020]].`
 3. 要引用特定页码，请将其添加到链接中：`[[Doe 2020#cite:locator=33]]`。将 `Doe 2020` 替换为文献笔记的准确文件名。
 
-除非某篇文献笔记的名称恰好就是 `[[@doe2024]]`，否则它不会被当作引用处理；请写入 `[@doe2024]` 来引用文献引用标识。
+除非某篇文献笔记的名称恰好就是 `@doe2024`，否则 `[[@doe2024]]` 不会被当作引用处理；请写入 `[@doe2024]` 来引用文献引用标识。
 
 </Accordion>
 </Accordions>
@@ -81,9 +81,9 @@ import { m } from "@/paraglide/messages.js";
   时（默认关闭），单独输入 `@` 才会打开建议器。请改用 `[@`，或开启该设置。
 - **完全没有列表弹出，哪怕输入了 `[@`：** 说明 <UiLabel name={m.settings_citation_suggester_name()} /> 已关闭。打开 <SettingsPath page={m.settings_page_citations()} /> 并将其重新打开。
 - **在 `@` 后的第一个空格处搜索就中断了：** 单独使用 `@` 时，请用 `_` 代替空格（例如 `@machine_learning` 匹配“machine learning”）。在 `[@` 后正常输入空格即可按预期生效。
-- **提示：“Selected item has no citation key: \{key\}.**” 该文献在 Zotero 中的 Citation Key 字段为空。在 Zotero 中为该条目添加文献引用标识，然后重新插入。
-- **提示：“Citation key @\{citekey\} matches multiple Zotero items. Change it in Zotero before inserting a citation.**” 在单个文库或 ZotLit 读取的两个文库中，有两个条目共用了相同的文献引用标识。请在 Zotero 中为其中一篇文献指定不同的标识，或将 <UiLabel name={m.settings_library_scope_name()} /> 缩小到目标文库。详情参见[匹配多个条目的标识](/docs/reference/citation-links#ambiguous-key)。
-- **笔记中已有的引用显示为异常，且参考文献侧边栏提示“@\{citekey\} matches multiple items in your Zotero library.**”： 说明有两个条目共用了相同的文献引用标识。在 Zotero 中更改其中一个标识，或缩小 <UiLabel name={m.settings_library_scope_name()} />；在问题解决之前，ZotLit 会保留原始标识，并将其从参考文献列表中忽略。
+- **提示：“所选条目没有文献引用标识（citation key）：\{key\}。”** 该文献在 Zotero 中的 Citation Key 字段为空。在 Zotero 中为该条目添加文献引用标识，然后重新插入。
+- **提示：“文献引用标识（citation key）@\{citekey\} 对应多个 Zotero 条目。请先在 Zotero 中修改，再插入引用。”** 在单个文库或 ZotLit 读取的两个文库中，有两个条目共用了相同的文献引用标识。请在 Zotero 中为其中一篇文献指定不同的标识，或将 <UiLabel name={m.settings_library_scope_name()} /> 缩小到目标文库。详情参见[匹配多个条目的标识](/docs/reference/citation-links#ambiguous-key)。
+- **笔记中已有的引用显示为异常，且参考文献侧边栏提示“@\{citekey\} 在 Zotero 文库中对应多个条目。”：** 说明有两个条目共用了相同的文献引用标识。在 Zotero 中更改其中一个标识，或缩小 <UiLabel name={m.settings_library_scope_name()} />；在问题解决之前，ZotLit 会保留原始标识，且不会将其列入参考文献列表。
 - **列表中的每篇文献都标有文库名称**： ZotLit 当前正在搜索多个文库。该标签标明了条目所属的文库；当文库范围中只有一个文库处于活动状态时，该标签会被略去。
 
 ## 下一步 [#next]

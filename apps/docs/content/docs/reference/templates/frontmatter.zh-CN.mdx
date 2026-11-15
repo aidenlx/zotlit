@@ -10,13 +10,13 @@ import { SettingsPath } from "@/components/settings-path";
 import { UiLabel } from "@/components/ui-label";
 import { m } from "@/paraglide/messages.js";
 
-本页介绍 ZotLit 如何管理文献笔记上的 YAML 属性：ZotLit 所有的字段、配置方案声明的受管字段、合并策略以及笔记更新期间的行为。
+本页介绍 ZotLit 如何管理文献笔记上的 YAML 属性：ZotLit 自身拥有的字段、配置方案声明的托管字段、合并策略以及笔记更新期间的行为。
 
 有关分步配置指南，请参阅[配置属性](/docs/how-to/configure-frontmatter-properties)。
 
 ## 系统管理字段 [#system-managed-fields]
 
-ZotLit 会自行写入这些键。受管属性无法以它们为目标。
+ZotLit 会自行写入这些键。托管属性无法以它们为目标。
 
 | 字段             | 来源               | 描述                                                                  |
 | ---------------- | ------------------ | --------------------------------------------------------------------- |
@@ -26,7 +26,7 @@ ZotLit 会自行写入这些键。受管属性无法以它们为目标。
 
 ## 用户配置字段 [#user-configured-fields]
 
-受管属性是[配置方案文档](/docs/reference/templates/profile-document)清单中 `frontmatter` 键下的有序条目列表。每个条目生成一个或同时生成多个属性。
+托管属性是[配置方案文档](/docs/reference/templates/profile-document)清单中 `frontmatter` 键下的有序条目列表。每个条目生成一个或同时生成多个属性。
 
 在模板工作台的 <UiLabel name={m.workbench_tab_properties()} /> 标签页中编辑此列表。在 <SettingsPath /> 的 <UiLabel name={m.settings_profile_document_name()} /> 行中，选择 <UiLabel name={m.settings_profile_edit()} />。
 
@@ -90,7 +90,7 @@ frontmatter:
     merge: replace
 ```
 
-当 Zotero 条目没有文献引用标识时，`citekey` 条目会写入 `citekey: null`。这四个字段都是普通的受管属性，你可以像编辑或删除其他条目一样对它们进行修改或移除。
+当 Zotero 条目没有文献引用标识时，`citekey` 条目会写入 `citekey: null`。这四个字段都是普通的托管属性，你可以像编辑或删除其他条目一样对它们进行修改或移除。
 
 ### Liquid 表达式 [#liquid-expressions]
 
@@ -131,7 +131,7 @@ zt.date?.year                     -> 2023
 
 只有 `value` 条目才能产生缺失（absence）。在根部未渲染任何内容的 JSON-e 模板（例如顶层 `$if` 为 false），不会产生任何值。
 
-缺失值是删除受管键的唯一方式。在 <UiLabel name={m.workbench_properties_merge_replace()} /> 策略下，缺失值会删除现有键；在 <UiLabel name={m.workbench_properties_merge_append()} /> 和 <UiLabel name={m.workbench_properties_merge_keep()} /> 策略下，则保留该键不变。
+缺失值是删除托管键的唯一方式。在 <UiLabel name={m.workbench_properties_merge_replace()} /> 策略下，缺失值会删除现有键；在 <UiLabel name={m.workbench_properties_merge_append()} /> 和 <UiLabel name={m.workbench_properties_merge_keep()} /> 策略下，则保留该键不变。
 
 ### 何种情况视为空白 [#what-counts-as-blank]
 
@@ -184,16 +184,16 @@ ZotLit 会拒绝以下静态键或展开条目生成的键：
 
 运行 <Command inline name={m.command_update_note_name()} /> 或 <Command inline name={m.command_update_note_metadata_name()} /> 时，ZotLit 会刷新属性：
 
-1. **受管条目**按其在[配置方案文档](/docs/reference/templates/profile-document)的 `frontmatter` 列表中出现的顺序重新求值，并按其合并策略应用。
+1. **托管条目**按其在[配置方案文档](/docs/reference/templates/profile-document)的 `frontmatter` 列表中出现的顺序重新求值，并按其合并策略应用。
 2. **系统标识**（`zotero-key`）被刷新。
-3. **非受管键：** 不在受管集合中的任何属性键（例如 `aliases`、`tags`、`cssclasses`）均予以保留。ZotLit 绝不会修改它不拥有的键。
+3. **非托管键：** 不在托管集合中的任何属性键（例如 `aliases`、`tags`、`cssclasses`）均予以保留。ZotLit 绝不会修改它不拥有的键。
 
 <Command inline name={m.command_overwrite_note_name()} /> 会替换笔记正文，
-但在属性上的行为完全相同：受管键被刷新， 非受管键予以保留。
+但在属性上的行为完全相同：托管键被刷新，非托管键予以保留。
 
-ZotLit 通过 Obsidian 的 `processFrontMatter` API 写入属性，该 API 会保留非受管键的键顺序和格式。在新建的笔记中，受管字段按照它们在配置方案文档的 `frontmatter` 列表中出现的顺序写入，紧随其后的是系统字段。列表中靠后的条目具有更高的优先级，因为每个条目都会在前序条目生成的值之上应用。
+ZotLit 通过 Obsidian 的 `processFrontMatter` API 写入属性，该 API 会保留非托管键的键顺序和格式。在新建的笔记中，托管字段按照它们在配置方案文档的 `frontmatter` 列表中出现的顺序写入，紧随其后的是系统字段。列表中靠后的条目具有更高的优先级，因为每个条目都会在前序条目生成的值之上应用。
 
-从 `frontmatter` 列表中移除 `citekey` 或其他条目不会删除现有值。这些值会变成非受管属性并保留在笔记中。
+从 `frontmatter` 列表中移除 `citekey` 或其他条目不会删除现有值。这些值会变成非托管属性并保留在笔记中。
 
 ## JavaScript 模板开关 [#javascript-templates-gate]
 

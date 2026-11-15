@@ -609,7 +609,7 @@ Companion 连接，请参阅[设置实时更新](/docs/how-to/set-up-live-update
 <UiLabel name={m.settings_zotero_editing_name()} /> 显示 ZotLit 是否可以修改
 Zotero 中的标注。读取标注不需要权限。编辑则需要满足四个条件：
 
-- Zotero 7 或更高版本。
+- Zotero 10 或更高版本。
 - Zotero 在同一台计算机上运行。
 - 在 Zotero 中，打开**设置 > 高级**（Settings > Advanced）下的 **Allow other applications on this computer to communicate with Zotero**。
 - 你的授权。点击 <UiLabel name={m.settings_zotero_editing_enable()} />，当 Zotero 弹出提示时，选择 **Always Allow**。仅选择 **Allow** 将保持编辑处于关闭状态。
@@ -779,7 +779,7 @@ JavaScript (Eta) 模板受单设备开关保护。开启时会显示确认弹窗
 
 <UiLabel name={m.settings_log_level_name()} /> 选项：
 <UiLabel name={m.settings_log_level_off()} />
-、trace、debug、info、warning、 error、fatal。
+、trace、debug、info、warning、error、fatal。
 
 当 <UiLabel name={m.settings_log_to_file_name()} /> 开启时，日志会追加到插件文件夹内的 `zotlit.log.jsonl` 中。此时会出现两行额外的操作：
 
@@ -835,7 +835,7 @@ ZotLit 2.2.0 围绕文献笔记重新组织了设置标签页。每一行都保�
 | **Live updates** 页面上的 <UiLabel name={m.settings_live_updates_enabled_name()} />                                                                        | <SettingsPath page={m.settings_page_zotero()} /> 上的 <UiLabel name={m.settings_zotero_sync_heading()} /> 分组                                                                                       |
 | **Maintenance** 页面                                                                                                                                       | <SettingsPath page={m.settings_page_advanced()} />                                                                                                                                                   |
 
-针对文献笔记、受管区域、标注和笔记文件名的旧版模板设置行已不再出现在设置中。文献笔记的正文、文件名和属性均由其配置方案的模板文档决定。
+针对文献笔记、托管区域、标注和笔记文件名的旧版模板设置行已不再出现在设置中。文献笔记的正文、文件名和属性均由其配置方案的模板文档决定。
 
 ## 另请参阅 [#see-also]
 

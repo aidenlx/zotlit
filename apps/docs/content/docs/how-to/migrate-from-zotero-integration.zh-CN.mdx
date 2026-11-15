@@ -19,7 +19,7 @@ import { m } from "@/paraglide/messages.js";
 - 仓库中现有的文献笔记仍将作为常规 Markdown 文件保留。
 - 模板需要转换：Zotero Integration 使用 Nunjucks；ZotLit 使用 [Liquid](/docs/reference/templates/syntax)（或 [Eta](/docs/reference/templates/eta-syntax)）。
 - 不再需要 Better BibTeX。ZotLit 直接读取 Zotero 的数据库。建议保留 Better BibTeX 的安装，以便使用其文献引用标识格式。
-- `{% persist %}` 块模型转变为[受管区域](/docs/reference/literature-notes)模型。这两种模型恰好相反：Zotero Integration 标记要保留的内容；ZotLit 标记要替换的内容。
+- `{% persist %}` 块模型转变为[托管区域](/docs/reference/literature-notes)模型。这两种模型恰好相反：Zotero Integration 标记要保留的内容；ZotLit 标记要替换的内容。
 
 </Callout>
 
@@ -95,16 +95,16 @@ ZotLit 中的所有模板数据都位于 `zt` 变量下。下表将 Zotero Integ
 
 [模板数据浏览器](/docs/how-to/explore-template-data)显示了实时 Zotero 条目的所有可用字段。你可以用它来查找任何 Zotero Integration 变量在 ZotLit 中的对应项。
 
-### 从 persist 到受管区域的转变 [#persist-vs-managed]
+### 从 persist 到托管区域的转变 [#persist-vs-managed]
 
 这是两个插件之间最重要的概念差异。
 
 - 在 Zotero Integration 中，`{% persist "id" %}` 标记在重新导入时要**保留**的内容。持久化块之外的所有内容都会被重新渲染。
-- 在 ZotLit 中，`{% managed %}...{% endmanaged %}` 标记在更新时要**重新渲染**的内容。受管区域之外的所有内容都会被保留。
+- 在 ZotLit 中，`{% managed %}...{% endmanaged %}` 标记在更新时要**重新渲染**的内容。托管区域之外的所有内容都会被保留。
 
 这两种模型恰好相反。Zotero Integration 标记要保留的内容；ZotLit 标记要替换的内容。
 
-在 Zotero Integration 中，你可能会有多个 persist 块。而在 ZotLit 中，每篇笔记只有一个受管区域。
+在 Zotero Integration 中，你可能会有多个 persist 块。而在 ZotLit 中，每篇笔记只有一个托管区域。
 
 **Zotero Integration 模板**：
 
@@ -126,9 +126,9 @@ Authors: {{ authors }}
 {% endpersist %}
 ```
 
-**ZotLit 对应项（配置方案笔记源码**）：
+**ZotLit 对应项（配置方案笔记源码）**：
 
-笔记正文包含一个用于放置生成内容的受管区域。个人笔记写在区域外部。
+笔记正文包含一个用于放置生成内容的托管区域。个人笔记写在区域外部。
 
 ```liquid
 # {{ zt.title }}
@@ -151,9 +151,9 @@ Authors: {% for c in zt.creators %}{{ c.fullName }}{% unless forloop.last %}, {%
 
 要点：
 
-- 之前位于 `{% persist "notes" %}` 中的个人笔记移至受管区域**外部**。
+- 之前位于 `{% persist "notes" %}` 中的个人笔记移至托管区域**外部**。
 - 标注循环移至配置方案的[标注分节](/docs/reference/templates/profile-document)中。ZotLit 会自动遍历所有标注。
-- `isFirstImport` 和 `lastImportDate` 没有对应项。受管区域在每次更新时都会重新渲染全部内容。
+- `isFirstImport` 和 `lastImportDate` 没有对应项。托管区域在每次更新时都会重新渲染全部内容。
 - 每次都会渲染全部标注。过期的标注会被自动移除。
 
 ### 模板包含（include） [#includes]
@@ -177,14 +177,14 @@ Zotero Integration 为每种引文格式注册了一个命令。ZotLit 则通过
 
 引文模板通过读取 `zt.variant` 来渲染两种形式：建议器在按下 Enter 时插入 `main`，在按下 Shift+Enter 时插入 `alt`。因此，单个模板可以同时提供这两种格式，而在 Zotero Integration 中每种格式都需要单独的命令。
 
-`formatted-citation` 和 `formatted-bibliography` 通过 CSL 样式而非模板进行渲染。ZotLit 在[导出带引文的文档](/docs/how-to/export-note-with-citations)时会生成该输出。
+`formatted-citation` 和 `formatted-bibliography` 通过 CSL 样式而非模板进行渲染。ZotLit 在[导出带引文的笔记](/docs/how-to/export-note-with-citations)时会生成该输出。
 
 ## 没有直接对应项的功能 [#no-equivalent]
 
 | Zotero Integration 功能            | ZotLit 中的替代方法                                                           |
 | ---------------------------------- | ----------------------------------------------------------------------------- |
-| `{% persist %}`（多个块）          | 将个人内容放置在单个受管区域之外                                              |
-| `isFirstImport` / `lastImportDate` | 受管区域每次都会重新渲染全部内容                                              |
+| `{% persist %}`（多个块）          | 将个人内容放置在单个托管区域之外                                              |
+| `isFirstImport` / `lastImportDate` | 托管区域每次都会重新渲染全部内容                                              |
 | 标注拼接（`+` 前缀）               | 在 Zotero 的标注编辑器中合并文本                                              |
 | `pdfannots2json`（外部标注提取器） | 使用 Zotero 内置的 PDF 阅读器                                                 |
 | 图片 DPI / 格式 / 质量 / OCR 设置  | ZotLit 按需生成[摘录图片](/docs/reference/excerpt-images)；这些设置没有对应项 |
@@ -196,7 +196,7 @@ Zotero Integration 为每种引文格式注册了一个命令。ZotLit 则通过
 - **模板工作台**：在编辑模板时支持实时预览，笔记预览位于编辑器旁，模板字段一键即可插入。
 - **配置方案匹配**：按条目类型、标签或分类自动选择模板。
 - **图谱引用**：引用连线会显示在 Obsidian 的关系图谱视图中。
-- **受管区域**：无需特殊语法，受管区域之外的编辑在每次更新后都会保留。
+- **托管区域**：无需特殊语法，托管区域之外的编辑在每次更新后都会保留。
 - **切换配置方案**：创建笔记后仍可更改其模板。
 
 ## 另请参阅 [#see-also]
@@ -208,7 +208,7 @@ Zotero Integration 为每种引文格式注册了一个命令。ZotLit 则通过
     href="/docs/how-to/customize-a-template"
   />
   <Card
-    title="文献笔记与受管区域"
+    title="文献笔记与托管区域"
     description="了解 ZotLit 如何将你的个人书写内容与自动生成的内容分离开来。"
     href="/docs/reference/literature-notes"
   />

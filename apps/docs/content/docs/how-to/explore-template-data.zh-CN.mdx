@@ -56,7 +56,7 @@ Zotero 标识符用于唯一标识某个条目、附件、标注或笔记。当�
 
 - 在 Obsidian 中，当前打开的文献笔记：运行 <Command inline name={m.command_copy_item_key_name()} />，或从文件菜单中选择该项。文献笔记的 `zotero-key` 属性中也记录了此标识符。
 - 在标注行上：打开更多选项菜单并选择 <UiLabel name={m.indexed_key_menu_copy_annotation()} />。
-- 在浏览器的面板菜单中：选择 <UiLabel name={m.command_copy_item_key_name()} /> 或 <UiLabel name={m.indexed_key_menu_copy_annotation()} />。
+- 在模板数据浏览器的面板菜单中：选择 <UiLabel name={m.command_copy_item_key_name()} /> 或 <UiLabel name={m.indexed_key_menu_copy_annotation()} />。
 - 在 Zotero 中（需要 ZotLit Companion）：右键点击条目并选择 <UiLabel name={m["zotero.menu_submenu.label"]()} /> > <UiLabel name={m["zotero.menu_item_copy_key.label"]({ count: 1, kind: "item" })} /> 或 <UiLabel name={m["zotero.menu_item_copy_key.label"]({ count: 1, kind: "attachment" })} />（选中多行时将按每行一个标识符进行复制）。在 PDF 阅读器中，右键点击标注并选择 <UiLabel name={m["zotero.menu_reader_annot_copy_key"]()} />。
 
 </Accordion>
@@ -73,13 +73,13 @@ Zotero 标识符用于唯一标识某个条目、附件、标注或笔记。当�
 - <UiLabel name={m.workbench_fields_no_matches()} /> ——
   缩短或清空搜索框中的文本。
 - <UiLabel name={m.workbench_field_copy_failed()} /> ——
-  选中文本并在屏幕上手动复制该代码片段。
+  选中屏幕上显示的代码片段文本并手动复制。
 - **代码片段操作显示在 Liquid 和 Eta 两个子菜单中** —— 选择你的模板所使用的语言。如果是全新开始，请选择 Liquid。
 - **Zotero 每次打开 Obsidian 时都弹出确认提示** —— 请参考[关闭 Zotero 安全提示](/docs/how-to/suppress-zotero-security-prompt)。
 - **字段值看起来不是最新的** —— 数据会自动更新，但你也可以从面板菜单中选择 <UiLabel name={m.workbench_refresh_item()} /> 立即刷新。
 - **模板渲染结果有误且你想提交反馈** —— 请参考收集调试日志中的[模板数据](/docs/how-to/collect-debug-logs#template-data)。
 
-## 后续步骤 [#next]
+## 下一步 [#next]
 
 - [自定义模板](/docs/how-to/customize-a-template) — 将代码片段粘贴到配置方案中并预览效果。
 - [配置属性](/docs/how-to/configure-frontmatter-properties) — 将字段用作笔记属性。

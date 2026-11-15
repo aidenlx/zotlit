@@ -171,7 +171,7 @@ Zotero，或编辑其 Zotero
 
 卡片的排版布局类似于文献的首页。从上到下依次为：
 
-- 小型大写字母显示的条目类型，如 Journal Article（期刊文章）或 Letter。
+- 小型大写字母显示的条目类型，如 Journal Article（期刊文章）或 Letter（信件）。
 - 标题。
 - 完整的创作者列表。超过 10 人时会添加“et al.”；点击 <UiLabel name={m.library_view_card_all_fields()} /> 可展开全部人员。
 - 斜体显示的期刊或出版者，附带卷、期、页码和年份。
@@ -213,7 +213,7 @@ Zotero，或编辑其 Zotero
 - 在 <UiLabel name={m.references_view_name()} /> 侧边栏中，点击与 Zotero 条目匹配的参考文献行上的 <UiLabel name={m.library_view_show_in_library()} />。
 - 在 <UiLabel name={m.cited_by_view_name()} /> 视图中，点击工具栏中的 <UiLabel name={m.library_view_show_in_library()} />。
 - 在引用悬停弹出框中，点击弹出框工具栏中的 <UiLabel name={m.library_view_show_in_library()} />。
-- 在关系图谱视图中，右键点击文献引用标识匹配单个 Zotero 条目的被引作品节点，并选择 <UiLabel name={m.library_view_show_in_library()} />。
+- 在关系图谱视图中，右键点击文献引用标识匹配单个 Zotero 条目的被引文献节点，并选择 <UiLabel name={m.library_view_show_in_library()} />。
 - 在模板链接中，`zt.librarylink` 会生成一个 `obsidian://zotlit/show-in-library` 协议链接，可在任何同步设备上直接跳转至该文献。
 
 ![一篇论文章节上方打开了 Rougier et al. 引用的悬停弹出框，其文库按钮上显示工具提示“在 Zotero 文库中显示”，旁边是文库视图，选中了该文献所在行且列表下方显示其详情](/img/how-to/show-in-library.webp)
@@ -226,10 +226,10 @@ Zotero，或编辑其 Zotero
 
 若要将文库视图显示的内容保存为仓库文件，可选择标题中的 <UiLabel name={m.annot_view_save_as_query_file()} />。默认名称为你当前选中的文库或分类；你可以根据需要更改名称并选择保存文件夹。若生成的文件无法完整保留视图的某些部分，对话框会做出相应说明。ZotLit 会生成一个[查询文件](/docs/how-to/use-query-files)并在标签页中将其打开。
 
-该文件会保留当前选中的文库或分类、选中的标签以及排序方式，以 <UiLabel name={m.library_view_papers_view_name()} /> 布局打开，并与视图一样最多列出 1,000 篇文献。在其标签页中，你可以切换到表格视图、添加筛选、分组以及选择显示的属性。视图中的某些特性无法直接转录：
+该文件会保留当前选中的文库或分类、选中的标签以及排序方式，以 <UiLabel name={m.library_view_papers_view_name()} /> 布局打开，并与视图一样最多列出 1,000 篇文献。在其标签页中，你可以切换到表格视图、添加筛选、分组以及选择显示的属性。视图中的某些设置不会保留到文件中：
 
-- 搜索内容不会转录。查询文件目前尚无法表达带权重的相关度搜索。
-- <UiLabel name={m.library_view_facet_has_note()} /> 不会转录，且
+- 搜索内容不会保留。查询文件目前尚无法表达带权重的相关度搜索。
+- <UiLabel name={m.library_view_facet_has_note()} /> 不会保留，且
   <UiLabel name={m.library_view_facet_unread()} />
   仅保留“无标注”这一半条件。两者都依赖于仓库中的笔记，查询文件目前尚无法据此进行筛选。
 - 从文库范围外的文库中保存的文件不会列出任何内容，直到你将该文库添加到文库范围中。

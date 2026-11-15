@@ -41,7 +41,7 @@ Zotero 文库中尤为明显。
 
 ### 针对每台设备的路径解析 [#per-device-path-resolution]
 
-配置文件目录和数据目录是随电脑不同的绝对文件系统路径。ZotLit 会按设备分别解析它们：在每台机器上，它会自动检测默认的 Zotero 配置文件（来自 `profiles.ini`）和数据目录。如果 Zotero 位于非默认路径，只需在该设备上设置“数据目录覆盖”。该覆盖设置保存在本地（按仓库、按设备隔离），绝不会通过仓库同步，因此一台电脑上的路径不会覆盖另一台电脑。
+配置文件目录和数据目录是随电脑不同的绝对文件系统路径。ZotLit 会按设备分别解析它们：在每台机器上，它会自动检测默认的 Zotero 配置文件（来自 `profiles.ini`）和数据目录。如果 Zotero 位于非默认路径，只需在该设备上设置设备覆盖。该覆盖设置保存在本地（按仓库、按设备隔离），绝不会通过仓库同步，因此一台电脑上的路径不会覆盖另一台电脑。
 
 详细步骤请参阅[在多台设备上使用 ZotLit](/docs/how-to/sync-across-devices)。
 
@@ -123,7 +123,7 @@ ZotLit 可以在 Zotero 关闭时读取数据库，这已完全满足浏览和�
     href="/docs/install-companion"
   />
   <Card
-    title="文献笔记与受控区域"
+    title="文献笔记与托管区域"
     description="了解 ZotLit 如何区分用户撰写内容与生成内容。"
     href="/docs/reference/literature-notes"
   />

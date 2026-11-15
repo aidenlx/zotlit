@@ -73,7 +73,7 @@ Zotero 入口将导入范围限制在你右键点击的行（包含子分类）�
 | 入口点           | 详情                                                                                                   |
 | ---------------- | ------------------------------------------------------------------------------------------------------ |
 | 命令面板         | 始终可用                                                                                               |
-| 侧边栏（Ribbon） | ZotLit 图标                                                                                            |
+| 功能区（Ribbon） | ZotLit 图标                                                                                            |
 | 快速切换         | 在结果上按 `Alt+Enter`（macOS 上为 `Option+Enter`）可在该条目上打开视图。参见[下文](#quick-switcher)。 |
 | 自动             | 首次安装以及从 v1 升级到 v2 后会自动打开一次，上方显示设置提示横幅                                     |
 
@@ -193,7 +193,7 @@ Zotero 入口将导入范围限制在你右键点击的行（包含子分类）�
 
 <Command name={m.command_set_citation_presentation_name()} />
 
-打开弹窗以设置当前活动 Markdown 笔记的参考文献样式和文档语言。确认后将同时写入该笔记的 `zotlit-csl` 和 `lang` 属性。选择仓库样式或重置语言将移除对应属性。
+打开弹窗以设置当前活动 Markdown 笔记的引文与参考文献样式以及文档语言。确认后将同时写入该笔记的 `zotlit-csl` 和 `lang` 属性。选择仓库样式或重置语言将移除对应属性。
 
 | 入口点   | 详情                           |
 | -------- | ------------------------------ |
@@ -266,7 +266,7 @@ Zotero 入口将导入范围限制在你右键点击的行（包含子分类）�
 
 <Command name={m.command_update_note_name()} />
 
-根据当前 Zotero 数据重新渲染完整文献笔记（属性和受管正文区域）。
+根据当前 Zotero 数据重新渲染完整文献笔记（属性和托管正文区域）。
 
 | 入口点   | 详情                     |
 | -------- | ------------------------ |
@@ -355,7 +355,7 @@ Zotero 入口将导入范围限制在你右键点击的行（包含子分类）�
 | 入口点           | 详情                                                                  |
 | ---------------- | --------------------------------------------------------------------- |
 | 命令面板         | 始终可用                                                              |
-| 侧边栏（Ribbon） | 是（工具提示：“<UiLabel name={m.command_open_annot_view_name()} />”） |
+| 功能区（Ribbon） | 是（工具提示：“<UiLabel name={m.command_open_annot_view_name()} />”） |
 
 <Command name={m.command_annot_view_follow_active_tab_name()} />
 
@@ -566,13 +566,13 @@ ZotLit 会使用标注条目对应文献笔记的[配置方案](/docs/reference/
   ：仅刷新现有笔记的属性，笔记正文保持不变。跳过没有现有文献笔记的条目。
 
 <UiLabel name={m["zotero.menu_item_import_notes.label"]({ count: 2 })} />
-在所选内容包含笔记条目时显示。如果所选的是常规条目， 菜单则会显示
+在所选内容包含笔记条目时显示。如果所选的是常规条目，菜单则会显示
 <UiLabel name={m["zotero.menu_item_import_child_notes.label"]()} />
 ，这将触发不同的导入路径。
 
 ## 入口点汇总 [#entry-point-summary]
 
-| 命令                                                                | 命令面板 | 侧边栏 | 文件菜单 | 可用条件                         |
+| 命令                                                                | 命令面板 | 功能区 | 文件菜单 | 可用条件                         |
 | ------------------------------------------------------------------- | :------: | :----: | :------: | -------------------------------- |
 | <UiLabel name={m.command_refresh_db_name()} />                      |    是    |   否   |    否    | 始终                             |
 | <UiLabel name={m.command_update_notes_name()} />                    |    是    |   否   |    否    | 始终                             |
@@ -711,7 +711,7 @@ obsidian zotlit:query from=annotations filter='item == this.item' this-item=ABCD
 obsidian zotlit:query from=attachments group=fileType
 ```
 
-每个分组包含 `value`、`count` 和 `rows`。`count` 是应用每组限制之前的匹配数。`totalCount` 统计所有匹配的记录数，`returnedCount` 统计跨所有分组返回的行条目总数。
+每个分组包含 `value`、`count` 和 `rows`。`count` 是应用每组限制之前的匹配数。`totalCount` 统计所有匹配的记录数，`returnedCount` 统计跨所有分组返回的行总数。
 
 包含单个 `[]` 的路径会按列表的每个元素进行分组。以下命令统计每个标签下的文献数：
 
@@ -772,7 +772,7 @@ obsidian zotlit:query-values kind=collections match=thesis
 - `zotlit:template-data`：返回单个根节点的模板数据。
 - `zotlit:template-guide`：输出工作台指南。
 
-早期的架构、渲染、源码及受管属性命令已废弃。这些命令仍保留注册，但会返回 `COMMAND_RETIRED` 诊断信息。
+早期的架构、渲染、源码及托管属性命令已废弃。这些命令仍保留注册，但会返回 `COMMAND_RETIRED` 诊断信息。
 
 有关所有命令（可用与废弃）、选项标志及诊断信息的详情，请参见[模板工作台 CLI](/docs/reference/template-workbench-cli)；有关核心概念请参见[模板工作台](/docs/reference/template-workbench-cli)。
 

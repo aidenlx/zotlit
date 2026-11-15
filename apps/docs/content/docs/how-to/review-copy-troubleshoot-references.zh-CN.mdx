@@ -88,7 +88,7 @@ import { m } from "@/paraglide/messages.js";
 
 ### 复制单条文献 [#copy-one-entry]
 
-在侧边栏中选中文中某一条目的文本。使用操作系统的常规复制快捷键即可。
+在侧边栏中选中某一条目的文本。使用操作系统的常规复制快捷键即可。
 
 点击该行的折叠箭头用于跳转到引用位置，不会复制该条目。
 
@@ -122,12 +122,12 @@ import { m } from "@/paraglide/messages.js";
 
 ## 修复呈现错误 [#fix-presentation-errors]
 
-| 提示横幅                                                     | 恢复方法                                                                                                                                                                          |
-| ------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **This note's citation and references style is unavailable** | 修正笔记中的 `zotlit-csl`，在 Zotero 中安装该样式，或使用仓库样式。                                                                                                               |
-| **This note's document language is invalid**                 | 将 `lang` 设置为标准语言代码（如 `de-DE`），或直接移除该属性。                                                                                                                    |
-| **ZotLit could not format these references**                 | 在 <SettingsPath page={m.settings_page_citations()} setting={m.settings_citation_references_heading()} /> 下检查所选样式和 <UiLabel name={m.settings_citation_engine_name()} />。 |
-| **The Pandoc engine is unavailable**                         | 打开相同的设置页面，修复或重新安装该引擎。                                                                                                                                        |
+| 提示横幅                             | 恢复方法                                                                                                                                                                          |
+| ------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **此笔记的引用与参考文献样式不可用** | 修正笔记中的 `zotlit-csl`，在 Zotero 中安装该样式，或使用仓库样式。                                                                                                               |
+| **此笔记的文档语言无效**             | 将 `lang` 设置为标准语言代码（如 `de-DE`），或直接移除该属性。                                                                                                                    |
+| **ZotLit 无法排版这些参考文献**      | 在 <SettingsPath page={m.settings_page_citations()} setting={m.settings_citation_references_heading()} /> 下检查所选样式和 <UiLabel name={m.settings_citation_engine_name()} />。 |
+| **Pandoc 引擎不可用**                | 打开相同的设置页面，修复或重新安装该引擎。                                                                                                                                        |
 
 当排版输出不可用时，侧边栏会显示简略列表。在 ZotLit 生成无参考文献错误的完整参考文献列表之前，“复制”将保持禁用状态。
 

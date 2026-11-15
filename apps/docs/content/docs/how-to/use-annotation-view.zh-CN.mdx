@@ -88,12 +88,12 @@ import { m } from "@/paraglide/messages.js";
 - **列表中显示按钮“<UiLabel name={m.annot_view_enable_live_updates()} />”而非内容**： <UiLabel name={m.annot_view_mode_zotero_reader()} />模式需要实时更新。点击该按钮，或参见[设置实时更新](/docs/how-to/set-up-live-updates)。
 - “**<UiLabel name={m.annot_view_reader_closed()} />**”： 你在 Zotero 中关闭了阅读器；面板会保留上一个 PDF。在 Zotero 阅读器中重新打开文献，或将模式切换回 <UiLabel name={m.annot_view_mode_active_tab()} />。
 - **面板显示了同一文献的另一个 PDF**： 包含多个附件的文献在面板标题下方会有一个附件选择器。从选择器中选择另一个附件；ZotLit 会记住该文献的选择。若要阅读它，打开顶部菜单并选择 <UiLabel name={m.command_open_pdf_name()} />。
-- **卡片页码旁显示锁图标**： ZotLit 无法更改该标注。将鼠标悬停在图标上可查看原因，例如从 PDF 外部导入或由其他群组成员创建。参见[如何在 Obsidian 中编辑 PDF 标注](/docs/how-to/edit-pdf-annotations)。
-- **卡片菜单中缺少 <UiLabel name={m.annot_view_menu_insert()} />**： 当前没有活动的笔记编辑器。点击笔记内部，然后重新打开菜单。
-- **卡片显示“<UiLabel name={m.annot_view_image_unavailable()} />**”： ZotLit 尝试了图片缓存、PDF 和 Zotero 保存的图片，均未获取到图片。卡片的文本和其他卡片仍可正常使用。查看卡片绝不会在你的仓库中保存图片文件。
-- **插入的笔记显示“<UiLabel name={m.excerpt_image_import_disabled()} />**”： 在 <SettingsPath page={m.settings_page_attachments()} /> 中 <UiLabel name={m.settings_attachment_import_name()} /> 已关闭。将其开启，然后重新插入图片高亮。面板本身无论开启与否均可显示图片。
-- **提示“Excerpt images: … from Zotero with uncertain freshness, … with unchecked PDF freshness, … unavailable, … kept from the note and not refreshed.**”： 插入已完成；提示中指出了 ZotLit 无法对照 PDF 进行校验或无法创建的图片。详情请参见：[导入结果](/docs/reference/excerpt-images#import-outcomes)。
-- **替换文件后面板中的图片仍显示旧 PDF 的内容**： 当 PDF 保持相同的文件大小和修改时间时，ZotLit 会复用缓存图片。前往 <SettingsPath page={m.settings_page_advanced()} /> → <UiLabel name={m.settings_excerpt_cache_clear_name()} /> → <UiLabel name={m.settings_excerpt_cache_clear_action()} /> 清除缓存。详情请参见：[缓存与新鲜度](/docs/reference/excerpt-images#freshness)。
+- **卡片页码旁显示锁图标**：ZotLit 无法更改该标注。将鼠标悬停在图标上可查看原因，例如从 PDF 外部导入或由其他群组成员创建。参见[如何在 Obsidian 中编辑 PDF 标注](/docs/how-to/edit-pdf-annotations)。
+- **卡片菜单中缺少 <UiLabel name={m.annot_view_menu_insert()} />**：当前没有活动的笔记编辑器。点击笔记内部，然后重新打开菜单。
+- **卡片显示“<UiLabel name={m.annot_view_image_unavailable()} />”**：ZotLit 尝试了图片缓存、PDF 和 Zotero 保存的图片，均未获取到图片。卡片的文本和其他卡片仍可正常使用。查看卡片绝不会在你的仓库中保存图片文件。
+- **插入的笔记显示“<UiLabel name={m.excerpt_image_import_disabled()} />”**：在 <SettingsPath page={m.settings_page_attachments()} /> 中 <UiLabel name={m.settings_attachment_import_name()} /> 已关闭。将其开启，然后重新插入图片高亮。面板本身无论开启与否均可显示图片。
+- **提示“摘录图片：… 张来自 Zotero，时效性不确定；… 张未检查 PDF 时效性；… 张不可用；… 张保留了笔记中的原图，未能刷新。”**：插入已完成；提示中指出了 ZotLit 无法对照 PDF 进行校验或无法创建的图片。详情请参见：[导入结果](/docs/reference/excerpt-images#import-outcomes)。
+- **替换文件后面板中的图片仍显示旧 PDF 的内容**：当 PDF 保持相同的文件大小和修改时间时，ZotLit 会复用缓存图片。前往 <SettingsPath page={m.settings_page_advanced()} /> → <UiLabel name={m.settings_excerpt_cache_clear_name()} /> → <UiLabel name={m.settings_excerpt_cache_clear_action()} /> 清除缓存。详情请参见：[缓存与时效性](/docs/reference/excerpt-images#freshness)。
 
 ## 下一步 [#next]
 
