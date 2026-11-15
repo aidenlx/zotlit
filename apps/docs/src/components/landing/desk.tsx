@@ -511,19 +511,19 @@ function DraftSheet() {
       )}
     >
       <p className="font-mono text-[10px] tracking-[0.12em] text-fd-muted-foreground uppercase">
-        Chapter 3 – Presenting the results
+        {m.docs_home_desk_draft_chapter()}
       </p>
       <p className="mt-2 font-serif text-[16px] font-semibold text-fd-foreground">
-        3.3 Keeping each figure reproducible
+        {m.docs_home_desk_draft_heading()}
       </p>
       <div className="relative mt-1.5 text-[13px] leading-[1.65] text-fd-foreground">
+        {/* The draft is in the reader's language; the citations stay as the references give them. */}
         <p>
-          Every figure in this chapter is rebuilt from its raw data by one
-          script{" "}
+          {m.docs_home_desk_draft_before_citation()}
           <span className="text-fd-primary underline decoration-fd-primary/40 decoration-dotted underline-offset-[3px]">
             (Sandve et al., 2013)
           </span>
-          . Their layout follows{" "}
+          {m.docs_home_desk_draft_after_citation()}
           <span className="font-mono text-[12px] text-fd-primary">[@ten</span>
           <span className="ms-px inline-block h-[15px] w-[1.5px] translate-y-[3px] bg-fd-foreground motion-safe:animate-desk-blink" />
         </p>

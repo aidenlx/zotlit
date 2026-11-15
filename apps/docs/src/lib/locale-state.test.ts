@@ -102,24 +102,42 @@ describe("getPageLocaleState", () => {
     });
   });
 
-  // The landing, community and listing pages carry English catalog copy, so
-  // their Chinese URLs must not compete with the English pages in search.
-  it.each(["/", "/community", "/blog", "/changelog"])(
-    "serves %s in Chinese as an English fallback",
+  // The landing, community, course and changelog pages draw on translated
+  // catalog strings, so each has a Chinese edition of its own.
+  it.each(["/", "/community", "/learn", "/changelog"])(
+    "serves %s natively in Chinese",
     (path) => {
+      const chinesePath = path === "/" ? "/zh-CN" : `/zh-CN${path}`;
       expect(
         getPageLocaleState(path, "zh-CN", { nativeChinesePages: new Set() }),
       ).toEqual({
-        contentLocale: "en",
-        isFallback: true,
-        canonicalPath: path,
+        contentLocale: "zh-CN",
+        isFallback: false,
+        canonicalPath: chinesePath,
         alternates: [
           { locale: "en", path },
+          { locale: "zh-CN", path: chinesePath },
           { locale: "x-default", path },
         ],
       });
     },
   );
+
+  // The blog listing names English posts, so its Chinese URL must not compete
+  // with the English page in search.
+  it.each(["/blog"])("serves %s in Chinese as an English fallback", (path) => {
+    expect(
+      getPageLocaleState(path, "zh-CN", { nativeChinesePages: new Set() }),
+    ).toEqual({
+      contentLocale: "en",
+      isFallback: true,
+      canonicalPath: path,
+      alternates: [
+        { locale: "en", path },
+        { locale: "x-default", path },
+      ],
+    });
+  });
 
   it("defaults unknown locales to English", () => {
     expect(

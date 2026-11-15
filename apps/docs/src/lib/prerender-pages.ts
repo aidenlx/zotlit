@@ -15,7 +15,7 @@
 // @see docs/adr/0051-the-docs-site-prerenders-asset-first-and-falls-through-to-an-ssr-worker.md
 
 import { scanContent } from "./content-scan.js";
-import { localizedPath } from "./i18n.js";
+import { chineseCatalogPages, localizedPath } from "./i18n.js";
 import type { MarkdownSection } from "./markdown-routes.js";
 import {
   contentRouteUrl,
@@ -31,9 +31,9 @@ interface PrerenderPage {
 /**
  * Sections whose bare path is a Markdown edition of its own. The docs index
  * page already carries the `/docs.md` edition; `changelog` and `blog` answer
- * their bare section path with a generated listing. The `/learn` course
- * listing has no Chinese edition, so `prerenderPages` adds it for English
- * alone.
+ * their bare section path with a generated listing. `prerenderPages` adds the
+ * `/learn` course listing itself, and the Chinese listings through
+ * `chineseCatalogPages`.
  */
 const landingSections: MarkdownSection[] = ["changelog", "blog"];
 
@@ -104,6 +104,29 @@ function htmlPages(
 }
 
 /**
+ * The catalog pages with a native Chinese edition, beyond the Workbench that
+ * `htmlPages` lists for both locales; a section listing among them also
+ * publishes its Markdown edition.
+ */
+function chineseCatalogPagesWithEditions(): PrerenderPage[] {
+  return chineseCatalogPages
+    .filter((path) => path !== "/workbench")
+    .flatMap((path) => {
+      const section = path.slice(1);
+      const listing = section === "learn" || section === "changelog";
+      return [
+        { path },
+        ...(listing
+          ? [
+              { path: suffixEditionUrl({ section, slugs: [] }) },
+              { path: contentRouteUrl({ section, slugs: [] }) },
+            ]
+          : []),
+      ];
+    });
+}
+
+/**
  * Every route the build prerenders into the client output.
  * @param packageRoot the app's own root, which `vite.config.ts` owns.
  */
@@ -123,6 +146,7 @@ export function prerenderPages(packageRoot: string): PrerenderPage[] {
     ...[
       ...machineRoutePages(chinese, { landings: false }),
       ...htmlPages(chinese, { landings: false }),
+      ...chineseCatalogPagesWithEditions(),
     ].map(({ path }) => ({ path: localizedPath(path, "zh-CN") })),
   ];
 }

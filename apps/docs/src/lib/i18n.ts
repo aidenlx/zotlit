@@ -16,6 +16,21 @@ export function isSiteLocale(value: string): value is SiteLocale {
   return i18n.languages.some((locale) => locale === value);
 }
 
+/**
+ * Pages drawn wholly from the locale catalogs, whose Chinese strings are in
+ * place: the landing and community pages, the course listing, the changelog
+ * listing over its Chinese entries, and the Workbench. Each has a native
+ * `/zh-CN` edition. The blog listing names English posts, so its `/zh-CN` URL
+ * stays an English fallback.
+ */
+export const chineseCatalogPages = [
+  "/",
+  "/community",
+  "/learn",
+  "/changelog",
+  "/workbench",
+] as const;
+
 /** The URL prefix of every Chinese page; English URLs carry none. */
 export const chinesePrefix = "/zh-CN";
 

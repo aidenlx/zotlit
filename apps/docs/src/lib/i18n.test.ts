@@ -201,15 +201,22 @@ describe("prerendered locale editions", () => {
         }
       }
       expect(paths.has(`${prefix}/workbench`)).toBe(true);
-      // The listing pages' copy is English, so Chinese URLs fall back.
-      for (const path of ["", "/community", "/blog", "/changelog"]) {
-        expect(paths.has(prefix + path || "/")).toBe(locale === "en");
+      // The catalog pages have Chinese editions; the blog listing names
+      // English posts, so its Chinese URL falls back.
+      for (const path of ["", "/community", "/learn", "/changelog"]) {
+        expect(paths.has(prefix + path || "/"), `HTML: ${prefix}${path}`).toBe(
+          true,
+        );
       }
-      for (const section of ["blog", "changelog"] as const) {
+      expect(paths.has(`${prefix}/blog`)).toBe(locale === "en");
+      for (const section of ["learn", "changelog"] as const) {
         expect(
           paths.has(prefix + suffixEditionUrl({ section, slugs: [] })),
-        ).toBe(locale === "en");
+        ).toBe(true);
       }
+      expect(
+        paths.has(prefix + suffixEditionUrl({ section: "blog", slugs: [] })),
+      ).toBe(locale === "en");
     }
     for (const path of [
       "/api/search",
