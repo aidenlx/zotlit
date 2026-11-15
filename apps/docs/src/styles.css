@@ -153,6 +153,7 @@
   --desk-purple: #8a5cf5;
   --desk-selected: color-mix(in srgb, #8a5cf5 13%, var(--color-fd-card));
   --desk-own: color-mix(in srgb, #8a5cf5 5%, var(--color-fd-card));
+  --desk-cited: color-mix(in srgb, var(--color-fd-primary) 14%, transparent);
   --desk-window-shadow:
     0 30px 70px -34px rgb(0 0 0 / 0.45), 0 2px 6px -2px rgb(0 0 0 / 0.08);
 }
@@ -195,6 +196,7 @@
   --desk-purple: color-mix(in srgb, #8a5cf5 78%, var(--color-fd-foreground));
   --desk-selected: color-mix(in srgb, #8a5cf5 24%, var(--color-fd-card));
   --desk-own: color-mix(in srgb, #8a5cf5 8%, var(--color-fd-card));
+  --desk-cited: color-mix(in srgb, var(--color-fd-primary) 24%, transparent);
   --desk-window-shadow:
     0 30px 70px -34px rgb(0 0 0 / 0.7), 0 0 0 1px oklch(1 0 0 / 0.04);
 }
@@ -207,11 +209,13 @@
   --color-check-bg: var(--zt-check-bg);
   --color-check-label: var(--zt-check-label);
 
-  /* The landing's motion, once on load and under `motion-safe:` only, so the
-     prerendered page and reduced motion show the final frame.
-     The desk: each object drops onto the desk at its angle (`--desk-r`); the
-     highlighter sweeps across the headline; the table's ratings fill in, the
-     cell focus lands, the citation picker pops open and the caret blinks.
+  /* The landing's motion, under `motion-safe:` only, so the prerendered page
+     and reduced motion show the final frame.
+     The desk, once on load: each object drops onto the desk at its angle
+     (`--desk-r`); the highlighter sweeps across the headline; the table's
+     ratings fill in and the cell focus lands. Then, in a loop, the draft
+     cites a paper: a key is typed, picked from the citation picker, and the
+     marked citation takes its place.
      @see apps/docs/DESIGN.md → Landing */
   /* `backwards`, not `both`: the last keyframe equals the object's own
      transform, so once the drop ends no fill holds the object on a
@@ -222,8 +226,20 @@
     both;
   --animate-desk-fill: desk-fill 300ms ease-out both;
   --animate-desk-focus: desk-focus 2400ms steps(1) 1500ms both;
-  --animate-desk-pop: desk-pop 360ms cubic-bezier(0.2, 0.8, 0.3, 1) 1900ms both;
-  --animate-desk-blink: desk-blink 1.1s steps(1) 3;
+  /* The citation loop: one 11 s cycle shared by every part, from 1.7 s (the
+     draft has landed), first frame held through the delay. In each cycle:
+     the caret alone to 0.6 s; `[@ten` types one character every 250 ms to
+     1.85 s; the picker opens at 1.4 s (after "[@t"); its first row is
+     picked at 3.6 s; at 4.4 s the picker closes and the citation appears,
+     marked until 8.4 s, plain from 9 s; at 10.4 s the sentence clears for
+     the next cycle. */
+  --animate-desk-typed: desk-typed 11s linear 1.7s infinite backwards;
+  --animate-desk-type: desk-type 11s linear 1.7s infinite backwards;
+  --animate-desk-suggest: desk-suggest 11s linear 1.7s infinite backwards;
+  --animate-desk-pick: desk-pick 11s linear 1.7s infinite backwards;
+  --animate-desk-cited: desk-cited 11s linear 1.7s infinite backwards;
+  --animate-desk-ref: desk-ref 11s linear 1.7s infinite backwards;
+  --animate-desk-blink: desk-blink 0.9s steps(1) infinite;
   @keyframes desk-drop {
     from {
       opacity: 0;
@@ -257,10 +273,102 @@
       opacity: 1;
     }
   }
-  @keyframes desk-pop {
-    from {
+  /* Percentages of the 11 s cycle: 0.6 s = 5.45%, 1.4 s = 12.7%,
+     1.85 s = 16.8%, 3.6 s = 32.7%, 4.4 s = 40%, 8.4 s = 76.4%,
+     9 s = 81.8%, 10.4 s = 94.5%. */
+  @keyframes desk-typed {
+    0%,
+    39.9% {
+      opacity: 1;
+    }
+    40%,
+    100% {
+      opacity: 0;
+    }
+  }
+  @keyframes desk-type {
+    0%,
+    5.45% {
+      width: 0;
+      animation-timing-function: steps(5);
+    }
+    16.8%,
+    100% {
+      width: 5ch;
+    }
+  }
+  @keyframes desk-suggest {
+    0%,
+    12.7% {
       opacity: 0;
       transform: translateY(-4px) scale(0.97);
+    }
+    15%,
+    38.2% {
+      opacity: 1;
+      transform: none;
+    }
+    40%,
+    100% {
+      opacity: 0;
+    }
+  }
+  @keyframes desk-pick {
+    32.7%,
+    40% {
+      background-color: var(--color-fd-muted);
+    }
+    34%,
+    38.2% {
+      background-color: var(--desk-selected);
+    }
+  }
+  @keyframes desk-cited {
+    0%,
+    40% {
+      opacity: 0;
+      background-color: transparent;
+    }
+    42%,
+    76.4% {
+      opacity: 1;
+      background-color: var(--desk-cited);
+    }
+    81.8%,
+    94.5% {
+      opacity: 1;
+      background-color: transparent;
+    }
+    98%,
+    100% {
+      opacity: 0;
+    }
+  }
+  /* The new reference opens in place as the citation lands, marked with it,
+     and closes as the sentence clears. */
+  @keyframes desk-ref {
+    0%,
+    40% {
+      max-height: 0;
+      opacity: 0;
+      background-color: transparent;
+    }
+    43%,
+    76.4% {
+      max-height: 3rem;
+      opacity: 1;
+      background-color: var(--desk-cited);
+    }
+    81.8%,
+    94.5% {
+      max-height: 3rem;
+      opacity: 1;
+      background-color: transparent;
+    }
+    98%,
+    100% {
+      max-height: 0;
+      opacity: 0;
     }
   }
   @keyframes desk-blink {
@@ -313,23 +421,61 @@
   /* Sans is the app-wide default: preflight's html font-family rule reads
      --default-font-family, which resolves to --font-sans, so Inter reaches
      everywhere — portaled dialogs and the not-found page included. */
-  --font-sans:
-    "Inter Variable", "Inter Fallback", ui-sans-serif, system-ui, sans-serif,
-    "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
+  --font-sans: var(--zt-font-sans);
   --font-brand: "Archivo ZotLit", ui-sans-serif, system-ui, sans-serif;
   /* IBM Plex Mono is the "Machine" voice — overriding --font-mono here reroutes
      both the `font-mono` utility and every var(--font-mono) reference (code,
      kbd, version chips, meta lines, uppercase apparatus labels) onto it. */
-  --font-mono:
+  --font-mono: var(--zt-font-mono);
+  /* Serif is opt-in per surface, so --font-serif names the stack rather than
+     riding on <html>. */
+  --font-serif: var(--zt-font-serif);
+}
+
+/* The role stacks. `@theme inline` writes each value into the utilities, so
+   the roles above name these tokens, and a Chinese page swaps the stacks. */
+:root {
+  --zt-font-sans:
+    "Inter Variable", "Inter Fallback", ui-sans-serif, system-ui, sans-serif,
+    "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
+  --zt-font-mono:
     "IBM Plex Mono", "IBM Plex Mono Fallback", ui-monospace, SFMono-Regular,
     Menlo, Consolas, "Liberation Mono", monospace;
-  /* Serif is opt-in per surface, so --font-serif names the stack rather than
-     riding on <html>; the system-serif tail carries a surface until Gelasio
-     swaps in. */
-  --font-serif:
+  /* The system-serif tail carries a surface until Gelasio swaps in. */
+  --zt-font-serif:
     "Gelasio Variable", "Gelasio Fallback", "Iowan Old Style", Charter, Georgia,
     serif;
 }
+
+/* Simplified Chinese (`<html lang="zh-CN">`). Each role keeps its Latin face
+   first, so a Latin word in Chinese text stays in Gelasio, Inter or Plex Mono,
+   and the Chinese face of the same voice follows. The punctuation faces lead
+   because the Latin faces also cover the quotation marks, the dash and the
+   ellipsis. The serif role sets LXGW WenKai GB Screen; the sans and mono
+   roles set Noto Sans SC, where an installed Source Han Sans SC or Noto Sans
+   CJK SC comes first, so a reader who has one downloads nothing for it.
+   `src/fonts-zh-cn.css` registers the Chinese faces.
+   @see apps/docs/DESIGN.md → Type system */
+:root:lang(zh) {
+  --zt-font-sans:
+    "ZotLit CJK Punctuation Sans", "Inter Variable", "Inter Fallback",
+    "Source Han Sans SC", "Noto Sans CJK SC", "Noto Sans SC Variable",
+    "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", ui-sans-serif,
+    system-ui, sans-serif, "Apple Color Emoji", "Segoe UI Emoji",
+    "Segoe UI Symbol", "Noto Color Emoji";
+  --zt-font-mono:
+    "IBM Plex Mono", "IBM Plex Mono Fallback", ui-monospace, SFMono-Regular,
+    Menlo, Consolas, "Liberation Mono", "Source Han Sans SC",
+    "Noto Sans CJK SC", "Noto Sans SC Variable", "PingFang SC",
+    "Hiragino Sans GB", "Microsoft YaHei", monospace;
+  --zt-font-serif:
+    "ZotLit CJK Punctuation Serif", "Gelasio Variable", "Gelasio Fallback",
+    "LXGW WenKai GB Screen", "LXGW WenKai Fallback", serif;
+}
+
+/* `zh:` styles an element in Chinese text, e.g. the looser Chinese leading in
+   `src/lib/prose.ts`. */
+@custom-variant zh (&:lang(zh));
 
 @theme {
   /* A lesson part fades and rises 6px as it comes on screen. @see DESIGN.md → Learn */
@@ -345,11 +491,40 @@
 /* Accepted stable-id anchor: the TOC "On this page" h3 ships with this exact
    id and exposes no className hook short of ejecting the whole TOC slot. */
 #toc-title {
-  @apply font-mono text-[0.8125rem] font-semibold tracking-widest uppercase;
+  @apply font-mono text-[0.8125rem] font-semibold tracking-widest uppercase zh:tracking-normal;
 }
 
 html {
   scrollbar-gutter: stable;
+}
+
+/* Chinese text. Chinese has no italic, so an italic run (a lede, a caption,
+   a quote) sets upright as a whole: a Latin word in it stays upright beside
+   the Chinese, since a lone slanted word inside upright Chinese reads as
+   emphasis. These rules sit outside the layers, so they win over the
+   `italic` utility and the prose figcaption modifier; `<i>`, as in a
+   reference list's journal title, keeps its italic. Emphasis
+   takes emphasis dots under the text. Line breaks follow the strict kinsoku
+   rules, which keep closing punctuation off the start of a line.
+   `text-autospace` puts a small gap between Chinese and Latin letters or
+   digits, and `text-spacing-trim` closes the blank half of adjacent
+   full-width punctuation; an engine without them sets the text unchanged.
+   @see apps/docs/DESIGN.md → Type system */
+:lang(zh) {
+  font-synthesis-style: none;
+  line-break: strict;
+  text-autospace: normal;
+  text-spacing-trim: normal;
+}
+
+:lang(zh) :is(.italic, figcaption, blockquote) {
+  font-style: normal;
+}
+
+:lang(zh) em {
+  font-style: normal;
+  text-emphasis: filled dot;
+  text-emphasis-position: under right;
 }
 
 html > body[data-scroll-locked] {

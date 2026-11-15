@@ -1,0 +1,141 @@
+---
+title: "自定义标注"
+searchTitle: "在 Obsidian 中将 Zotero 高亮显示为引用 callout"
+description: "通过编辑标注模板，将 Zotero 高亮作为显示其颜色的 Obsidian 引用 callout 插入文献笔记中。"
+---
+
+import { Steps, Step } from "fumadocs-ui/components/steps";
+import { Card, Cards } from "fumadocs-ui/components/card";
+import { Callout } from "@/components/callout";
+import { Command } from "@/components/command";
+import { SettingsPath } from "@/components/settings-path";
+import { UiLabel } from "@/components/ui-label";
+import { m } from "@/paraglide/messages.js";
+
+自定义将标注插入首篇文献笔记时的外观。你将在 Obsidian 中使用模板工作台视图。本教程接续自[创建你的首篇文献笔记](/learn/connect-zotero-to-obsidian)。
+
+<Callout type="info" title="开始之前">
+  使用[第一篇教程](/learn/connect-zotero-to-obsidian)中的文献笔记。其对应的文献需要在
+  Zotero 中至少有一处高亮。如果没有，请在 Zotero PDF
+  阅读器中添加一处。它无需任何额外操作即可直接出现在笔记的标注分节中。
+</Callout>
+
+## 更改 callout 类型 [#change-the-callout-type]
+
+内置的标注格式使用 `[!note]` 作为 Obsidian 的 callout 类型。你将把它更改为 `[!quote]`，然后将标注插入笔记中查看效果。
+
+<Steps>
+  <Step>
+    ### 打开模板工作台视图 [#open-the-template-workbench-view]
+
+    在 Obsidian 中打开文献笔记。运行 <Command name={m.template_workbench_open_layout()} />。
+
+    ZotLit 会在新窗口中打开此笔记所使用的模板文档，并选择其文献进行预览。当你自定义内置模板时，ZotLit 会在你的模板文件夹中保存一份可编辑的副本。即使未作更改直接关闭窗口，该副本也会保留。
+
+    请阅读编辑器上方的共享模板指引：“标注”标签页中的修改会影响今后在所有使用此模板的笔记中插入的标注。先前已插入的标注保持原样。
+
+    窗口中显示一个视图：左侧是编辑器，右侧是预览面板。“字段”弹出层会保持关闭状态，直到你在视图顶部选择 <UiLabel name={m.workbench_view_fields()} />。
+
+  </Step>
+  <Step>
+    ### 打开标注格式 [#open-the-annotation-format]
+
+    选择 <UiLabel name={m.workbench_tab_annotation()} /> 标签页。编辑器中会显示单个标注所使用的格式。
+
+    首个标注可能是不含文本的手绘涂鸦，因此预览可能看起来几乎是空白的。点击编辑器上方顶栏中的搜索图标（<UiLabel name={m.workbench_choose_annotation()} />），然后选择一条高亮，例如 `Highlight: Identify Your Message`。预览会在 <UiLabel name={m.workbench_annotation_example()} /> 下方显示它。
+
+  </Step>
+  <Step>
+    ### 更改 callout 类型 [#change-the-callout-type-1]
+
+    在标注格式中找到 `[!note]` 并将其改为 `[!quote]`。
+
+    ZotLit 会自动保存模板文档。检查预览中该高亮是否已显示在引用 callout 中。
+
+    ![打开“标注”标签页的模板工作台窗口。编辑器中的 callout 行现已使用 quote 类型，右侧预览面板在标题为 Page 1 的引用 callout 中显示所选高亮](/img/tutorial/customize-template-workbench-quote.webp)
+
+  </Step>
+  <Step>
+    ### 将标注插入笔记 [#insert-the-annotation-into-your-note]
+
+    返回 Obsidian 主窗口中的文献笔记。点击笔记中“标注”分节下方，将光标定位在此处。
+
+    侧边栏中的 <UiLabel name={m.annot_view_name()} /> 视图会跟随活动笔记，并以卡片形式列出其标注。如果该视图已关闭，请运行 <Command name={m.command_open_annot_view_name()} />。
+
+    右键点击某个高亮卡片并选择 <UiLabel name={m.annot_view_menu_insert()} />。ZotLit 会在光标处将该标注插入为引用 callout，包含高亮文本和一条引用。
+
+    ![在实时标注分节下方插入了一条标注的笔记，标注显示在标题为 Page 1 的引用 callout 中](/img/tutorial/customize-template-inserted-quote.webp)
+
+  </Step>
+</Steps>
+
+<Callout type="info" title="为什么标注分节外观没有变化">
+  标注分节中的实时卡片并不使用此格式。该格式适用于通过菜单或拖拽将标注插入笔记时，插入的副本会保持插入时的原样。若要将所有标注直接作为文本写入笔记中，请参阅[默认模板](/docs/reference/templates/defaults)。
+</Callout>
+
+## 添加高亮颜色 [#add-the-highlight-color]
+
+模板字段用于插入来自 Zotero 的数据。你将把标注的 `colorName` 字段添加到 callout 标题中。
+
+<Steps>
+  <Step>
+    ### 返回标注格式 [#return-to-the-annotation-format]
+
+    返回工作台窗口并停留在 <UiLabel name={m.workbench_tab_annotation()} /> 标签页。如果已关闭该窗口，请在文献笔记中运行 <Command name={m.template_workbench_open_layout()} /> 并重新选择该标签页。
+
+  </Step>
+  <Step>
+    ### 插入颜色字段 [#insert-the-color-field]
+
+    将光标置于 callout 标题行的末尾（`{% endif %}` 之后）。输入一个逗号和一个空格，然后键入 `{{` 打开模板字段列表。在选定字段之前，工作台会提示语法问题。字段就位后该提示便会消失。
+
+    选择 `colorName`。该行现在包含：
+
+    ```liquid
+    [!quote] {% if zt.pageLabel and zt.pageLabel != "" %}Page [{{ zt.pageLabel }}]({{ zt.backlink }}){% else %}[Zotero]({{ zt.backlink }}){% endif %}, {{ zt.colorName }}
+    ```
+
+  </Step>
+  <Step>
+    ### 查看预览 [#check-the-preview]
+
+    现在预览标题末尾会显示标注的高亮颜色，例如 `Page 1, blue`。
+
+  </Step>
+  <Step>
+    ### 插入另一条标注 [#insert-another-annotation]
+
+    返回笔记中，点击刚刚插入的 callout 下方。右键点击另一张卡片并选择 <UiLabel name={m.annot_view_menu_insert()} />。
+
+    新 callout 的标题中现在包含了高亮颜色。先前插入的标注仍保留其原有标题。
+
+    ![同一篇笔记，插入了第二个 callout，其标题末尾带有颜色名称](/img/tutorial/customize-template-inserted-color.webp)
+
+  </Step>
+</Steps>
+
+## 恢复内置配置方案 [#restore-the-built-in-profile]
+
+若要从默认配置方案中移除这些更改，请打开 <SettingsPath />。在 <UiLabel name={m.settings_profile_document_name()} /> 行点击 <UiLabel name={m.settings_profile_document_restore()} />，然后点击 <UiLabel name={m.settings_profile_document_restore_action()} /> 确认。
+
+ZotLit 会将自定义配置方案文档移至 Obsidian 配置的回收站中。此后新插入的标注将使用内置格式，而已插入的文本则保持原样。
+
+## 下一步 [#whats-next]
+
+<Cards>
+  <Card
+    title="模板工作台视图"
+    description="了解每个编辑器标签页所控制的内容以及预览的工作方式。"
+    href="/docs/reference/template-workbench-view"
+  />
+  <Card
+    title="探索模板数据"
+    description={`使用 ${m.template_data_explorer_view_name()} 查看所有可用的模板字段。`}
+    href="/docs/how-to/explore-template-data"
+  />
+  <Card
+    title="自定义模板"
+    description="编辑配置方案的各个部分并将其应用到现有笔记。"
+    href="/docs/how-to/customize-a-template"
+  />
+</Cards>

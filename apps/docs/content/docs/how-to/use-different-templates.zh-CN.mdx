@@ -1,0 +1,147 @@
+---
+title: "为不同笔记使用不同模板"
+description: "添加配置方案，赋予其独立外观，设置自动匹配条件，并验证 ZotLit 对条目的匹配选择。"
+---
+
+import { Steps, Step } from "fumadocs-ui/components/steps";
+import { Card, Cards } from "fumadocs-ui/components/card";
+import { Command } from "@/components/command";
+import { SettingsPath } from "@/components/settings-path";
+import { UiLabel } from "@/components/ui-label";
+import { m } from "@/paraglide/messages.js";
+
+配置方案决定文献笔记的名称、文件夹、属性与正文。当图书、文献或特定分类需要独立的外观布局时，可以为其添加一个配置方案。
+
+## 添加配置方案 [#add-a-profile]
+
+<Steps>
+  <Step>
+    ### 打开配置方案页面 [#open-the-profiles-page]
+
+    在 Obsidian 中打开 <SettingsPath page={m.settings_page_profiles()} />。在 <UiLabel name={m.settings_profile_other_heading()} /> 列表的顶部标题中，选择 <UiLabel name={m.settings_profile_add()} />。
+
+  </Step>
+  <Step>
+    ### 命名并选择其文件夹 [#name-it-and-choose-its-folder]
+
+    输入 <UiLabel name={m.settings_profile_name_name()} />。仅输入名称即可创建配置方案。若要将其生成的笔记保存在独立的文件夹中，还需输入 <UiLabel name={m.settings_profile_folder_name()} />。将文件夹留空则使用默认配置方案（Default）的文件夹。对话框会提示 <UiLabel name={m.settings_profile_destination_desc()} /> 选择 <UiLabel name={m.settings_profile_add()} /> 即可创建该配置方案。
+
+    ZotLit 会将 `zotlit-profile.<slug>.md` 写入 <UiLabel name={m.settings_template_folder_name()} /> 指定的文件夹，并在模板工作台视图中打开该文档。你输入的名称是列表中的显示标签。配置方案的真正标识是文档内部的独立 ID，因此重命名该文件不会产生任何影响。有关该文档包含的内容，请参阅[配置方案](/docs/reference/templates/how-templates-work#profiles)。
+
+  </Step>
+  <Step>
+    ### 编辑笔记源码与其属性 [#edit-the-note-source-and-its-properties]
+
+    选择 <UiLabel name={m.workbench_tab_note()} /> 并编辑笔记源码：即该配置方案生成的每篇笔记的初始正文。选择 <UiLabel name={m.workbench_tab_properties()} /> 并设置 ZotLit 在每篇笔记顶部写入的 YAML 属性。
+
+    编辑器旁的预览区会基于某个 Zotero 条目实时渲染你的修改。你可以随时更换预览条目来检查不同情况。
+
+  </Step>
+  <Step>
+    ### 设置选中该配置方案的条件 [#set-the-conditions-that-select-it]
+
+    选择 <UiLabel name={m.workbench_tab_match()} />。该标签页会显示 <UiLabel name={m.workbench_match_conditions_desc()} />
+
+    该标签页初始包含一行空白条件。选择其检查的字段：<UiLabel name={m.workbench_filter_field_item_title()} />、<UiLabel name={m.workbench_filter_field_creator()} />、<UiLabel name={m.workbench_filter_field_first_author()} />、<UiLabel name={m.workbench_filter_field_year()} />、<UiLabel name={m.workbench_filter_field_item_type()} />、<UiLabel name={m.workbench_filter_field_collection()} />、<UiLabel name={m.workbench_filter_field_library()} /> 或 <UiLabel name={m.workbench_filter_field_tag()} />。这些条件与条目[查询视图](/docs/how-to/use-query-files#filter)的筛选条件相同。未填写值的条件行会显示 <UiLabel name={m.workbench_match_value_empty()} />，在填入具体值之前不会匹配任何条目。点击 <UiLabel name={m.workbench_match_add_condition()} /> 可添加更多条件。
+
+    在条件上方，选择它们的组合方式：<UiLabel name={m.workbench_match_match_all()} />、<UiLabel name={m.workbench_match_match_any()} /> 或 <UiLabel name={m.workbench_match_match_none()} />。最后一项会排除满足其中任意条件的所有条目。
+
+    完整的条件语言（包括表达式形式）请参阅[配置方案匹配](/docs/reference/templates/profile-match)。
+
+  </Step>
+  <Step>
+    ### 针对条目检查匹配条件 [#check-the-conditions-against-an-item]
+
+    点击 <UiLabel name={m.workbench_choose_match_item()} /> 并选择一个条目。该标签页会针对该条目显示 <UiLabel name={m.workbench_match_result_yes()} /> 或 <UiLabel name={m.workbench_match_result_no()} />。
+
+    当 ZotLit 能够对条件进行求值时，设置页面中该配置方案所在的行会显示 <UiLabel name={m.settings_profile_match_status({ state: "evaluable" })} />。
+
+  </Step>
+  <Step>
+    ### 从该配置方案创建笔记 [#create-a-note-from-the-profile]
+
+    运行 <Command name={m.command_open_lit_note_name()} /> 并选择一个与该配置方案匹配的条目。ZotLit 将使用该配置方案创建笔记并提示匹配成功。笔记会在其 `zotlit-profile` 属性中记录所用的配置方案。
+
+  </Step>
+</Steps>
+
+已有笔记会保留创建时所用的配置方案。若要将某篇笔记切换至此配置方案，请在该笔记中运行 <Command inline name={m.command_switch_literature_note_profile_name()} />。
+
+## 当两个配置方案同时匹配时 [#overlap]
+
+当两个配置方案同时匹配同一个条目时，ZotLit 不会自动替你做出选择。此时会弹出选择器并提示 <UiLabel name={m.modal_profile_problem_overlap({ profiles: "…" })} />。选择器的搜索框提示为 <UiLabel name={m.modal_profile_overlap_placeholder()} />，且每个匹配该条目的候选配置方案都会带有 <UiLabel name={m.modal_profile_match_candidate()} /> 标识。
+
+选择你打算使用的配置方案，或者关闭选择器取消创建笔记。在 <UiLabel name={m.workbench_tab_match()} /> 标签页中收窄匹配条件是彻底解决此问题的有效方法。
+
+## 手动选择配置方案时 [#manual]
+
+无论条件如何设置，你在当前操作中手动选择的配置方案始终优先于配置方案匹配（Profile Match）。关于 ZotLit 选择配置方案时的优先级顺序，请参阅[配置方案](/docs/reference/templates/how-templates-work#profiles)。
+
+你的手动选择仅作用于当前这一次操作。笔记会记录创建它时所用的配置方案，之后的更新将读取该记录而非重新根据条件匹配。
+
+## 将配置方案作为单个文件分享 [#share]
+
+配置方案是一个单一文档，因此你可以将其作为独立文件迁移至另一个仓库，其中调用的片段也会一并打包在内。[配置方案文档](/docs/reference/templates/profile-document)参考文档中详细说明了该文件的结构以及内部包含的各个字段。
+
+<Steps>
+  <Step>
+    ### 分享配置方案 [#share-the-profile]
+
+    在该配置方案所在的行中，打开 <UiLabel name={m.workbench_more_actions()} /> 并选择 <UiLabel name={m.settings_profile_share()} />。分享对话框会收集该文档及其调用的片段。
+
+  </Step>
+  <Step>
+    ### 选择文件包含的内容 [#choose-what-the-file-carries]
+
+    在 <UiLabel name={m.profile_share_partials()} /> 下，取消勾选任何不想导出的片段；该配置方案调用的片段已被默认选中。<UiLabel name={m.profile_share_include_match()} /> 会将配置方案匹配规则带到目标仓库，而 <UiLabel name={m.profile_share_folders()} /> 会将你的笔记文件夹设置添加到文件中。
+
+  </Step>
+  <Step>
+    ### 复制或保存文件 [#copy-it-or-save-it]
+
+    选择 <UiLabel name={m.profile_share_copy()} /> 将文件复制到剪贴板，或选择 <UiLabel name={m.profile_share_save()} /> 将其保存到指定文件夹中。两者生成的单个文档内容完全一致。
+
+  </Step>
+  <Step>
+    ### 在目标仓库中导入 [#import-it-in-the-receiving-vault]
+
+    运行 <Command inline name={m.command_import_profile_name()} />，或者在 <UiLabel name={m.settings_profile_other_heading()} /> 列表标题中点击导入按钮。ZotLit 会询问文件来源：<UiLabel name={m.profile_import_clipboard()} /> 或 <UiLabel name={m.profile_import_file()} />。
+
+  </Step>
+  <Step>
+    ### 查看导入对话框显示的信息 [#read-what-the-import-dialog-reports]
+
+    对话框会预览即将解包到模板文件夹中的片段、引文样式以及作为筛选表达式传入的配置方案匹配规则。<UiLabel name={m.profile_import_include_match()} /> 会连同配置方案一起导入匹配规则，使其在当前仓库中也能自动匹配笔记；若将其关闭，则该配置方案仅供手动选择。当被分享的配置方案不包含匹配规则时，对话框会显示 <UiLabel name={m.profile_match_absent()} /> 并隐藏该开关。点击 <UiLabel name={m.profile_import_confirm()} /> 即可写入该配置方案。
+
+  </Step>
+</Steps>
+
+## 另请参阅 [#see-also]
+
+<Cards>
+  <Card
+    title="配置方案"
+    description="什么是配置方案、如何选择配置方案，以及笔记如何保留所用的配置方案。"
+    href="/docs/reference/templates/how-templates-work#profiles"
+  />
+  <Card
+    title="配置方案匹配"
+    description="自动选择配置方案的条件语言。"
+    href="/docs/reference/templates/profile-match"
+  />
+  <Card
+    title="配置方案文档"
+    description="清单字段、笔记源码以及标注分节。"
+    href="/docs/reference/templates/profile-document"
+  />
+  <Card
+    title="以 Markdown 编辑配置方案"
+    description="直接以 ZotLit 规范的结构编辑配置方案文档。"
+    href="/docs/how-to/edit-a-profile-as-markdown"
+  />
+  <Card
+    title="文献笔记配置方案"
+    description="默认配置方案、配置方案列表及片段分组。"
+    href="/docs/reference/settings#profiles"
+  />
+</Cards>

@@ -12,15 +12,15 @@ upstream modules rather than an equivalent of its own. See
 
 ## What is inside
 
-| Module | What it owns |
-| --- | --- |
-| `src/vendor/` | The pinned port: `structure.js`, `page-label.js`, `util.js` from `zotero/pdf.js`, and `native-text-selection-map.js` from `zotero/reader`, copied verbatim under a provenance header. |
-| `src/chars.ts` | The adapter — Obsidian's per-glyph text content, filtered and normalised into the character stream the port consumes. |
-| `src/sort-index.ts` | The reader's `getSortIndex`, its rectangle choice, and the `PPPPP\|OOOOOO\|TTTTT` format. |
+| Module                  | What it owns                                                                                                                                                                                                                      |
+| ----------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `src/vendor/`           | The pinned port: `structure.js`, `page-label.js`, `util.js` from `zotero/pdf.js`, and `native-text-selection-map.js` from `zotero/reader`, copied verbatim under a provenance header.                                             |
+| `src/chars.ts`          | The adapter — Obsidian's per-glyph text content, filtered and normalised into the character stream the port consumes.                                                                                                             |
+| `src/sort-index.ts`     | The reader's `getSortIndex`, its rectangle choice, and the `PPPPP\|OOOOOO\|TTTTT` format.                                                                                                                                         |
 | `src/text-selection.ts` | The reader's text selection: a DOM selection mapped onto Structured Characters, the line rectangles and text a highlight or an underline stores, and a stored range with one end dragged to a point or stepped from the keyboard. |
-| `src/page-label.ts` | The printed-page heuristic, plus the reader's alignment to the previous Annotation. |
-| `src/session.ts` | `PdfTextStructure` — one per Reader Session, memoizing Structured Characters per page. |
-| `oracle/` | The golden oracle: Zotero's own modules, run from a local checkout in Node. |
+| `src/page-label.ts`     | The printed-page heuristic, plus the reader's alignment to the previous Annotation.                                                                                                                                               |
+| `src/session.ts`        | `PdfTextStructure` — one per Reader Session, memoizing Structured Characters per page.                                                                                                                                            |
+| `oracle/`               | The golden oracle: Zotero's own modules, run from a local checkout in Node.                                                                                                                                                       |
 
 ## Using it
 

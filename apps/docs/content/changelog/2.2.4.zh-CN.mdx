@@ -1,0 +1,43 @@
+---
+version: "2.2.4"
+companion: "2.2.4"
+date: "2026-11-15"
+description: "Bases 风格的表格列标题、长列表滚动更流畅"
+---
+
+import { UiLabel } from "@/components/ui-label";
+import { m } from "@/paraglide/messages.js";
+
+此版本为表格视图带来了类似 Obsidian Bases 风格的列标题，并让长列表与嵌入视图的滚动更加顺畅。随之发布的 ZotLit Companion 2.2.4 仅更新了文档链接，因此 Companion 2.2.0 至 2.2.3 版本仍可继续正常使用。
+
+## 新增内容 [#whats-new]
+
+### 表格列标题的操作方式与 Obsidian Bases 保持一致 [#table-column-headers-work-like-in-obsidian-bases]
+
+在表格视图中点击列标题即可按该列排序。每次点击会在正序（A 到 Z）、倒序（Z 到 A）以及清除排序之间循环切换。处于排序状态的列会在标题末尾显示一个小箭头图标：朝上表示 A 到 Z，朝下表示 Z 到 A。
+
+列菜单现可通过右键点击打开（移动端为轻点），包含以下选项：
+
+- <UiLabel name={m.query_view_table_hide_column()} />
+- <UiLabel name={m.query_view_table_group_by()} />
+  ，适用于该视图支持分组的属性
+- <UiLabel name={m.query_view_table_sort_az()} /> 与
+  <UiLabel name={m.query_view_table_sort_za()} />
+  （当前生效的排序会带有对勾标记），以及
+  <UiLabel name={m.query_view_table_clear_sort()} />
+- <UiLabel name={m.query_view_table_edit_property()} />
+  （对于公式列则为 <UiLabel name={m.query_view_table_edit_formula()} />
+  ），可在列标题旁展开并编辑显示名称与公式
+
+详见[表格列](/docs/how-to/use-query-files#table-columns)。
+
+### 长列表滚动更流畅 [#long-lists-scroll-smoothly]
+
+在文库视图、查询文件标签页以及嵌入视图中，“文献”（Papers）、“表格”（Table）和“列表”（List）布局现仅渲染屏幕附近的行。在大型文库中折叠侧边栏不再会导致 Obsidian 卡死，拖动滚动条也能顺畅到达列表末尾。
+
+嵌入视图现在仅当滚动至屏幕附近时才会加载，并在加载过程中保持高度不变，从而避免周围的文本发生跳动。
+
+### 其他改进 [#other-improvements]
+
+- 文档现已推出简体中文版本（位于 [/zh-CN/docs](/zh-CN/docs)）；当 Obsidian 界面语言设为简体中文时，ZotLit 的帮助链接会自动打开中文文档（当 Zotero 设为简体中文时，ZotLit Companion 的链接亦是如此）。
+- 当视图未设置任何排序或分组规则时，两个菜单均会显示一个用于选择属性的占位行，点击删除按钮即可移除分组。

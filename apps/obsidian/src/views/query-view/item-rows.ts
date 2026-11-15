@@ -53,6 +53,26 @@ export interface ItemRowGestures {
   menu(key: string, event: globalThis.MouseEvent): void;
   /** The researcher starts to drag the row. */
   drag(key: string, event: DragEvent<HTMLElement>): void;
+  /**
+   * The Item rows as the layout shows them, each time they change: a long
+   * list mounts only the rows near the screen, so the host steps through
+   * these keys, not through the rows it finds, and scrolls through the list.
+   */
+  shown(rows: ShownRows): void;
+}
+
+/** The rows of no layout. */
+export const NO_ROWS: ShownRows = { keys: [], scrollTo: () => {} };
+
+/** The Item rows of a layout, for its host. */
+export interface ShownRows {
+  /** The Indexed Keys of the Item rows, in the order the layout shows them. */
+  readonly keys: readonly string[];
+  /**
+   * Scroll the row of `key` into view: a long list places it as the rows
+   * around it are measured.
+   */
+  scrollTo(key: string): void;
 }
 
 /** The attribute that holds an Item row's Indexed Key, for the host's keys. */

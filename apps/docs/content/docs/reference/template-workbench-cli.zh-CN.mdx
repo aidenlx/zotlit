@@ -1,0 +1,269 @@
+---
+title: "模板工作台 CLI"
+description: "ZotLit CLI 命名空间中的所有可用命令，包括命令摘要、指南主题、响应外壳以及诊断代码。"
+---
+
+import { Card, Cards } from "fumadocs-ui/components/card";
+import { Callout } from "@/components/callout";
+import { SettingsPath } from "@/components/settings-path";
+import { UiLabel } from "@/components/ui-label";
+import { m } from "@/paraglide/messages.js";
+
+本参考列出了模板工作台在 Obsidian CLI 中注册的命令、它们返回的响应以及附带的诊断代码。
+
+模板工作台 CLI 是 Obsidian CLI 中的一组 ZotLit 命令，允许智能体（Agent）读取你的模板文档，对照你的 Zotero 文库进行渲染，并报告每次渲染的输出结果。你只需描述想要的笔记格式，智能体即可编写相应的 Liquid 或 Eta 代码。同样的响应还会指明文档渲染错误或渲染失败的原因。
+
+## 各组件如何协同工作 [#how-the-parts-fit-together]
+
+**Template Workbench CLI** 是命令接口。它负责选定模板文档，读取模板接收到的 Zotero 数据，并在内存中渲染文档以展示其生成效果。它仅执行读取与渲染，绝不直接编辑。
+
+**ZotLit 模板技能**以标识符 `zotlit-template` 发布。其模板工作流使用 CLI 来检查、编辑和校验模板。Claude Code、Codex 以及 pi 均可使用该技能。
+
+**工作台指南**是 ZotLit 内置的实时使用指南。它随你安装的插件一同发布，因此始终与该版本中的命令保持一致。模板技能会将智能体引导至此指南以获取当前说明。
+
+如需获取当前命令帮助，请运行：
+
+```bash
+obsidian help zotlit
+obsidian zotlit:template-guide
+```
+
+## 各命令的功能 [#what-the-commands-do]
+
+Obsidian CLI 中有五个可用命令响应请求。它们是 CLI 命令，而非命令面板项。
+
+**检查** 选择一个模板文档，并验证 ZotLit 编译的源码与磁盘上的源码一致，从而避免智能体编辑陈旧副本。响应会标明该文档、其依赖的共享片段和引文文本，以及 ZotLit 在其中发现的任何问题。在未选择目标时，该命令会列出模板文件夹中的所有模板文档，包括内置的默认配置方案。
+
+**数据** 返回模板在 `zt` 下接收到的数据。根节点决定其结构形状：<UiLabel name={m.workbench_fields_root_note()} />、<UiLabel name={m.workbench_fields_root_annotation()} />、<UiLabel name={m.workbench_fields_root_filename()} /> 或 <UiLabel name={m.workbench_fields_root_citation()} />。可选的探索功能可以将响应收窄到单次编辑所需的字段，避免将庞大的 Zotero 条目完整塞入智能体的上下文中。
+
+**校验** 对照真实的 Zotero 条目或现有的文献笔记，渲染文档或智能体保存在模板文件夹外部暂存文件中的草稿。它会报告每个组件的状态为通过、失败或未检查：对于配置方案，涵盖笔记名称、属性、正文、托管区域和标注；对于引文文本或片段，涵盖渲染后的文本。对于更新操作，它会报告将合并到笔记中的属性以及生成的笔记文本，以便你在提交前查看更改。
+
+**状态** 一览报告工作台信息：插件版本、命令正在与之通信的仓库和 Zotero 数据源、此设备上是否启用 JavaScript 模板，以及 ZotLit 找到的配置方案和文档。
+
+**指南** 按主题输出已安装版本自带的说明。技能会将智能体引导至此处，以便智能体遵循你所运行版本的约定。
+
+每个响应均为 JSON 格式，并带有契约版本、命令名称和 `ok` 标识。失败时会附带诊断信息，包括错误代码、消息以及指明恢复操作的提示。有关各命令的标志、语法及诊断代码，请参阅[可用命令](#commands)与[诊断代码](#diagnostic-codes)。
+
+早期版本中直接渲染模板文件、或通过插件设置读写托管 frontmatter 的命令已被弃用。它们仍会响应，但会返回指向检查、数据和校验命令的弃用诊断。托管 frontmatter 不再通过 CLI 编辑：它保存在配置方案文档中。
+
+## 读取与编辑的边界 [#reading-and-editing-boundaries]
+
+CLI 读取你的模板文档和 Zotero 文库，并在内存中渲染文档。校验操作不会写入任何内容：不写入模板文档、不写入笔记、不更改设置，也不更改 Zotero 记录。对草稿进行校验不会安装该草稿。
+
+智能体通过其自身的仓库感知文件工具来编辑模板文档。这些编辑会直接更改仓库中的文件，与你自己的手动编辑完全一致，因此你可以在信任这些更改前对其进行审查，并在随后使用 CLI 进行校验。经过校验的输出才是依据，而非智能体对此给出的总结。
+
+<Callout type="warn" title="智能体数据访问">
+  所选智能体可以接收 CLI 返回的 Zotero
+  元数据和标注文本。智能体自身的数据处理策略在此适用。
+</Callout>
+
+## JavaScript 模板 [#javascript-templates]
+
+Liquid 无需额外许可即可直接使用。包含 `js` 成员编写的 Eta 文档和托管 frontmatter 项则需要开启 JavaScript 模板开关。
+
+你需要在每台设备上的 <SettingsPath page={m.settings_page_advanced()} setting={m.settings_advanced_template_engine_heading()} /> 中自行启用此开关。CLI 绝不会修改该设置：若在开关关闭时遇到 Eta 文档，命令会失败并返回诊断信息，智能体必须请求你手动启用该设置。
+
+## 托管 frontmatter [#managed-frontmatter]
+
+托管 frontmatter 字段是文献笔记 frontmatter 中的 YAML 属性，其值来自模板表达式。ZotLit 会在每次笔记更新时重新计算它们。
+
+条目列表保存在配置方案文档的清单（manifest）中，按照 ZotLit 写入它们的顺序排列。每个条目都在自身中指明其语言：`expr` 表示 Liquid 表达式，`value` 表示 JSON-e 模板，`js` 则表示需开关许可的 JavaScript 表达式。智能体使用文件工具在文档中编辑该列表，并通过校验命令读取返回的结果。
+
+如需在界面中进行手动配置，请参阅[配置 frontmatter 属性](/docs/how-to/configure-frontmatter-properties)。有关条目成员和合并策略的说明，请参阅[配置方案文档](/docs/reference/templates/profile-document)与 [Frontmatter 参考](/docs/reference/templates/frontmatter)。
+
+如需查看自带指南中陈述的 frontmatter 规则，请运行：
+
+```bash
+obsidian zotlit:template-guide topic=frontmatter
+```
+
+## 模板工作台 CLI 与模板数据浏览器 [#template-workbench-cli-and-template-data-explorer]
+
+模板工作台 CLI 通过命令行向智能体提供数据和内存渲染能力。智能体随后便可编辑并校验你的模板文档。
+
+模板数据浏览器则是为你提供的可视化侧边栏。它允许你在自行编辑模板时浏览当前模板数据并复制路径或代码片段。有关其面板和复制操作的说明，请参阅[探索模板数据](/docs/how-to/explore-template-data)。
+
+二者使用相同的数据解析机制且均不执行写入：浏览与渲染都不会创建笔记、导入附件或更改设置。
+
+## 访问 CLI [#reaching]
+
+模板工作台在 Obsidian 自带的 CLI 中注册其命令。命令命名空间为 `zotlit`（即插件 ID）。与 ZotLit 本身一样，这些命令仅限桌面端使用，需要 Obsidian 1.15.1 或更高版本。
+
+请将仓库选择器置于命令名称之前：
+
+```bash
+obsidian vault=MyVault zotlit:template-inspect
+```
+
+仅在该位置接受 `vault=` 参数。置于命令名称之后的 `vault=` 会被拒绝，因为 Obsidian 会在此处忽略它，转而根据工作目录或当前聚焦的窗口路由调用。
+
+这些命令并非命令面板命令。[命令参考](/docs/reference/commands)列出了出现在命令面板中的命令。
+
+使用 `obsidian help zotlit` 查看命名空间概览，使用 `obsidian help zotlit:template-check` 查看单个命令的标志。
+
+## 可用命令 [#commands]
+
+共有五个命令响应请求。模板工作台还注册了另外九个已弃用的命令，这些命令仅响应拒绝信息。
+
+| 命令                      | 命令摘要                                                                                                                                                                                                                                                                                | 返回内容                                                                                                                                                                                                        |
+| ------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `zotlit:template-inspect` | `obsidian zotlit:template-inspect [note=<vault-path>] [profile=<id-or-label>] [document=<path-or-reference>] [source=full] [editor] [expect-source=<source-id>]`                                                                                                                        | 无选择器时，返回按类型划分的模板文档清单。带有一个选择器时，返回该文档、其依赖项、源码新鲜度以及发现的问题，若带有 `source=full` 还包含完整源码。每次响应还会附带仓库和 Zotero 数据源标识以及配置方案诊断信息。 |
+| `zotlit:template-check`   | `obsidian zotlit:template-check [profile=<id-or-label>] [key=<indexed-key>] [output=all]`<br />`obsidian zotlit:template-check draft=/absolute/path/draft.md [profile=<id-or-label>] [key=<indexed-key>]`<br />`obsidian zotlit:template-check attempt=<id> evidence=full [output=all]` | 每个被检查组件的状态、输入修订版本与源码新鲜度、检查尝试标识，以及本次调用公开的输出。当拒绝文档标识时，它会返回诊断信息。                                                                                      |
+| `zotlit:template-status`  | `obsidian zotlit:template-status`                                                                                                                                                                                                                                                       | 插件版本、仓库与 Zotero 数据源标识、JavaScript 模板开关状态、各模板文档的状态、转换挂起期间的旧版模板槽位，以及所有配置方案及其绑定关系。                                                                       |
+| `zotlit:template-data`    | `obsidian zotlit:template-data root=<note\|annotation\|filename\|citation> (key=<indexed-key> \| note=<vault-path> \| example=<example-id>) [query=<words> \| path=<zt.path> \| full] [format=json] [expect-source=<source-id>]`                                                        | 单个根节点在 `zt` 下的模板数据。`query`、`path` 和 `full` 可将响应范围扩展为针对性的探索。                                                                                                                      |
+| `zotlit:template-guide`   | `obsidian zotlit:template-guide [topic=<name>]`                                                                                                                                                                                                                                         | 以纯文本格式返回快速入门或单个指南主题的内容。                                                                                                                                                                  |
+
+无论 `output` 参数如何设置，校验操作都会运行每个组件。`output` 仅决定响应中公开哪些输出，因此精简的响应并不代表检查提前终止。
+
+索引键是由 8 位字符组成的 Zotero 条目键，带有可选的群组后缀，例如 `ABCD1234g118`。[复制 Zotero 键](/docs/how-to/explore-template-data#indexed-key)描述了该格式。
+
+## 指南主题 [#topics]
+
+不带主题运行 `obsidian zotlit:template-guide` 会输出快速入门。带有 `topic=<name>` 时会输出单个参考章节。不在列表中的主题名称会被拒绝。
+
+| 主题              | 内容涵盖                                                       |
+| ----------------- | -------------------------------------------------------------- |
+| 无主题            | 工作流、命令摘要、标识与输出规则，以及主题索引。               |
+| `inspect`         | 目标选择、源码修订版本与新鲜度、检查标志以及检查诊断。         |
+| `check`           | 创建与更新校验、基准线、草稿、输出公开以及保留的尝试记录。     |
+| `data`            | `template-data` 命令摘要、各根节点、针对性探索以及序列化标记。 |
+| `frontmatter`     | 托管 frontmatter 条目、JSON-e 与展开条目、合并策略以及保留键。 |
+| `profiles`        | 配置方案文档、其创建与更新语义以及草稿。                       |
+| `citations`       | 引文变体（Citation Variants）与内置示例集。                    |
+| `partials`        | 共享片段（Shared Partials）、其调用方根节点以及保留名称。      |
+| `troubleshooting` | YAML 修复、源码新鲜度、解读失败的校验以及旧版转换。            |
+| `liquid`          | 支持的 Liquid 标签与过滤器。                                   |
+| `eta`             | Eta 模板与 JavaScript 模板开关。                               |
+
+## 已弃用命令 [#retired]
+
+这九个命令仍保持注册，以便在调用它们时返回有用的响应，而不是作为未知命令直接报错。每个命令均返回 `ok: false` 并带有 `COMMAND_RETIRED` 诊断信息，同时附带描述“已弃用：请使用 template-inspect、template-data 和 template-check”。它们曾经支持的所有标志现在均为可选参数，并被描述为已弃用参数。
+
+| 已弃用命令                        | 替代方案                                                              |
+| --------------------------------- | --------------------------------------------------------------------- |
+| `zotlit:template-schema`          | `zotlit:template-inspect` 与 `zotlit:template-data`                   |
+| `zotlit:template-render`          | `zotlit:template-check`                                               |
+| `zotlit:template-document-render` | `zotlit:template-check`                                               |
+| `zotlit:template-source`          | `zotlit:template-inspect source=full`                                 |
+| `zotlit:frontmatter-status`       | `zotlit:template-check output=frontmatter`                            |
+| `zotlit:frontmatter-eval`         | `zotlit:template-check output=frontmatter`                            |
+| `zotlit:frontmatter-set`          | 编辑配置方案文档，然后运行 `zotlit:template-check output=frontmatter` |
+| `zotlit:frontmatter-remove`       | 编辑配置方案文档，然后运行 `zotlit:template-check output=frontmatter` |
+| `zotlit:frontmatter-reorder`      | 编辑配置方案文档，然后运行 `zotlit:template-check output=frontmatter` |
+
+这九个命令的替代路径均相同：使用 `zotlit:template-inspect` 选择文档，使用文件工具编辑[配置方案文档](/docs/reference/templates/profile-document)，然后使用 `zotlit:template-check` 验证结果。托管 frontmatter 是配置方案文档清单中的一个列表，而非一项设置。
+
+## 契约版本 [#contract-version]
+
+该命名空间在其响应外壳中声明了自己的契约版本（当前为 8），每个模板工作台命令均通过此外壳进行响应。每个响应都会将其作为 `contractVersion`（响应的首个字段）返回。每个 ZotLit CLI 命名空间独立对其契约进行版本控制，因此该数字不与其他任何命名空间联动。
+
+已安装的技能会声明其编写时所依据的版本。请将该版本号与首次响应中的 `contractVersion` 进行对比。当两者不一致时，说明技能版本陈旧：请重新阅读实时指南（从 `obsidian zotlit:template-guide` 开始），并遵循实时契约而非技能自身的约定。
+
+## 响应外壳 [#envelope]
+
+除成功的 `zotlit:template-guide` 命令外，每个响应都是 JSON 字符串。前三个字段始终存在：
+
+```json
+{
+  "contractVersion": 8,
+  "command": "zotlit:template-check",
+  "ok": true
+}
+```
+
+| 字段              | 出现时机         | 含义                                                               |
+| ----------------- | ---------------- | ------------------------------------------------------------------ |
+| `contractVersion` | 每次响应         | 该命名空间的契约版本。                                             |
+| `command`         | 每次响应         | 作出响应的命令。                                                   |
+| `ok`              | 每次响应         | 调用是否成功。响应的其余部分根据该字段进行区分。                   |
+| `diagnostic`      | 失败时           | 错误信息，详见下文。成功时绝不包含此字段。                         |
+| `request`         | 解析了选择器时   | 回显解析后的请求。                                                 |
+| `identity`        | 解析了标识时     | `vault.name`、`vault.path`、`source.id` 和 `source.databasePath`。 |
+| `template`        | 命令定义了模板时 | 响应所涉及的模板。                                                 |
+| `warnings`        | 命令定义了警告时 | 关于响应的非致命性提示。                                           |
+
+成功和失败的尾部结构各不相同，因此失败响应中不可能包含结果，成功响应中也不可能包含诊断信息。当调用在命令解析仓库和 Zotero 数据源之前就失败时，响应中不包含 `identity`。
+
+请在每次响应中核对 `identity.vault` 和 `identity.source`，并在执行检查、探索数据或运行新校验时传入 `expect-source=<identity.source.id>`。如果提供的值与连接的数据源不同，将返回 `TARGET_MISMATCH`。
+
+`zotlit:template-guide` 成功时输出纯文本，而非响应外壳。失败时则输出外壳格式。
+
+`zotlit:template-inspect` 和 `zotlit:template-check` 构建其自带的响应，包含相同的三个前导字段，并且输出单行 JSON，而非其他命令使用的缩进格式。
+
+### 诊断字段 [#diagnostic-fields]
+
+| 字段          | 含义                                                                                                                                |
+| ------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| `code`        | 稳定错误代码，取自下方的注册表。                                                                                                    |
+| `message`     | 错误说明，指出有问题的参数、路径、键或模板。                                                                                        |
+| `hint`        | 最具体的恢复操作建议。                                                                                                              |
+| `severity`    | 始终为 `error`。                                                                                                                    |
+| `report`      | 数组形式的诊断行：包括错误消息、位置以及标记的源码行（若存在），以及恢复操作建议。请优先阅读此字段。                                |
+| `location`    | 可选位置信息：`span` 给出指定源码中的 UTF-16 偏移量 `from`（含）和 `to`（不含），`path` 指明清单字段或参数，`argument` 指明参数名。 |
+| `excerpt`     | 源码行上可选的 `before`、`at` 和 `after` 文本；`at` 为标记的文本。                                                                  |
+| `found`       | 标记的文本或接收到的值，若无则为空字符串。                                                                                          |
+| `expected`    | 允许的值，若无则为空数组。                                                                                                          |
+| `suggestions` | 候选更正项，若无则为空数组。                                                                                                        |
+| `details`     | 可选上下文：`parameter`、源码预期（`target`、`expected`、`actual`）、`key`，或包含基于 1 的 `line` 和 `column` 的 `template`。      |
+
+这些字段同样是 `zotlit:query` 诊断字段，因此同一读取器可同时服务于两个命名空间。
+
+针对模板、文档或 frontmatter 表达式中错误的报告会标明位置并进行标记：
+
+```text
+undefined filter: bogus, line:2, col:1
+--> note:2:1
+{{ zt.creators | bogus: 1 }}
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Correct "{{ zt.creators | bogus: 1 }}" at note:2:1, or the selected object, then run the command again.
+Read the message to find the failed expression, correct the Template or the selected object, then run the command again.
+```
+
+注册表中的每个代码均连同其默认恢复操作一同声明，且每个诊断都会附带一个 `hint`。当错误能够给出更具体的操作时（例如需更正的位置、缺失片段的文件名或最接近的已配置 frontmatter 键），`hint` 即为该具体操作，而默认操作则显示在 `report` 的最后一行。被拒绝的参数可以附带其自有的恢复操作，例如针对 `--` 标记给出 `name=value` 形式的建议。调用方应遵循响应中的 `hint` 进行恢复。
+
+## 诊断代码 [#diagnostic-codes]
+
+| 代码                            | 含义                                                                         |
+| ------------------------------- | ---------------------------------------------------------------------------- |
+| `COMMAND_RETIRED`               | 该命令已从模板文档编写中弃用。                                               |
+| `INVALID_SELECTOR`              | 参数缺失、未知或包含命令不接受的值。                                         |
+| `TARGET_MISMATCH`               | 连接的 Zotero 数据源与 `expect-source` 不符。                                |
+| `TEMPLATE_NOT_READY`            | 模板编译尚未完成，或启动失败。                                               |
+| `KEY_NOT_FOUND`                 | 索引键不存在于连接的 Zotero 数据源中。                                       |
+| `NO_PARENT_ITEM`                | 所选对象没有父条目。                                                         |
+| `ANNOTATION_REQUIRED`           | 标注根节点需要标注键。                                                       |
+| `ANNOTATION_ATTACHMENT_MISSING` | 标注的父附件缺失。                                                           |
+| `ETA_OPT_IN_REQUIRED`           | 源码需要 JavaScript 模板支持，而该设置在此设备上处于关闭状态。               |
+| `TEMPLATE_COMPILE_ERROR`        | 模板源码无法编译。                                                           |
+| `TEMPLATE_RENDER_ERROR`         | 模板渲染时表达式求值失败。                                                   |
+| `EXPRESSION_COMPILE_ERROR`      | 托管 frontmatter 表达式无法编译。                                            |
+| `RESERVED_KEY`                  | 该键由 ZotLit 托管。仅在已弃用的 frontmatter 命令中出现。                    |
+| `FIELD_NOT_FOUND`               | 该键不是已配置的托管 frontmatter 字段。仅在已弃用的 frontmatter 命令中出现。 |
+| `DOCUMENT_NOT_FOUND`            | 已配置的模板文档缺失。                                                       |
+| `UNKNOWN_PROFILE_STAMP`         | 笔记的 `zotlit-profile` 标记无法解析。                                       |
+| `DUPLICATE_MANAGED_BLOCK`       | 文档包含多个托管块。                                                         |
+| `MISSING_ANNOTATION_SECTION`    | 文档缺少独立的 `--- zotlit:annotation ---` 标题行。                          |
+| `DUPLICATE_ANNOTATION_SECTION`  | 文档包含多个 `--- zotlit:annotation ---` 标题行。                            |
+| `UNKNOWN_SECTION_HEADER`        | 分节标题不是准确的独立 `--- zotlit:annotation ---` 行。                      |
+| `RESERVED_ANNOTATION_PARTIAL`   | 清单声明了名为 `annotation` 的片段，而该名称已被标注分节保留。               |
+| `DOCUMENT_INVALID`              | 文档未通过校验。                                                             |
+| `RESERVED_PARTIAL_NAME`         | 共享片段文件使用了保留名称。                                                 |
+| `MISSING_PARTIAL`               | 被调用的共享片段缺少文件。                                                   |
+| `BUNDLED_PARTIAL`               | 片段仍包含在配置方案文档的清单中。                                           |
+
+`zotlit:template-inspect` 和 `zotlit:template-check` 在各自的指南主题中声明了更多代码，其中包括 `AMBIGUOUS_TARGET`、`TARGET_NOT_FOUND`、`NOT_LITERATURE_NOTE`、`SOURCE_NOT_LOADED`、`SOURCE_READ_FAILED`、`SOURCE_SUPERSEDED`、`EDITOR_TARGET_MISMATCH`、`INVALID_PROFILE_ID`、`PROFILE_ID_MISMATCH`、`ATTEMPT_NOT_FOUND`、`DRAFT_READ_FAILED`、`BASELINE_READ_FAILED` 以及 `BASELINE_SUPERSEDED`。有关这些代码的详情，请参阅 `topic=inspect` 和 `topic=check`。其中一个代码 `duplicate-literature-notes` 在抛出时为全小写。
+
+## 拒绝响应 [#refusals]
+
+当文档标识被仓库拒绝时，`zotlit:template-check` 会直接拒绝该文档，而不是报告校验通过。拒绝响应与校验失败不同，响应中会明确说明是哪种情况。
+
+| 形式           | 触发时机                               | 包含内容                                                                                     |
+| -------------- | -------------------------------------- | -------------------------------------------------------------------------------------------- |
+| 解析前拒绝     | 规则仅读取文件名，因此未运行任何检查。 | 无 `checks` 字段。`RESERVED_PARTIAL_NAME` 属于此形式。                                       |
+| 解析引发的拒绝 | 清单 ID 未通过配置方案 ID 规则校验。   | 包含 `checks` 映射及失败的检查项。`INVALID_PROFILE_ID` 与 `PROFILE_ID_MISMATCH` 属于此形式。 |
+
+## 数据访问 [#data-access]
+
+CLI 读取 Zotero 元数据与标注文本，并在内存中渲染模板。校验操作不会写入笔记、修改配置方案或导入附件，预览命令也不会写入任何模板文档、笔记或设置。
+
+你的智能体通过其自身的文件工具编辑仓库文件，因此这些编辑会改变所选仓库的内容。有关该工作流的说明，请参阅[各组件如何协同工作](#how-the-parts-fit-together)；有关驱动此 CLI 的技能，请参阅[安装 ZotLit 技能](/docs/install-skill)。

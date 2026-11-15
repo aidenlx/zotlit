@@ -4,7 +4,7 @@
 import { Effect, Stream } from "effect";
 import type { SettingGroupItem } from "obsidian";
 
-import { DOCS_COMPANION, DOCS_SITE_URL } from "@/lib/constants";
+import { companionDocsUrl, docsUrl } from "@/lib/docs-url";
 import * as m from "@/lib/i18n/generated/messages";
 import { revealSetting } from "@/lib/open-settings";
 import { LocalBridge } from "@/services/local-bridge/service";
@@ -210,13 +210,13 @@ function liveUpdateDescription(): DocumentFragment {
     }),
     " ",
     createEl("a", {
-      href: DOCS_COMPANION,
+      href: companionDocsUrl(),
       text: m.settings_live_updates_companion_install(),
       attr: { target: "_blank", rel: "noopener" },
     }),
     " · ",
     createEl("a", {
-      href: `${DOCS_SITE_URL}/docs/how-to/set-up-live-updates`,
+      href: docsUrl("/docs/how-to/set-up-live-updates"),
       text: m.settings_live_updates_companion_setup(),
       attr: { target: "_blank", rel: "noopener" },
     }),

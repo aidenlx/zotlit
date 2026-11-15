@@ -1,5 +1,5 @@
 // Rebuildable Excerpt Images live in device-local IndexedDB, separate from saved vault assets.
-import { Effect, Exit } from "effect";
+import { Effect } from "effect";
 import { PreventSchedulerYield } from "effect/Scheduler";
 import { openDB } from "idb";
 import type { DBSchema } from "idb";
@@ -164,17 +164,15 @@ export async function openExcerptStore(
           yield* Effect.tryPromise(() => accounting.put(state, "state"));
           yield* Effect.tryPromise(() => tx.done);
         }).pipe(
-          Effect.onExit((exit) =>
-            Exit.isFailure(exit)
-              ? Effect.promise(async () => {
-                  try {
-                    tx.abort();
-                  } catch {
-                    // An IndexedDB request failure can already have aborted it.
-                  }
-                  await tx.done.catch(() => undefined);
-                })
-              : Effect.void,
+          Effect.onError(() =>
+            Effect.promise(async () => {
+              try {
+                tx.abort();
+              } catch {
+                // An IndexedDB request failure can already have aborted it.
+              }
+              await tx.done.catch(() => undefined);
+            }),
           ),
         );
       },

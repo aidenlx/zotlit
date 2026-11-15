@@ -1,0 +1,104 @@
+---
+title: "在 Obsidian 中跟踪 Zotero 阅读清单"
+description: "在 Obsidian 中为每篇 Zotero 文献标记 to-read 等阅读状态，并仅筛选显示尚未阅读的文献。"
+lesson: 5
+minutes: 10
+media: track-reading-status
+lede: 为你的文献建立一个包含阅读状态的表格，并筛选出待读文献。
+chore: 我的阅读清单存放在单独的文件中
+instead: 在文献所在行中直接输入 to-read 等状态。
+needs:
+  - item: 第 1 课
+    detail: 已完成
+  - item: Zotero
+    detail: 可以保持关闭
+steps:
+  - title: 将文库保存为表格文件
+    alt: Reading plan 文件在标签页中打开，列出文库中的文献。
+  - title: 切换到表格布局
+    alt: Reading plan 文件中的文献以表格形式按行显示。
+  - title: 添加阅读状态列
+    alt: 表格中出现新的 reading-status (note) 列，未关联笔记的文献显示“无笔记”。
+  - title: 标记一篇文献
+    alt: 出现“文献笔记已创建。”提示，编辑的单元格显示 to-read。
+  - title: 标记其他文献
+    alt: 表格多行显示状态值，输入时显示建议的状态。
+  - title: 仅显示待读文献
+    alt: 表格按 reading-status (note) 为 to-read 筛选，仅显示标记为 to-read 的文献。
+end:
+  title: 筛选后的文献阅读表格
+  caption: 你现在可以跟踪阅读状态并筛选未读文献。
+  next: 建立文献综述表格以对比文献。
+further:
+  - slug: how-to/track-reading-status
+    when: "了解按状态排序与筛选，或使用 Obsidian Bases。"
+  - slug: how-to/use-query-files
+    when: "了解如何在笔记中筛选、排序、分组以及嵌入表格。"
+---
+
+import { Check, Fix, Step } from "@/components/learn/lesson-mdx";
+import { UiLabel } from "@/components/ui-label";
+import { m } from "@/paraglide/messages.js";
+
+<Step n={1}>
+
+在 <UiLabel name={m.library_view_name()} /> 中，选择 <UiLabel name={m.annot_view_save_as_query_file()} />（列表右上角的页面加号图标）。输入 `Reading plan` 作为名称并选择 <UiLabel name={m.annot_view_save_action()} />。
+
+<Check>`Reading plan` 文件会在新标签页中打开，列出你的文献。</Check>
+
+</Step>
+
+<Step n={2}>
+
+选择左上方的 <UiLabel name={m.query_view_views()} />，然后点击该行末尾的箭头（<UiLabel name={m.query_view_configure_view()} />）。将 <UiLabel name={m.query_view_layout()} /> 设置为 <UiLabel name={m.query_view_layout_table()} />。
+
+<Check>你的文献将作为表格的行显示。</Check>
+
+</Step>
+
+<Step n={3}>
+
+选择 <UiLabel name={m.query_view_properties()} />，输入 `reading-status`，然后选择 <UiLabel name={m.query_view_properties_add_vault({ name: "reading-status" })} />。
+
+<Check>
+  会出现一列名为 **reading-status (note)** 的列，未关联笔记的文献显示{" "}
+  <UiLabel name={m.query_view_vault_no_note()} />。
+</Check>
+
+<Fix title="列标题没有包含“(note)”">
+  选择 <UiLabel name={m.query_view_properties()} />
+  ，取消选中该复选框，然后选择{" "}
+  <UiLabel
+    name={m.query_view_properties_add_vault({ name: "reading-status" })}
+  />
+  。
+</Fix>
+
+</Step>
+
+<Step n={4}>
+
+选择某篇文献的阅读状态单元格，输入 `to-read`，然后按 Enter。
+
+<Check>
+  出现提示：
+  <UiLabel name={m.notice_created_note()} /> 单元格显示 `to-read`。
+</Check>
+
+</Step>
+
+<Step n={5}>
+
+将另一篇文献标记为 `reading`，已读完的文献标记为 `done`。
+
+<Check>输入时，单元格会推荐你之前使用过的状态。各行现已显示相应状态。</Check>
+
+</Step>
+
+<Step n={6}>
+
+选择 <UiLabel name={m.query_view_filter()} />，将第一个框设置为 **reading-status (note)**，第二个框设置为 **是**，在第三个框中输入 `to-read`。
+
+<Check>表格中将仅显示标记为 `to-read` 的文献。</Check>
+
+</Step>

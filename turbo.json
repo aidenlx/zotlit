@@ -127,6 +127,15 @@
         "apps/obsidian/package.json",
         "apps/obsidian/tsconfig*.json"
       ]
+    },
+    "//#review:manifest": {
+      "inputs": [
+        "eslint.config.js",
+        "pnpm-lock.yaml",
+        "apps/obsidian/package.json",
+        "packages/scripts/lib/obsidian-manifest.ts",
+        "packages/scripts/scripts/check-manifest.ts"
+      ]
     }
   }
 }

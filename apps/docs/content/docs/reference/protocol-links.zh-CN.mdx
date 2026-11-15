@@ -1,0 +1,319 @@
+---
+title: "协议链接"
+description: "所有 obsidian://zotlit/* 操作及其参数，以及 ZotLit 在 Obsidian 阅读器中打开的 Zotero 打开链接。"
+---
+
+import { Card, Cards } from "fumadocs-ui/components/card";
+import { Callout } from "@/components/callout";
+import { SettingsPath } from "@/components/settings-path";
+import { UiLabel } from "@/components/ui-label";
+import { m } from "@/paraglide/messages.js";
+
+本页记录了每个 `obsidian://zotlit/*` 协议操作。这些深度链接允许 ZotLit Companion（Zotero 插件）以及脚本和启动器等外部工具在 Obsidian 中触发 ZotLit 操作。
+
+本页还记录了当你在笔记中点击 `zotero://` 链接时，ZotLit 会在 Obsidian 阅读器中打开哪些链接。参见 [Zotero 打开链接](#zotero-open-links)。
+
+## 通用参数 [#common-parameters]
+
+每个协议链接都需要 `source-id` 参数：一个 8 字符的十六进制字符串，用于标识生成该链接的 Zotero 安装实例。ZotLit 会拒绝 `source-id` 与当前连接数据库不匹配的链接。
+
+如果 Zotero 数据库尚未加载，ZotLit 会显示 <UiLabel name={m.notice_protocol_db_unavailable()} />。
+
+## 链接打开位置 [#pane-type]
+
+有四个操作会打开界面：`open`、`update`、`explore` 和 `open-attachment`。每个操作都接受可选的 `paneType` 参数，拼写方式与 [Obsidian 自身的 URI 链接](https://help.obsidian.md/Extending+Obsidian/Obsidian+URI)一致。
+
+| 取值     | 结果                       |
+| -------- | -------------------------- |
+| `tab`    | 打开新标签页。             |
+| `split`  | 打开新标签页组。           |
+| `window` | 打开弹出窗口。仅限桌面端。 |
+
+```
+obsidian://zotlit/open?item=<id>&source-id=<hash>&paneType=tab
+```
+
+省略该参数将保持每个操作的常规放置方式：`open`、`update` 和 `open-attachment` 会替换最近活动的标签页，而 `explore` 会复用侧边栏中已有的模板数据浏览器。超出这三个值之外的取值会显示 <UiLabel name={m.notice_protocol_invalid()} /> 并终止操作。
+
+ZotLit Companion 会在其自身 Zotero 菜单打开的链接中附加该参数。在 Zotero 设置中的 <UiLabel name={m["zotero.prefs_pane_label"]()} /> 面板下的 <UiLabel name={m["zotero.prefs_open_section"]()} /> 分节中，<UiLabel name={m["zotero.prefs_pane_type"]()} /> 用于选择窗格。<UiLabel name={m["zotero.prefs_pane_type_active.label"]()} /> 为默认设置，不会在链接中附加该参数。
+
+要选择笔记在 Obsidian 中的显示位置，请在 Zotero 设置中打开 <UiLabel name={m["zotero.prefs_pane_label"]()} /> 面板。在 <UiLabel name={m["zotero.prefs_open_section"]()} /> 下，将 <UiLabel name={m["zotero.prefs_pane_type"]()} /> 设置为 <UiLabel name={m["zotero.prefs_pane_type_active.label"]()} />（默认）、<UiLabel name={m["zotero.prefs_pane_type_tab.label"]()} />、<UiLabel name={m["zotero.prefs_pane_type_split.label"]()} /> 或 <UiLabel name={m["zotero.prefs_pane_type_window.label"]()} />。
+
+## 操作 [#actions]
+
+### open [#open]
+
+打开 Zotero 条目现有的文献笔记；如果不存在，则创建一个。
+
+```
+obsidian://zotlit/open?item=<id>&source-id=<hash>
+```
+
+| 参数        | 类型           | 必需 | 说明                                                                       |
+| ----------- | -------------- | ---- | -------------------------------------------------------------------------- |
+| `item`      | 整数           | 是   | Zotero 条目 ID                                                             |
+| `source-id` | 8 字符十六进制 | 是   | Zotero 安装标识符                                                          |
+| `profile`   | 12 字符 ID     | 否   | 用于创建或更新笔记的配置方案，以配置方案 ID 指定。                         |
+| `paneType`  | 窗格类型值     | 否   | 笔记打开位置：`tab`、`split` 或 `window`。参见[链接打开位置](#pane-type)。 |
+
+`profile` 指定该操作解析笔记所依据的配置方案。当笔记尚不存在时，将使用该配置方案创建。已存在的笔记会保留其自带的配置方案。如果链接指定了不同的配置方案，则会报告该笔记保留的配置方案且不做任何更改。
+
+该值由 12 个字母或数字组成，是其[配置方案文档](/docs/reference/templates/profile-document)中声明的 `id`，而非显示标签。省略该参数则按常规方式解析配置方案。未知的 ID 会显示提示并终止操作。
+
+---
+
+### update [#update]
+
+根据当前的 Zotero 数据重新渲染文献笔记。
+
+```
+obsidian://zotlit/update?item=<id>&source-id=<hash>
+```
+
+| 参数        | 类型                 | 必需 | 说明                                                                       |
+| ----------- | -------------------- | ---- | -------------------------------------------------------------------------- |
+| `item`      | 整数                 | 是   | Zotero 条目 ID                                                             |
+| `source-id` | 8 字符十六进制       | 是   | Zotero 安装标识符                                                          |
+| `scope`     | `full` 或 `metadata` | 否   | 更新范围。默认：`full`（属性 + 托管正文区域）。`metadata` 仅更新属性。     |
+| `profile`   | 12 字符 ID           | 否   | 用于创建或更新笔记的配置方案，以配置方案 ID 指定。                         |
+| `paneType`  | 窗格类型值           | 否   | 笔记打开位置：`tab`、`split` 或 `window`。参见[链接打开位置](#pane-type)。 |
+
+`profile` 为该条目指定配置方案。更新操作会通过笔记自带的配置方案执行。指定了不同配置方案的链接会报告笔记保留的配置方案并跳过更新。当该条目尚无笔记时，将使用指定的配置方案创建笔记。
+
+该值由 12 个字母或数字组成，是其[配置方案文档](/docs/reference/templates/profile-document)中声明的 `id`。未知的 ID 会显示提示并终止操作。
+
+---
+
+### update-many [#update-many]
+
+批量更新多个文献笔记。打开交互式确认/进度弹窗。
+
+```
+obsidian://zotlit/update-many?items=<id,id,...>&source-id=<hash>
+```
+
+| 参数        | 类型                 | 必需 | 说明                                 |
+| ----------- | -------------------- | ---- | ------------------------------------ |
+| `items`     | 逗号分隔的整数列表   | 是   | Zotero 条目 ID（去重；允许末尾逗号） |
+| `source-id` | 8 字符十六进制       | 是   | Zotero 安装标识符                    |
+| `scope`     | `full` 或 `metadata` | 否   | 默认：`full`                         |
+| `profile`   | 12 字符 ID           | 否   | 批量创建的新笔记所使用的配置方案。   |
+
+`profile` 是本次批量操作的配对配置方案。批量创建的每篇笔记都会使用该配置方案创建。已存在的笔记会保留各自的配置方案；批量操作会报告这些笔记已保留，而不会重新渲染它们。该值由 12 个字母或数字组成，是其[配置方案文档](/docs/reference/templates/profile-document)中声明的 `id`。未知的 ID 会显示提示并终止批量操作。
+
+<Callout type="info">
+  对于超出 URL 长度限制的批量操作，ZotLit 还提供了 `PUT {host}
+  /literature-notes` 接口，在请求体中接收相同参数（包括 `profile`），并通过
+  `source-id` 请求头进行校验。
+</Callout>
+
+---
+
+### import-note [#import-note]
+
+将单个 Zotero 笔记（或条目的子笔记）导入仓库。
+
+```
+obsidian://zotlit/import-note?item=<id>&mode=<mode>&source-id=<hash>
+```
+
+| 参数        | 类型              | 必需 | 说明                                            |
+| ----------- | ----------------- | ---- | ----------------------------------------------- |
+| `item`      | 整数              | 是   | Zotero 条目 ID                                  |
+| `mode`      | `note` 或 `child` | 是   | `note` 导入独立笔记；`child` 导入父条目的子笔记 |
+| `source-id` | 8 字符十六进制    | 是   | Zotero 安装标识符                               |
+
+---
+
+### import-notes [#import-notes]
+
+批量导入多个 Zotero 笔记。
+
+```
+obsidian://zotlit/import-notes?items=<id,id,...>&mode=<mode>&source-id=<hash>
+```
+
+| 参数        | 类型               | 必需 | 说明                                 |
+| ----------- | ------------------ | ---- | ------------------------------------ |
+| `items`     | 逗号分隔的整数列表 | 是   | Zotero 条目 ID（去重；允许末尾逗号） |
+| `mode`      | `note` 或 `child`  | 是   | 导入模式                             |
+| `source-id` | 8 字符十六进制     | 是   | Zotero 安装标识符                    |
+
+<Callout type="info">
+  对于超出 URL 长度限制的批量操作，ZotLit 还提供了 `PUT {host}/zotero-notes`
+  接口，在请求体中接收相同参数，并通过 `source-id` 请求头进行校验。
+</Callout>
+
+---
+
+### update-all [#update-all]
+
+为一个文库中的每个条目创建或更新文献笔记，可选择限定在某个分类内。打开与 `update-many` 相同的批量确认弹窗。
+
+```
+obsidian://zotlit/update-all?source-id=<hash>&library=<groupID>&collection=<key>
+```
+
+| 参数         | 类型           | 必需 | 说明                                                                           |
+| ------------ | -------------- | ---- | ------------------------------------------------------------------------------ |
+| `source-id`  | 8 字符十六进制 | 是   | Zotero 安装标识符                                                              |
+| `library`    | 整数           | 否   | 目标文库的 Zotero 群组 ID。缺省或为 `0` 时以**我的文库**（My Library）为目标。 |
+| `collection` | 8 字符键       | 否   | 目标文库内的分类键。包含该分类及其子分类。缺省时覆盖整个文库。                 |
+
+---
+
+### import-all-notes [#import-all-notes]
+
+导入一个文库中常规条目的所有子笔记和所有独立笔记，可选择限定在某个分类内。打开与 `import-notes` 相同的批量确认弹窗。由于它会收集这两种类型的笔记，因此不附带 `mode` 参数。
+
+```
+obsidian://zotlit/import-all-notes?source-id=<hash>&library=<groupID>&collection=<key>
+```
+
+| 参数         | 类型           | 必需 | 说明                                                             |
+| ------------ | -------------- | ---- | ---------------------------------------------------------------- |
+| `source-id`  | 8 字符十六进制 | 是   | Zotero 安装标识符                                                |
+| `library`    | 整数           | 否   | 目标文库的 Zotero 群组 ID。缺省或为 `0` 时以**我的文库**为目标。 |
+| `collection` | 8 字符键       | 否   | 目标文库内的分类键。包含该分类及其子分类。缺省时覆盖整个文库。   |
+
+#### 明确指定目标 [#exact-target]
+
+`library` 为这两个操作指定明确的目标。无论你的[文库范围](/docs/reference/settings#library-scope)涵盖哪些文库，ZotLit 都会运行这一个文库，因此即使是你从未选定过的文库，链接依然有效。两个文库中可能存在相同的分类键；`library` 决定链接具体指向哪一个。
+
+省略 `library` 的链接一如既往地以**我的文库**为目标。早期 ZotLit 生成的永久链接将保持其原意。
+
+以下两种结果会在写入任何笔记之前终止操作：
+
+- 如果此 Zotero 数据库不再包含某个 `library`，将报告 <UiLabel name={m.batch_all_library_unavailable()} />。
+- 如果目标文库中不存在某个 `collection`，将报告 <UiLabel name={m.notice_collection_not_found()} />。
+
+Obsidian 命令面板（Command palette）在没有指定明确目标的情况下运行相同的两个操作。这些命令会覆盖文库范围内的所有可用文库。参见[命令](/docs/reference/commands)。
+
+---
+
+### explore [#explore]
+
+打开定位到特定条目的模板数据浏览器。该浏览器作为独立视图打开，并带有自己的条目选择。已打开的模板工作台视图将保留其条目。
+
+```
+obsidian://zotlit/explore?item=<id>&source-id=<hash>
+```
+
+| 参数         | 类型           | 必需 | 说明                                                                           |
+| ------------ | -------------- | ---- | ------------------------------------------------------------------------------ |
+| `item`       | 整数           | 是   | Zotero 条目 ID                                                                 |
+| `source-id`  | 8 字符十六进制 | 是   | Zotero 安装标识符                                                              |
+| `annotation` | 8 字符键       | 否   | Zotero 标注标识符（字符集：`23456789A-NP-Z`）。提供时，浏览器将聚焦于该标注。  |
+| `paneType`   | 窗格类型值     | 否   | 浏览器的打开位置：`tab`、`split` 或 `window`。参见[链接打开位置](#pane-type)。 |
+
+---
+
+### open-attachment [#open-attachment]
+
+在 Obsidian 自身的 PDF 阅读器中打开 Zotero PDF 附件。
+
+```
+obsidian://zotlit/open-attachment?item=<id>&source-id=<hash>
+```
+
+| 参数        | 类型           | 必需 | 说明                                                                         |
+| ----------- | -------------- | ---- | ---------------------------------------------------------------------------- |
+| `item`      | 整数           | 是   | Zotero 条目 ID，可指定 PDF 附件或包含该附件的常规条目                        |
+| `source-id` | 8 字符十六进制 | 是   | Zotero 安装标识符                                                            |
+| `paneType`  | 窗格类型值     | 否   | PDF 的打开位置：`tab`、`split` 或 `window`。参见[链接打开位置](#pane-type)。 |
+
+`item` 可以直接指定附件，也可以指定其所属的常规条目；ZotLit 会判断找到的是哪种，并由此解析 PDF。如果只有一个 PDF，会直接打开；若有多个，则会打开按文件名列出的选择器。
+
+仅提供 PDF 附件；该操作会跳过 EPUB、网页快照和其他文件类型。没有 PDF 的条目会显示 <UiLabel name={m.notice_no_pdf_attachment()} />。磁盘上不再存在文件的 PDF 会显示 <UiLabel name={m.notice_pdf_file_missing()} />。这两种情况均不会回退到 Zotero 自带的阅读器。
+
+无论文件位于仓库内部还是 Zotero 的存储文件夹中，PDF 都会正常打开。
+
+---
+
+### show-in-library [#show-in-library]
+
+在文库视图中定位并显示一篇 Zotero 文献。
+
+```
+obsidian://zotlit/show-in-library?item-key=<indexedKey>
+```
+
+| 参数       | 类型   | 必需 | 说明                                                                                                |
+| ---------- | ------ | ---- | --------------------------------------------------------------------------------------------------- |
+| `item-key` | 索引键 | 是   | Zotero 条目索引键：条目键（如 `ABCD2345`），或者群组条目的 `<key>g<groupID>`（如 `ABCD2345g12345`） |
+
+此链接不包含 `source-id`，因此来自 `zt.librarylink` 模板变量的链接在仓库同步到的每台计算机上都能正常使用。
+
+触发该链接会将文库视图置于前台，清除当前活动的搜索文本和筛选器以防文献被隐藏，并高亮闪烁该文献所在的行。如果该文献超出当前文库范围，ZotLit 会显示 <UiLabel name={m.library_view_reveal_not_found()} />。
+
+## 操作概览 [#action-summary]
+
+| 操作               | 单个条目 | 批量 | Scope 参数 | Mode 参数 | Library 参数 | profile 参数 | paneType 参数 |
+| ------------------ | :------: | :--: | :--------: | :-------: | :----------: | :----------: | :-----------: |
+| `open`             |    是    |  —   |     —      |     —     |      —       |      是      |      是       |
+| `update`           |    是    |  —   |     是     |     —     |      —       |      是      |      是       |
+| `update-many`      |    —     |  是  |     是     |     —     |      —       |      是      |       —       |
+| `import-note`      |    是    |  —   |     —      |    是     |      —       |      —       |       —       |
+| `import-notes`     |    —     |  是  |     —      |    是     |      —       |      —       |       —       |
+| `update-all`       |    —     |  是  |     —      |     —     |      是      |      —       |       —       |
+| `import-all-notes` |    —     |  是  |     —      |     —     |      是      |      —       |       —       |
+| `explore`          |    是    |  —   |     —      |     —     |      —       |      —       |      是       |
+| `open-attachment`  |    是    |  —   |     —      |     —     |      —       |      —       |      是       |
+| `show-in-library`  |    是    |  —   |     —      |     —     |      —       |      —       |       —       |
+
+`profile` 适用于文献笔记相关操作：`open`、`update` 和 `update-many`，其 `PUT {host}/literature-notes` 请求体中也包含该参数。笔记导入相关操作不接受该参数。`paneType` 适用于在屏幕上打开界面的操作：`open`、`update`、`explore` 和 `open-attachment`。`show-in-library` 会在自身的标签页中将文库视图置于前台，不接受 `paneType`。其他所有操作均以显示提示或确认弹窗结束，而不会打开新窗格，因此不接受该参数。
+
+## Zotero 打开链接 [#zotero-open-links]
+
+ZotLit 写入笔记中的每个标注都会附带其持久链接以供回溯。该链接是 Zotero 自带的打开链接，通过 Zotero 标识符指明附件和标注：
+
+```
+zotero://open/library/items/<attachmentKey>?annotation=<annotationKey>&page=<pageLabel>
+```
+
+群组文库会使用 `groups/<groupID>` 代替 `library`。`page` 是标注的印刷页码标签，若无页码则链接中会省略该参数。对应的模板字段为 [`zt.backlink`](/docs/reference/templates/data#annotation-template)。
+
+该链接会出现在 ZotLit 写入标注的任何位置：标注视图卡片上的 <UiLabel name={m.annot_view_menu_insert()} />、从标注视图拖拽的卡片、查询块或查询视图，以及默认的标注模板。摘录图片不可用时的占位符也通过相同方式回溯链接。
+
+### 在 Obsidian 中打开 [#zotero-open-links-captured]
+
+当 <SettingsPath page={m.settings_page_reader()} setting={m.settings_reader_open_file_links_name()} /> 和 <SettingsPath page={m.settings_page_reader()} setting={m.settings_reader_open_annotation_links_name()} /> 开启时（此为默认状态），ZotLit 会在 Obsidian 阅读器中打开持久标注链接。打开 PDF 时会自动选中该标注并滚动到视野中。这适用于在实时预览（Live Preview）、阅读视图（Reading view）或属性值中点击链接，也适用于在标注视图、查询块或查询视图中点击标注的页码链接。
+
+当 Zotero 中不再存在该标注时，PDF 将仅打开到该标注所在的页面。如果该标注的页码标签与 PDF 的实际页码不一致，页面跳转可能会出现偏差。
+
+### 传递给 Zotero [#zotero-open-links-passed]
+
+在以下情况下，ZotLit 会将链接原样传递给 Zotero：
+
+| 情况                                                                     | 结果                              |
+| ------------------------------------------------------------------------ | --------------------------------- |
+| 本机不存在该 PDF，或 ZotLit 无法识别该附件                               | Zotero 打开标注。                 |
+| <UiLabel name={m.settings_reader_open_file_links_name()} /> 已关闭       | Zotero 打开标注。                 |
+| <UiLabel name={m.settings_reader_open_annotation_links_name()} /> 已关闭 | Zotero 打开标注。悬停可显示预览。 |
+| 右键点击链接并选择 **在系统默认浏览器中打开**（Open in default browser） | Zotero 打开标注。                 |
+| 不带 `annotation` 参数的 `zotero://open` 链接                            | 由 Zotero 处理。ZotLit 绝不拦截。 |
+| `zotero://select` 链接                                                   | 由 Zotero 处理。ZotLit 绝不拦截。 |
+
+### 旧版文件链接 [#zotero-open-links-file-links]
+
+由早期 ZotLit 编写的笔记则将标注链接到附件文件，形式为 `file:///…/paper.pdf#page=N&zt-annotation=<key>`。这些链接仍会像以前一样在 Obsidian 阅读器中打开并定位到该标注。由于它们包含编写它们的那台计算机上的文件路径，因此在 Zotero 存储文件夹位于不同路径的计算机上无法打开任何内容。参见[在 Obsidian 中打开条目的 PDF](/docs/how-to/open-pdf-in-obsidian#file-links)。
+
+## 另请参阅 [#see-also]
+
+<Cards>
+  <Card
+    title="命令"
+    description="命令面板中的所有命令及其入口。"
+    href="/docs/reference/commands"
+  />
+  <Card
+    title="设置"
+    description="每一项 ZotLit 设置：键、标签、默认值和所在位置。"
+    href="/docs/reference/settings"
+  />
+  <Card
+    title="模板语法"
+    description="ZotLit 模板的 Liquid 标记参考。"
+    href="/docs/reference/templates/syntax"
+  />
+</Cards>

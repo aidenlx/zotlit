@@ -182,3 +182,11 @@ if (typeof HTMLElement !== "undefined") {
 globalThis.requestIdleCallback ??= (callback) =>
   setTimeout(() => callback({ didTimeout: false, timeRemaining: () => 0 }), 0);
 globalThis.cancelIdleCallback ??= (handle) => clearTimeout(handle);
+
+// Obsidian's renderer is Chromium, whose `document.fonts` tells the List
+// when a font loads; the test DOM has none.
+if (globalThis.document && !globalThis.document.fonts)
+  Object.defineProperty(globalThis.document, "fonts", {
+    value: new EventTarget(),
+    configurable: true,
+  });

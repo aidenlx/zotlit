@@ -6,9 +6,9 @@ import type { CliCommand, CliHost } from "@/lib/cli-command";
 import { handlerCheckedFlags, printableCliHandler } from "@/lib/cli-rejection";
 import {
   ANNOTATION_SUGGESTER_ENABLED,
-  DOCS_SITE_URL,
   WEB_WORKBENCH_ENABLED,
 } from "@/lib/constants";
+import { docsUrl } from "@/lib/docs-url";
 import * as m from "@/lib/i18n/generated/messages";
 import { revealSetting } from "@/lib/open-settings";
 import { logLateRelease, UnloadAwarePlugin } from "@/lib/plugin-lifecycle";
@@ -59,6 +59,7 @@ import { registerPdfNote } from "./views/pdf-note/register";
 import { registerQueryBlock } from "./views/query-view/block";
 import { QueryCardFocus } from "./views/query-view/card-focus";
 import { QueryFileView } from "./views/query-view/file-view";
+import { whenNear } from "./views/query-view/note-host";
 import {
   queryFileFileMenu,
   queryFileFolderMenu,
@@ -95,9 +96,7 @@ function showInstallerUpdateNotice(): BaseNotice {
         button
           .setButtonText(m.notice_installer_update_learn_more())
           .onClick(() => {
-            window.open(
-              `${DOCS_SITE_URL}/docs/how-to/update-obsidian-installer`,
-            );
+            window.open(docsUrl("/docs/how-to/update-obsidian-installer"));
           });
       });
       renderer.addAction((button) => {
@@ -331,6 +330,7 @@ export default class ZotLitPlugin extends UnloadAwarePlugin implements CliHost {
       runtime: services.runtime,
       app: this.app,
       cardFocus: queryCardFocus,
+      nearScreen: whenNear,
       literatureNotes: literatureNotes({
         registry: services.viewRegistry,
         app: this.app,

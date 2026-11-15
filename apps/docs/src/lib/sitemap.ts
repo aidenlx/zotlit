@@ -12,7 +12,7 @@ import type { FileRouteTypes } from "@/routeTree.gen";
 import type { SiteLocale } from "./i18n";
 import { getPageLocaleState } from "./locale-state";
 import { baseURL } from "./shared";
-import { blog, changelog, getLessonPages, source } from "./source";
+import { blog, changelog, getLessonPages, learn, source } from "./source";
 
 /** Routes that answer machines rather than readers, so no crawler indexes them. */
 const machineRoutes = [
@@ -117,13 +117,20 @@ export async function renderSitemap(): Promise<string> {
     // The `/docs` index is a page of the collection too, and lists itself with
     // an empty slug set, so the route above carries no entry of its own.
     "/docs/$": await docsEntries(),
-    // The lessons have no Chinese edition; the alternates below list English alone.
     "/learn": [{}],
+    // A lesson's Chinese edition is dated from its own file; `nativeChinese`
+    // skips the English fallback a missing Chinese file leaves.
     "/learn/$lesson": await Promise.all(
-      getLessonPages().map(async (page) => ({
-        pathname: page.url,
-        lastModified: { en: await lastCommitDay(page) },
-      })),
+      getLessonPages().map(async (page) => {
+        const chinese = nativeChinese(learn, page);
+        return {
+          pathname: page.url,
+          lastModified: {
+            en: await lastCommitDay(page),
+            "zh-CN": chinese && (await lastCommitDay(chinese)),
+          },
+        };
+      }),
     ),
   };
 

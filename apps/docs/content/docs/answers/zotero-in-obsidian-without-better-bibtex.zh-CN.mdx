@@ -1,0 +1,85 @@
+---
+title: "在 Obsidian 中无需 Better BibTeX 使用 Zotero"
+description: "无需安装 Better BibTeX，即可使用 ZotLit 将 Zotero 文库连接到 Obsidian，并根据高亮内容创建文献笔记。"
+faq:
+  - question: 可以在不安装 Better BibTeX 的情况下使用 ZotLit 吗？
+    answer: 可以。无需安装 Better BibTeX，你也可以将 ZotLit 连接到 Zotero 文库、搜索条目、打开 PDF、阅读标注，并根据高亮内容创建文献笔记。
+  - question: 在 Obsidian 中引用文献需要 Better BibTeX 吗？
+    answer: 需要。边写边引用必须安装 Better BibTeX。当你输入 [@ 引用文献时，ZotLit 会读取 Zotero 的 Citation Key 字段，而该字段由 Better BibTeX 填充。选择没有文献引用标识的文献不会插入任何内容。
+  - question: 在没有 Better BibTeX 的情况下，ZotLit 如何命名文献笔记？
+    answer: 在默认笔记名称下，ZotLit 使用文献引用标识命名笔记；若文献没有文献引用标识，则使用 DOI；若也没有 DOI，则使用标题。笔记的 citekey 属性保持为空。
+  - question: 在没有 Better BibTeX 的情况下，可以将笔记导出为 Word 吗？
+    answer: 可以，前提是通过链接到文献笔记进行引用。像 [[Sandve 2013]] 这样的普通 Obsidian 链接在导出时会包含格式化引文和参考文献列表条目，即使没有文献引用标识也能正常导出。以 [@key] 形式输入的引用只有在 Zotero 中存在该标识时才能导出。导出时 Zotero 必须处于运行状态，并在 Zotero 的设置 > 高级（Settings > Advanced）中开启“允许本计算机上的其他应用程序与 Zotero 通信”。
+  - question: 其他 Obsidian Zotero 插件在没有 Better BibTeX 时可以使用吗？
+    answer: Zotero Integration 的README明确指出需要 Better BibTeX 且 Zotero 必须运行。Citations README中的 Zotero 步骤则是通过 Better BibTeX 将文库导出为 .bib 或 CSL-JSON 文件。
+---
+
+import { LessonLink } from "@/components/lesson-link";
+
+无需安装 Better BibTeX，你也可以使用 ZotLit 搜索 Zotero 文库、阅读 PDF，并根据高亮内容创建文献笔记。只有通过 `[@` 边写边引用时才需要 Better BibTeX，因为引用会将每篇文献的文献引用标识插入草稿。如果通过链接到文献笔记的方式进行引用，即使没有 Better BibTeX 也能正常导出到 Word。
+
+| 任务                | 需要 Better BibTeX？ | 实际表现                                                                                                              |
+| ------------------- | -------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| 浏览和搜索文库      | 否                   | ZotLit 连接到你的本地 Zotero 文库并搜索条目。                                                                         |
+| 打开 PDF 并查看标注 | 否                   | 在 Obsidian 中打开 Zotero PDF 并查看高亮。                                                                            |
+| 创建文献笔记        | 否                   | 根据高亮创建笔记并导入 Zotero 笔记。无文献引用标识时名称使用 DOI 或标题。                                             |
+| 边写边引用（`[@`）  | 是                   | 插入文献的文献引用标识。选择没有标识的文献不会插入任何内容并会显示提示。                                              |
+| 复制引用            | 是                   | 复制时会提示该文献没有文献引用标识。                                                                                  |
+| 将草稿导出为 Word   | 否（使用笔记链接时） | 类似 `[[Sandve 2013]]` 的笔记链接会直接从 Zotero 获取参考文献数据。以 `[@key]` 形式输入的引用需要在 Zotero 中有标识。 |
+
+## 无需 Better BibTeX 即可使用的功能 [#what-works]
+
+ZotLit 直接连接到计算机上的 Zotero 文库，因此无需任何 Zotero 插件即可浏览和搜索你的文库。你可以在 Obsidian 中打开 Zotero PDF，阅读高亮和评论，根据标注创建文献笔记，以及导入已有的 Zotero 笔记。当高亮发生变动时，ZotLit 还会保持这些笔记同步更新。如果你的目标是阅读文献和做笔记，完全不需要安装 Better BibTeX。
+
+## 缺少文献引用标识会有何影响 [#what-changes]
+
+在默认笔记名称下，ZotLit 使用文献引用标识命名笔记；若文献没有该标识，则使用 DOI；若也没有 DOI，则使用文献标题。笔记的 `citekey` 属性保持为空。如果你想调整文献笔记的结构，请参阅[如何自定义模板](/docs/how-to/customize-a-template)。
+
+复制引用的操作也会受到影响。如果你尝试复制没有标识的文献的引用，或从该文献的某条标注复制引用，ZotLit 会弹出提示，告知该文献没有文献引用标识。
+
+## 为什么边写边引用需要 Better BibTeX [#citing]
+
+边写边引用必须依赖 Better BibTeX。当输入 `[@` 并选择文献时，ZotLit 会将文献的文献引用标识插入到草稿中。ZotLit 是从 Zotero 的 Citation Key 字段读取该值的，而这个字段由 Better BibTeX 负责生成和维护。
+
+在没有 Better BibTeX 的情况下，输入 `[@` 时没有标识的文献仍会出现在列表中，但选中后不会插入任何内容，并会提示该文献缺少文献引用标识。如果你打算在写作时直接插入引用，建议[安装 Better BibTeX](https://retorque.re/zotero-better-bibtex/installation/)。如需了解配置好标识后引文自动补全的工作机制，请阅读[如何插入引用](/docs/how-to/insert-citations)与 <LessonLink slug="cite-in-obsidian-with-zotero" />。
+
+## 将笔记导出为 Word [#export-to-word]
+
+如果通过链接到文献笔记进行引用，导出为 Word 功能无需 Better BibTeX 即可正常使用。像 `[[Sandve 2013]]` 这样的普通 Obsidian 链接在导出时会自动生成格式化的引文和参考文献列表条目，即使文献没有文献引用标识也是如此。ZotLit 会直接从 Zotero 获取参考文献数据。要正常导出，Zotero 必须处于运行状态，且已在 Zotero 的**设置 > 高级**（Settings > Advanced）中勾选“允许本计算机上的其他应用程序与 Zotero 通信”。
+
+以 `[@key]` 形式输入的引用，只有在该文献引用标识存在于 Zotero 中时才能正确导出。使用 `[@` 输入引文仍需安装 Better BibTeX。关于完整工作流程，请阅读[如何导出带引文的笔记](/docs/how-to/export-note-with-citations)。
+
+## 其他 Obsidian Zotero 插件 [#other-plugins]
+
+如果其他插件要求你安装 Better BibTeX，以下是各自的要求：
+
+- **Zotero Integration：** 其README指出需要 Better BibTeX 且 Zotero 必须运行。
+- **Citations：** 其README中关于 Zotero 的步骤需要通过 Better BibTeX 将文库导出为 .bib 或 CSL-JSON 文件。
+
+ZotLit 直接连接到本地 Zotero 数据库，因此无需附加组件即可浏览条目、阅读 PDF 并创建笔记。若需详细对比这些插件，请参阅 [ZotLit 与 Zotero Integration 及 Citations 对比](/docs/answers/zotlit-vs-zotero-integration-vs-citations)。
+
+## 常见问题 [#questions]
+
+### 可以在不安装 Better BibTeX 的情况下使用 ZotLit 吗？ [#can-i-use-zotlit-without-better-bibtex]
+
+可以。无需安装 Better BibTeX，你也可以将 ZotLit 连接到 Zotero 文库、搜索条目、打开 PDF、阅读标注，并根据高亮内容创建文献笔记。
+
+### 在 Obsidian 中引用文献需要 Better BibTeX 吗？ [#do-i-need-better-bibtex-to-cite-papers-in-obsidian]
+
+需要。边写边引用必须安装 Better BibTeX。当你输入 `[@` 引用文献时，ZotLit 会读取 Zotero 的 Citation Key 字段，而该字段由 Better BibTeX 填充。选择没有文献引用标识的文献不会插入任何内容。
+
+### 在没有 Better BibTeX 的情况下，ZotLit 如何命名文献笔记？ [#how-does-zotlit-name-literature-notes-without-better-bibtex]
+
+在默认笔记名称下，ZotLit 使用文献引用标识命名笔记；若文献没有文献引用标识，则使用 DOI；若也没有 DOI，则使用标题。笔记的 `citekey` 属性保持为空。
+
+### 在没有 Better BibTeX 的情况下，可以将笔记导出为 Word 吗？ [#can-i-export-my-notes-to-word-without-better-bibtex]
+
+可以，前提是通过链接到文献笔记进行引用。像 `[[Sandve 2013]]` 这样的普通 Obsidian 链接在导出时会包含格式化引文和参考文献列表条目，即使没有文献引用标识也能正常导出。以 `[@key]` 形式输入的引用只有在 Zotero 中存在该标识时才能导出。导出时 Zotero 必须处于运行状态，并在 Zotero 的**设置 > 高级**（Settings > Advanced）中开启“允许本计算机上的其他应用程序与 Zotero 通信”。
+
+### 其他 Obsidian Zotero 插件在没有 Better BibTeX 时可以使用吗？ [#do-other-zotero-plugins-for-obsidian-work-without-better-bibtex]
+
+Zotero Integration 的README明确指出需要 Better BibTeX 且 Zotero 必须运行。Citations README中的 Zotero 步骤则是通过 Better BibTeX 将文库导出为 .bib 或 CSL-JSON 文件。
+
+## 下一步 [#next-step]
+
+要连接文库并在 Obsidian 中查看高亮标注，请从 <LessonLink slug="connect-zotero-to-obsidian" /> 开始。

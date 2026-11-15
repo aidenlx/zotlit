@@ -4,7 +4,7 @@ import { Effect } from "effect";
 import { describe, expect, it as plainIt, vi } from "vitest";
 
 import { testNotifier } from "@/lib/__fixtures__/notifier";
-import { DOCS_COMPANION } from "@/lib/constants";
+import { companionDocsUrl } from "@/lib/docs-url";
 import * as m from "@/lib/i18n/generated/messages";
 import { Notifier } from "@/lib/notifier";
 
@@ -27,7 +27,7 @@ describe("companionNotice", () => {
       notice.actions[0]!.run();
       expect(openReleaseNote).toHaveBeenCalledOnce();
       notice.actions[1]!.run();
-      expect(open).toHaveBeenCalledExactlyOnceWith(DOCS_COMPANION);
+      expect(open).toHaveBeenCalledExactlyOnceWith(companionDocsUrl());
     },
   );
 });

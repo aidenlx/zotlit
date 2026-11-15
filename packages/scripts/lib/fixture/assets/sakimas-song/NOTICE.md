@@ -4,7 +4,7 @@ The files in this directory are third-party content licensed under the
 [Creative Commons Attribution 4.0 International license](https://creativecommons.org/licenses/by/4.0/)
 (CC BY 4.0). They are outside ZotLit's AGPL-3.0-or-later license grant.
 
-- Title: *Sakima’s song*
+- Title: _Sakima’s song_
 - Written by: Ursula Nafula
 - Illustrated by: Peris Wachuka
 - Original source: [African Storybook](https://africanstorybook.org/reader.php?id=13244)

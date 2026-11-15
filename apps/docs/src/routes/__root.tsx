@@ -10,11 +10,13 @@ import {
 import { TanStackRouterDevtoolsPanel } from "@tanstack/react-router-devtools";
 import { HomeLayout } from "fumadocs-ui/layouts/home";
 
-import { LocaleFallbackNotice } from "@/components/locale-fallback-notice";
+import { LanguageBanner } from "@/components/language-banner";
 import { LocaleProvider } from "@/components/locale-provider";
 import { Message } from "@/components/message";
 import { Toaster } from "@/components/ui/toast";
+import zhCnFontsCss from "@/fonts-zh-cn.css?url";
 import { Header } from "@/layouts/home/slots/header";
+import { chineseReaderScript } from "@/lib/language-choice";
 import { baseOptions } from "@/lib/layout.shared";
 import { getPageLocaleState } from "@/lib/locale-state";
 import { appDescription, HOME_OG_ALT, ogImageMeta } from "@/lib/seo";
@@ -89,11 +91,19 @@ function RootDocument({ children }: { children: React.ReactNode }) {
     <html lang={localeState.contentLocale} suppressHydrationWarning>
       <head>
         <HeadContent />
+        {/* Marks a Chinese-first browser before the body paints, so the
+            Chinese-edition strip shows without moving the page. */}
+        <script dangerouslySetInnerHTML={{ __html: chineseReaderScript }} />
+        {/* Chinese content alone links the Chinese faces, so an English page
+            downloads no CJK font. @see apps/docs/DESIGN.md → Font loading */}
+        {localeState.contentLocale === "zh-CN" && (
+          <link rel="stylesheet" href={zhCnFontsCss} />
+        )}
       </head>
       <body className="flex min-h-screen flex-col">
         {/* The search dialog fetches `/api/search`, the fumadocs default. */}
         <LocaleProvider>
-          <LocaleFallbackNotice state={localeState} />
+          <LanguageBanner state={localeState} />
           {children}
           <Toaster />
         </LocaleProvider>

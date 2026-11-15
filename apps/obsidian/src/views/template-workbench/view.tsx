@@ -109,7 +109,7 @@ import type {
 import { Icon } from "@/components/obsidian/icon";
 import { AppContext } from "@/lib/app-context";
 import { awaitConfirm } from "@/lib/confirm";
-import { DOCS_SITE_URL } from "@/lib/constants";
+import { docsUrl } from "@/lib/docs-url";
 import { recover } from "@/lib/effect-cause";
 import { withLogCategory } from "@/lib/effect-log";
 import * as m from "@/lib/i18n/generated/messages";
@@ -165,7 +165,7 @@ import {
   retainNativeOutputs,
   makeNativeRenderer,
 } from "@/views/template-workbench/preview/render";
-import { COMMUNITY } from "@/views/welcome/links";
+import { communityUrl } from "@/views/welcome/links";
 
 import { templateWorkbenchAction } from "./actions";
 import {
@@ -2103,14 +2103,14 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
         entry
           .setTitle(workbenchM[label]())
           .setIcon("book-open")
-          .onClick(() => window.open(`${DOCS_SITE_URL}${path}`)),
+          .onClick(() => window.open(docsUrl(path))),
       );
     menu.addSeparator();
     menu.addItem((entry) =>
       entry
         .setTitle(m.workbench_problems_community())
         .setIcon("messages-square")
-        .onClick(() => window.open(COMMUNITY)),
+        .onClick(() => window.open(communityUrl())),
     );
   }
   /** The Help view action's menu, opened under its button. */

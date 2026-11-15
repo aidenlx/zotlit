@@ -1,0 +1,96 @@
+---
+title: "迁移 v1 Eta 模板"
+searchTitle: "将 v1 Eta 模板升级至 ZotLit v2"
+description: "重命名自定义 v1 Eta 模板，针对 v2 更新变量并启用 JavaScript 模板，或将模板转换为 Liquid。"
+---
+
+import { Accordion, Accordions } from "fumadocs-ui/components/accordion";
+import { Command } from "@/components/command";
+import { SettingsPath } from "@/components/settings-path";
+import { UiLabel } from "@/components/ui-label";
+import { m } from "@/paraglide/messages.js";
+
+如果你从未修改过 v1 模板，无需任何操作：v2 自带全新的默认模板。否则：
+
+1. 将每个 `zt-` 模板文件重命名为 `zotlit-`；例如 `zt-annots.eta.md` 变为 `zotlit-content.eta.md`。
+2. 在模板中，将 `it.` 替换为 `zt.`。
+3. 在每台设备上开启 <UiLabel name={m.settings_template_js_enable_name()} />。
+4. 修复少数发生变更的字段，然后在准备就绪后对旧笔记运行 <Command inline name={m.command_overwrite_note_name()} />。
+
+## 将 Eta 模板迁移到 v2 [#bring-your-eta-templates-to-v2]
+
+1. **重命名模板文件夹中的文件**：
+
+   | v1 文件                           | 重命名为                          |
+   | --------------------------------- | --------------------------------- |
+   | `zt-note.eta.md`                  | `zotlit-note.eta.md`              |
+   | `zt-annots.eta.md`                | `zotlit-content.eta.md`           |
+   | `zt-annot.eta.md`                 | `zotlit-annotation.eta.md`        |
+   | `zt-cite*.eta.md`（两个引文文件） | 同样执行 `zt-` → `zotlit-` 重命名 |
+
+   完成第 4 步后，ZotLit 就会按这些新名称加载并渲染它们。重命名文件不会对 Zotero 文库造成任何改动。
+
+2. **删除两个文件**（如果文件夹中存在）：`zt-field.eta.md`（属性现已移至配置方案中管理）和 `zt-colored.eta.md`（颜色样式现已在导入笔记时自动处理）。
+3. **在模板标签内将 `it.` 替换为 `zt.`**，例如 `it.title` → `zt.title` 和 `it.creators` → `zt.creators`。`comment`、`tags`、`collections`、`date` 以及 `notes` 留到第 5 步处理。
+4. **启用 JavaScript 模板**。打开 <SettingsPath page={m.settings_page_advanced()} />。在 <UiLabel name={m.settings_advanced_template_engine_heading()} /> 分组中的 <UiLabel name={m.settings_template_js_enable_name()} /> 行，选择 <UiLabel name={m.settings_template_js_turn_on()} />。在 <UiLabel name={m.settings_template_js_confirm_title()} /> 对话框中，选择 <UiLabel name={m.settings_template_js_confirm_action()} />。ZotLit 会立即重新编译模板。此设置为设备独立设置；请在你使用的每台电脑上分别开启。
+5. **修复发生变化的字段**。常见的变更如下：
+
+   | v1                                         | v2                                        |
+   | ------------------------------------------ | ----------------------------------------- |
+   | `it.citekey`                               | `zt.citationKey`（`zt.citekey` 也可用）   |
+   | 作为年份使用的 `it.date`                   | `zt.date?.year`                           |
+   | `it.abstractNote`                          | `zt.abstract`（`zt.abstractNote` 也可用） |
+   | `it.textExcerpt`                           | `zt.text`                                 |
+   | `it.commentMd`                             | `zt.comment`                              |
+   | `<%~ include("annots", it.annotations) %>` | `<%~ include("content", zt) %>`           |
+
+   标签、分类和作者现在均为对象，但在文本中仍输出为其名称，因此像 `zt.tags.join(", ")` 这样的表达式仍然有效。其他所有变更请参阅 [v1 至 v2 字段变更](/docs/reference/templates/eta-syntax#v1-changes)。
+
+6. **准备就绪后重新构建旧笔记**。打开笔记，运行 <Command inline name={m.command_overwrite_note_name()} />，然后选择 <UiLabel name={m.modal_overwrite_note_confirm()} />。ZotLit 会根据重命名后的模板重新构建整个笔记正文，并插入托管区域标记（`%%zt-managed%%` … `%%/zt-managed%%`）。此后，运行 <Command inline name={m.command_update_note_name()} /> 即可刷新笔记。尚未覆盖的笔记在刷新属性时会保留其正文。
+
+<Accordions multiple>
+<Accordion title="保留 Eta，或迁移到 Liquid" id="keep-eta-or-liquid">
+
+| 方案          | 操作要求                                                                                                         | 所需权限开关                                                             |
+| ------------- | ---------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------ |
+| 保留 Eta      | 上述步骤                                                                                                         | 在每台设备上开启 <UiLabel name={m.settings_template_js_enable_name()} /> |
+| 转换为 Liquid | 使用 Liquid（v2 的默认语言）重写每个模板（[Eta 转 Liquid 参考](/docs/reference/templates/syntax#eta-to-liquid)） | 无                                                                       |
+
+Liquid 模板只能将数据组合为文本。Eta 可以执行任意 JavaScript，因此需要权限开关保护。
+
+</Accordion>
+<Accordion title="将重命名后的文件合并为模板文档" id="convert">
+
+重命名后的文件可以直接使用，因此这一步是可选的。ZotLit 支持将其一次性合并为 v2 的模板文档：可通过文库视图上方的设置横幅（<UiLabel name={m.welcome_template_conversion_title()} />）操作，也可以在设置顶部的提示行点击 <UiLabel name={m.settings_template_conversion_reminder_action()} />。ZotLit 会在写入任何内容前检查输出。[从 2.1 模板迁移](/docs/how-to/migrate-from-2.1-templates)介绍了转换操作支持和不支持的情况。
+
+</Accordion>
+<Accordion title="从 zt-field.eta.md 重建属性" id="rebuild-properties">
+
+打开 <SettingsPath />，在 <UiLabel name={m.settings_profile_document_name()} /> 行选择 <UiLabel name={m.settings_profile_edit()} />，然后打开 <UiLabel name={m.workbench_tab_properties()} /> 标签页。对于每个字段，选择 <UiLabel name={m.workbench_properties_add()} /> 并填写 <UiLabel name={m.workbench_properties_name()} />、<UiLabel name={m.workbench_properties_format()} />（<UiLabel name={m.workbench_properties_format_value()} />、<UiLabel name={m.workbench_properties_format_text()} /> 或 <UiLabel name={m.workbench_properties_format_rule()} />）、<UiLabel name={m.workbench_properties_expression()} /> 以及 <UiLabel name={m.workbench_properties_merge()} />：
+
+| v1 代码行                  | <UiLabel name={m.workbench_properties_name()} /> | <UiLabel name={m.workbench_properties_expression()} /> | <UiLabel name={m.workbench_properties_merge()} />         |
+| -------------------------- | ------------------------------------------------ | ------------------------------------------------------ | --------------------------------------------------------- |
+| `title: "<%= it.title %>"` | `title`                                          | `zt.title`                                             | <UiLabel name={m.workbench_properties_merge_replace()} /> |
+| `year: "<%= it.date %>"`   | `year`                                           | `zt.date \| date: "%Y"`                                | <UiLabel name={m.workbench_properties_merge_replace()} /> |
+| `tags: ...`                | `tags`                                           | `zt.tags \| map: "name" \| join: ", "`                 | <UiLabel name={m.workbench_properties_merge_append()} />  |
+
+YAML 转义会自动处理。有关属性规则的详情，请参阅[属性条目与合并规则](/docs/reference/templates/frontmatter)。
+
+</Accordion>
+</Accordions>
+
+## 遇到其他情况 [#if-you-see-something-else]
+
+- **笔记显示为 v2 默认外观，而非你的模板** → 文件名仍以 `zt-` 开头；v2 仅读取 `zotlit-` 文件。请重命名它们（第 1 步）。
+- “**… 处的 Eta 模板处于非活动状态，因为 JavaScript 模板在此设备上被禁用。**” → 在此设备上开启 <UiLabel name={m.settings_template_js_enable_name()} />（第 4 步）。
+- “**由于 JavaScript 模板已禁用，以下 Frontmatter 字段未生效：…。**” → 在此设备上开启 <UiLabel name={m.settings_template_js_enable_name()} />（第 4 步）。
+- **笔记中出现多余空行** → v1 会在每个 `%>` 后去掉一个换行符；v2 则保留所有空白。如果需要恢复旧版的去除换行行为，请写为 `-%>`。
+- **年份显示为完整日期** → `it.date` 在 v1 中仅输出年份；请改写为 `zt.date?.year`。
+- 对 v1 笔记运行 <Command inline name={m.command_update_note_name()} /> 后出现 <UiLabel name={m.notice_updated_note_no_region()} /> → v1 笔记缺少托管区域标记。对该笔记运行 <Command inline name={m.command_overwrite_note_name()} />（第 6 步）。
+- **文件名为 `zotlit-note.liquid.md` 这样的形式** → 这些是 2.1 模板。请参阅[从 2.1 模板迁移](/docs/how-to/migrate-from-2.1-templates)。
+
+## 下一步 [#next]
+
+- [刷新 v1 笔记](/docs/how-to/migrate-from-v1#refresh-v1-notes) — 重建旧笔记的完整流程。
+- [从 2.1 模板迁移](/docs/how-to/migrate-from-2.1-templates) — 一次性转换的具体操作。
+- [启用 JavaScript 模板](/docs/how-to/enable-javascript-templates) — 权限开关的作用以及如何将其关闭。

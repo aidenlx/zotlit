@@ -14,6 +14,8 @@
   <a href="https://zotlit.aidenlx.site/docs">📖 Docs</a>
   ·
   <a href="https://zotlit.aidenlx.site/community">💬 Community</a>
+  ·
+  <a href="https://zotlit.aidenlx.site/zh-CN/docs" lang="zh-CN">简体中文文档</a>
 </p>
 
 <p>
@@ -45,20 +47,20 @@ ZotLit lets Zotero manage your papers, PDFs, and annotations, and keeps Obsidian
 
 ## Features
 
-| Feature | Description |
-| --- | --- |
-| **Library View** | Browse your Zotero collections and tags in an Obsidian tab. Select a paper to see its abstract, its PDF, and how many highlights you made in each color. |
-| **ZotLit Query** | Ask questions of your Zotero library without leaving Obsidian: every highlight in a collection, the papers from one journal, the papers tagged for a chapter. See the answers as tables, cards, or lists, and add columns of your own. |
-| **PDF reader** | Read a paper beside your draft. With Zotero 10, the highlights and comments you make in Obsidian save to Zotero and sync to your other devices. |
-| **Annotation view** | See all of a paper's highlights in one list beside the PDF. Drag one into your note, and it becomes a quote that links back to its page. |
-| **Literature notes** | Create a note for a paper in one step, with its details, your highlights, and a link back to Zotero. |
-| **Citations** | Cite as you type, and see the reference list in your citation style, such as APA or Chicago, as you write. |
-| **Export** | Export your draft to Word with its citations and reference list already formatted. |
-| **Citation graph** | See in Obsidian's graph view which papers each note cites, and which papers your notes have in common. |
-| **Note import** | Bring the notes you wrote in Zotero into your vault. |
-| **Keep notes updated** | When you correct a paper's details in Zotero, update its note with one command. |
-| **Templates** | Choose what each note contains and where it goes. Use a different layout for books, articles, or a project, and see a live preview as you edit. |
-| **Agent-assisted templates** | [Describe the note you want](https://zotlit.aidenlx.site/docs/install-skill) in plain words, and your AI assistant builds and tests the template for you. |
+| Feature                      | Description                                                                                                                                                                                                                            |
+| ---------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Library View**             | Browse your Zotero collections and tags in an Obsidian tab. Select a paper to see its abstract, its PDF, and how many highlights you made in each color.                                                                               |
+| **ZotLit Query**             | Ask questions of your Zotero library without leaving Obsidian: every highlight in a collection, the papers from one journal, the papers tagged for a chapter. See the answers as tables, cards, or lists, and add columns of your own. |
+| **PDF reader**               | Read a paper beside your draft. With Zotero 10, the highlights and comments you make in Obsidian save to Zotero and sync to your other devices.                                                                                        |
+| **Annotation view**          | See all of a paper's highlights in one list beside the PDF. Drag one into your note, and it becomes a quote that links back to its page.                                                                                               |
+| **Literature notes**         | Create a note for a paper in one step, with its details, your highlights, and a link back to Zotero.                                                                                                                                   |
+| **Citations**                | Cite as you type, and see the reference list in your citation style, such as APA or Chicago, as you write.                                                                                                                             |
+| **Export**                   | Export your draft to Word with its citations and reference list already formatted.                                                                                                                                                     |
+| **Citation graph**           | See in Obsidian's graph view which papers each note cites, and which papers your notes have in common.                                                                                                                                 |
+| **Note import**              | Bring the notes you wrote in Zotero into your vault.                                                                                                                                                                                   |
+| **Keep notes updated**       | When you correct a paper's details in Zotero, update its note with one command.                                                                                                                                                        |
+| **Templates**                | Choose what each note contains and where it goes. Use a different layout for books, articles, or a project, and see a live preview as you edit.                                                                                        |
+| **Agent-assisted templates** | [Describe the note you want](https://zotlit.aidenlx.site/docs/install-skill) in plain words, and your AI assistant builds and tests the template for you.                                                                              |
 
 Full guides live in the [documentation](https://zotlit.aidenlx.site/docs).
 

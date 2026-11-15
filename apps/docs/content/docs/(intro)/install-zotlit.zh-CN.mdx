@@ -1,0 +1,81 @@
+---
+title: "安装 ZotLit"
+searchTitle: "安装 ZotLit：面向 Obsidian 的 Zotero 插件"
+description: "从 Obsidian 第三方插件市场安装 ZotLit，在 Obsidian 中读取 Zotero 文库。仅支持桌面端；需要 Obsidian 1.15.1 及安装程序 1.13.4 或更高版本。"
+---
+
+import { Callout } from "@/components/callout";
+import { Tabs, Tab } from "@/components/tabs";
+import { VersionLedger } from "@/components/version-ledger";
+import { ActionLink } from "@/components/action-link";
+import { Steps, Step } from "fumadocs-ui/components/steps";
+
+ZotLit 是一款仅支持桌面端的 Obsidian 插件。它可在 Windows、macOS 和 Linux 上运行；不支持移动端。
+
+<Callout type="warn" title="请先更新 Obsidian 安装程序">
+  ZotLit 需要 Obsidian 1.15.1 或更高版本，且**安装程序版本**必须为 1.13.4 或更高。Obsidian 的应用内更新不会替换安装程序。请在**设置 > 关于**（Settings > About）中检查当前版本，然后阅读[如何更新 Obsidian 安装程序](/docs/how-to/update-obsidian-installer)。如果安装程序版本过旧，ZotLit 将无法加载。
+</Callout>
+
+## 安装插件 [#install-the-plugin]
+
+<Tabs items={["稳定版", "预发布版"]} updateAnchor>
+  <Tab id="stable" value="稳定版">
+    <VersionLedger app="obsidian" channel="stable" />
+
+    你可以在 Obsidian 第三方插件市场中找到 ZotLit：[查看 ZotLit](https://community.obsidian.md/plugins/zotlit)。
+
+    <Steps>
+      <Step>
+        ### 打开插件页面 [#open-the-plugin-listing]
+
+        点击上方链接，或在 Obsidian 中打开**设置 > 第三方插件**（Settings > Community plugins），选择**浏览**（Browse），然后搜索“ZotLit”。你也可以使用此直接链接：
+
+        <ActionLink href="obsidian://show-plugin?id=zotlit" kind="obsidian">在 Obsidian 中显示 ZotLit</ActionLink>
+      </Step>
+      <Step>
+        ### 安装并启用 [#install-and-enable]
+
+        点击**安装**（Install），然后点击**启用**（Enable）。
+      </Step>
+    </Steps>
+
+  </Tab>
+  <Tab id="pre-release" value="预发布版">
+    <VersionLedger app="obsidian" channel="pre-release" />
+
+    BRAT（Beta Reviewers Auto-update Tester）是一款 Obsidian 插件，用于安装并自动更新来自 GitHub 的预发布版本。如果你想在更新进入第三方插件市场前先行测试，可以使用 BRAT。
+
+    <Steps>
+      <Step>
+        ### 安装 BRAT [#install-brat]
+
+        在 Obsidian 插件目录中打开 BRAT：
+
+        <ActionLink href="obsidian://show-plugin?id=obsidian42-brat" kind="obsidian">安装 BRAT</ActionLink>
+
+        安装后启用该插件。如果你已安装 BRAT，请跳至下一步。
+      </Step>
+      <Step>
+        ### 将 ZotLit 添加为测试版插件 [#add-zotlit-as-a-beta-plugin]
+
+        点击下方链接将 ZotLit 自动添加到 BRAT：
+
+        <ActionLink href="obsidian://brat?plugin=aidenlx/zotlit" kind="obsidian">将 ZotLit 添加到 BRAT</ActionLink>
+
+        或者，打开命令面板，运行 **BRAT: Add a beta plugin**，并输入 `aidenlx/zotlit`。
+      </Step>
+      <Step>
+        ### 启用 ZotLit [#enable-zotlit]
+
+        前往**设置 > 第三方插件**并启用 **ZotLit**。你可能需要先刷新插件列表。
+
+        当有新的预发布版发布时，BRAT 会自动保持 ZotLit 为最新版本。你无需手动重新安装。
+      </Step>
+    </Steps>
+
+  </Tab>
+</Tabs>
+
+## 后续步骤 [#next-steps]
+
+全新安装后，ZotLit 会在文库视图中打开你的 Zotero 文库。按照教程[打开你的文库并创建你的第一篇文献笔记](/learn/connect-zotero-to-obsidian)。

@@ -139,6 +139,24 @@ describe("viewProperties visible", () => {
     expect(properties.orderOf(["title"])).toEqual(["title"]);
   });
 
+  it("writes the order that shows or hides one Property, after the others", () => {
+    const properties = viewProperties(null, {
+      from: "items",
+      order: ["title", "date"],
+    });
+    expect(properties.withShown("date", false)).toEqual(["title"]);
+    expect(properties.withShown("itemType", true)).toEqual([
+      "title",
+      "date",
+      "itemType",
+    ]);
+    // Shown already, it keeps its place.
+    expect(properties.withShown("title", true)).toEqual(["title", "date"]);
+    // The last one hidden leaves an empty order, as Hide all does.
+    const one = viewProperties(null, { from: "items", order: ["title"] });
+    expect(one.withShown("title", false)).toEqual([]);
+  });
+
   it("shows and ticks nothing for an empty order, as Hide all leaves it", () => {
     const properties = viewProperties(null, { from: "items", order: [] });
     expect(properties.visible).toEqual([]);

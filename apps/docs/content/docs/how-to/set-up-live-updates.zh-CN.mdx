@@ -1,0 +1,88 @@
+---
+title: "设置实时更新"
+description: "启用可选的实时更新，以便 Zotero 自动将更改推送到 Obsidian。"
+---
+
+import { Steps, Step } from "fumadocs-ui/components/steps";
+import { Card, Cards } from "fumadocs-ui/components/card";
+import { Callout } from "@/components/callout";
+import { SettingsPath } from "@/components/settings-path";
+import { UiLabel } from "@/components/ui-label";
+import { m } from "@/paraglide/messages.js";
+
+ZotLit Companion（Zotero 插件）可以在你在 Zotero 中阅读和标注时将更改推送到 Obsidian。标注视图的跟随阅读器模式和数据库自动刷新都依赖此可选连接。
+
+<Callout type="info" title="何时不需要此连接">
+  基础 Companion 操作（打开条目及其 PDF、更新笔记、从 Zotero
+  上下文菜单导入笔记）通过协议链接运行，无需本地服务器。仅在需要实时推送（跟随阅读器、Zotero
+  数据更改时即时刷新数据库）时才需要实时更新。
+</Callout>
+
+## 启用 ZotLit 服务器 [#enable-the-zotlit-server]
+
+<Steps>
+  <Step>
+    ### 打开同步设置 [#open-the-sync-settings]
+
+    在 Obsidian 中，打开 <SettingsPath page={m.settings_page_zotero()} /> 并找到 <UiLabel name={m.settings_zotero_sync_heading()} /> 分组。保持 <UiLabel name={m.settings_live_updates_enabled_name()} /> 为开启状态。
+
+  </Step>
+  <Step>
+    ### 开启监听器 [#turn-on-the-listener]
+
+    在 <UiLabel name={m.settings_advanced_local_server_heading()} /> 行上，选择 <UiLabel name={m.settings_zotero_local_server_open()} />。这将打开 <SettingsPath page={m.settings_page_advanced()} /> 上的 <UiLabel name={m.settings_advanced_local_server_heading()} /> 分组。
+
+    启用 <UiLabel name={m.settings_local_server_enabled_name()} />。保留默认主机名 `127.0.0.1`，以便仅接受来自本台计算机的连接。
+
+    配置的端口默认为 **9091**。查看 <UiLabel name={m.settings_local_server_active_port_name()} /> 确认实际使用的端口：若配置的端口被占用，ZotLit 会尝试更高的端口号。
+
+  </Step>
+</Steps>
+
+## 启用 Companion 的通知选项 [#enable-the-companions-notify-preference]
+
+<Steps>
+  <Step>
+    ### 打开 Zotero 设置 [#open-zotero-preferences]
+
+    在 Zotero 中，打开**编辑 > 设置**（Edit > Settings，Windows/Linux）或 **Zotero > 设置**（macOS）。选择 <UiLabel name={m["zotero.prefs_pane_label"]()} /> 面板。
+
+  </Step>
+  <Step>
+    ### 启用通知 [#enable-notifications]
+
+    在 <UiLabel name={m["zotero.prefs_notify_section"]()} /> 分节下，勾选 <UiLabel name={m["zotero.prefs_notify_enable.label"]()} />。
+
+  </Step>
+  <Step>
+    ### 设置通知 URL [#set-the-notify-url]
+
+    将 <UiLabel name={m["zotero.prefs_notify_url"]()} /> 设置为指向 ZotLit 服务器。默认值为 `http://localhost:9091`，与默认端口对应。
+
+    请使用 Obsidian 中 <UiLabel name={m.settings_local_server_active_port_name()} /> 所显示的端口（例如 `http://localhost:9092`）。每个仓库可以使用不同的端口。
+
+  </Step>
+</Steps>
+
+## 验证连接 [#verify-the-connection]
+
+双向设置均启用后，在 Obsidian 中打开标注视图并切换到 <UiLabel name={m.annot_view_mode_zotero_reader()} /> 模式。该视图默认以 <UiLabel name={m.annot_view_mode_active_tab()} /> 模式启动，并会记住你上次选择的模式。然后在 Zotero PDF 阅读器中打开一个条目。标注视图会自动更新并显示该条目的标注。如果未更新，请检查 ZotLit 服务器设置与 Companion 的通知 URL 中的端口与主机名是否一致。
+
+## 源 ID 过滤 [#source-id-filtering]
+
+ZotLit 服务器仅接受其配置文件与数据目录与所连源完全匹配的 Zotero 安装的请求。来自其他 Zotero 安装的请求会被静默忽略。源标识符在 <SettingsPath page={m.settings_page_zotero()} setting={m.settings_page_zotero_location()} /> 下显示为只读的 <UiLabel name={m.settings_db_source_id_name()} />。
+
+## 另请参阅 [#see-also]
+
+<Cards>
+  <Card
+    title="安装 ZotLit Companion"
+    description="安装实时更新所需的 Zotero 插件。"
+    href="/docs/install-companion"
+  />
+  <Card
+    title="使用标注视图"
+    description="在侧边栏浏览标注并将其拖入笔记中。"
+    href="/docs/how-to/use-annotation-view"
+  />
+</Cards>

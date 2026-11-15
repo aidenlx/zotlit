@@ -201,14 +201,16 @@ describe("prerendered locale editions", () => {
         }
       }
       expect(paths.has(`${prefix}/workbench`)).toBe(true);
-      // The listing pages' copy is English, so Chinese URLs fall back.
-      for (const path of ["", "/community", "/blog", "/changelog"]) {
-        expect(paths.has(prefix + path || "/")).toBe(locale === "en");
+      // The catalog pages have Chinese editions.
+      for (const path of ["", "/community", "/learn", "/changelog", "/blog"]) {
+        expect(paths.has(prefix + path || "/"), `HTML: ${prefix}${path}`).toBe(
+          true,
+        );
       }
-      for (const section of ["blog", "changelog"] as const) {
+      for (const section of ["learn", "changelog", "blog"] as const) {
         expect(
           paths.has(prefix + suffixEditionUrl({ section, slugs: [] })),
-        ).toBe(locale === "en");
+        ).toBe(true);
       }
     }
     for (const path of [
@@ -244,7 +246,7 @@ describe("translated documentation links", () => {
     },
     {
       page: docs.getPage("how-to/migrate-from-pandoc-reference-list.zh-CN.mdx"),
-      anchor: "#在-zotero-中确认文献引用标识",
+      anchor: "#migrate-the-workflow",
     },
   ]) {
     it.skipIf(!page)(`retains the authored fragment ${anchor}`, async () => {

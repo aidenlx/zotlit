@@ -11,21 +11,21 @@ import { useUniqueId } from "@zotlit/ui";
 import { Button } from "@/components/obsidian/button";
 import { Icon } from "@/components/obsidian/icon";
 import { IconButton } from "@/components/obsidian/icon-button";
-import { DOCS_COMPANION } from "@/lib/constants";
+import { companionDocsUrl } from "@/lib/docs-url";
 import * as m from "@/lib/i18n/generated/messages";
 import { cn, tooltipAttrs } from "@/lib/utils";
 
 import { useWelcomeActions } from "./actions";
 import {
-  BLOG,
-  CHANGELOG,
-  COMMUNITY,
-  DOCS_CITATIONS,
-  DOCS_GETTING_STARTED,
-  DOCS_TEMPLATES,
+  blogUrl,
+  changelogUrl,
+  citationsDocsUrl,
+  communityUrl,
+  gettingStartedUrl,
   GITHUB,
-  MIGRATION_GUIDE,
+  migrationGuideUrl,
   SPONSOR,
+  templatesDocsUrl,
 } from "./links";
 import { ZotLitLockup } from "./lockup";
 import { templateMigrationNotice } from "./migration-notice";
@@ -361,7 +361,7 @@ function Checklist({ connect }: { connect: boolean }) {
     action: companionInstalled ? undefined : (
       <Button
         icon="external-link"
-        onClick={() => actions.openExternal(DOCS_COMPANION)}
+        onClick={() => actions.openExternal(companionDocsUrl())}
       >
         {m.welcome_action_install_companion()}
       </Button>
@@ -566,13 +566,13 @@ function HelpLinks() {
         <HelpTile
           primary
           icon="book-open"
-          url={DOCS_GETTING_STARTED}
+          url={gettingStartedUrl()}
           title={m.welcome_docs_getting_started()}
           subtitle={m.welcome_help_getting_started_subtitle()}
         />
         <HelpTile
           icon="messages-square"
-          url={COMMUNITY}
+          url={communityUrl()}
           title={m.welcome_link_discussions()}
           subtitle={m.welcome_help_discussions_subtitle()}
         />
@@ -584,20 +584,20 @@ function HelpLinks() {
         />
         <HelpTile
           icon="layout-template"
-          url={DOCS_TEMPLATES}
+          url={templatesDocsUrl()}
           title={m.welcome_docs_templates()}
           subtitle={m.welcome_help_templates_subtitle()}
         />
         <HelpTile
           icon="quote"
-          url={DOCS_CITATIONS}
+          url={citationsDocsUrl()}
           title={m.welcome_docs_citations()}
           subtitle={m.welcome_help_citations_subtitle()}
         />
       </div>
       <div className="zt:mt-2 zt:flex zt:flex-wrap zt:items-center zt:gap-x-3 zt:gap-y-1 zt:text-xs">
-        <TextLink url={BLOG}>{m.welcome_link_blog()}</TextLink>
-        <TextLink url={CHANGELOG}>{m.welcome_link_changelog()}</TextLink>
+        <TextLink url={blogUrl()}>{m.welcome_link_blog()}</TextLink>
+        <TextLink url={changelogUrl()}>{m.welcome_link_changelog()}</TextLink>
         <TextLink url={SPONSOR}>
           <Icon name="heart" size="xs" className="zt:text-pink" />
           {m.welcome_link_sponsor()}
@@ -605,7 +605,7 @@ function HelpLinks() {
         {migrationPending ? null : (
           <span className="zt:text-muted-foreground">
             {m.welcome_footer_migration_lead()}{" "}
-            <TextLink url={MIGRATION_GUIDE}>
+            <TextLink url={migrationGuideUrl()}>
               {m.welcome_footer_migration_link()}
             </TextLink>
           </span>
@@ -796,7 +796,7 @@ function MigrationGuide() {
       action={
         <Button
           icon="book-marked"
-          onClick={() => actions.openExternal(MIGRATION_GUIDE)}
+          onClick={() => actions.openExternal(migrationGuideUrl())}
         >
           {m.welcome_action_open_migration_guide()}
         </Button>
@@ -817,7 +817,7 @@ function CompanionGuidance() {
       action={
         <Button
           icon="external-link"
-          onClick={() => actions.openExternal(DOCS_COMPANION)}
+          onClick={() => actions.openExternal(companionDocsUrl())}
         >
           {m.notice_companion_install_action()}
         </Button>

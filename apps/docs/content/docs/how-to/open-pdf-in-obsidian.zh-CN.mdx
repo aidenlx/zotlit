@@ -1,0 +1,105 @@
+---
+title: "在 Obsidian 中打开条目的 PDF"
+searchTitle: "在 Obsidian 中打开 Zotero PDF"
+description: "从文献笔记、快速切换器或 Zotero 在 Obsidian 自带的 PDF 阅读器中打开 Zotero PDF 附件。"
+---
+
+import { Card, Cards } from "fumadocs-ui/components/card";
+import { Command } from "@/components/command";
+import { LessonLink } from "@/components/lesson-link";
+import { SettingsPath } from "@/components/settings-path";
+import { UiLabel } from "@/components/ui-label";
+import { m } from "@/paraglide/messages.js";
+
+如果是第一次打开 PDF，请参阅 <LessonLink slug="annotate-zotero-pdfs-in-obsidian" />。
+
+在 Obsidian 标签页中阅读 Zotero 条目的 PDF，无需切换到 Zotero。
+
+无论文件位于仓库内部还是 Zotero 的存储文件夹中，ZotLit 都会在 Obsidian 自带的 PDF 阅读器中打开。此方式仅支持 PDF 附件；EPUB、网页快照和其他文件类型仍保留在 Zotero 中。
+
+需要 Obsidian 1.15.1 或更高版本（ZotLit 2.2.3 的最低要求）。
+
+## 从文献笔记打开 [#from-a-literature-note]
+
+在 Obsidian 中打开文献笔记后：
+
+- 打开命令面板并运行 <Command inline name={m.command_open_pdf_name()} />。
+- 或者右键点击笔记的标签页，从文件菜单的 **zotlit** 分组中选择 <UiLabel name={m.command_open_pdf_name()} />。
+
+## 从标注视图打开 [#from-the-annotation-view]
+
+打开标注视图的窗格菜单，选择 <UiLabel name={m.command_open_pdf_name()} />。这将打开该视图当前显示的附件。当标注视图正在跟随 Obsidian 中的该 PDF 标签页时，菜单中不会显示此选项。
+
+## 从文库视图打开 [#from-the-library-view]
+
+在[文库视图](/docs/how-to/use-library-view)中，双击某篇文献所在的行，或者选中它并按 `Shift+Enter`。如需保持文库视图可见，请右键点击该行并选择 <UiLabel name={m.library_view_menu_open_pdf_right()} />。阅读卡片上的 <UiLabel name={m.library_view_menu_open_pdf()} /> 按钮同样可以打开它。
+
+## 从快速切换器打开 [#from-the-quick-switcher]
+
+运行 <Command inline name={m.command_open_lit_note_name()} />，搜索条目，并在结果上按 `Shift+Enter`。此时仅打开 PDF，不会打开文献笔记。有关搜索结果支持的所有快捷键，请参阅[文献笔记快速切换器](/docs/reference/commands#quick-switcher)参考。
+
+## 从 Zotero 打开 [#from-zotero]
+
+这些入口需要配合 ZotLit Companion（Zotero 插件），且版本需与 ZotLit 2.2 同期发布。[安装 ZotLit Companion](/docs/install-companion) 提供了当前最新版本。
+
+- 在文库中，选中一个 PDF 附件，或者包含 PDF 的条目，从顶级右键菜单中选择 <UiLabel name={m["zotero.menu_item_open_pdf.label"]()} />。
+- 在 Zotero 中阅读 PDF 时，在页面内右键点击并选择 <UiLabel name={m["zotero.menu_reader_page_open_pdf"]()} />。这将打开你当前正在阅读的 PDF。
+
+## 从笔记中的链接打开 [#file-links]
+
+ZotLit 写入笔记的每条标注都带有一个指向 Zotero 的持久链接。点击链接即可在 Obsidian 中打开对应的 PDF，并自动选中该标注且滚动到对应位置。该链接在任何电脑上都有效：如果当前电脑没有该 PDF 文件，则会在 Zotero 中打开标注。若某条标注已在 Zotero 中删除，点击链接仍会打开 PDF 并定位到对应页面。各类情况详见 [Zotero 打开链接](/docs/reference/protocol-links#zotero-open-links)。
+
+文献笔记中的 `fileLink` 会生成直接指向附件文件的链接，点击后在 Obsidian 中打开该 PDF。旧版 ZotLit 生成的笔记也会将每条标注链接到文件。这些链接同样会继续在 Obsidian 中打开并定位到标注。
+
+无论链接是如何生成的，只要仓库中的链接指向 Zotero 文库中的 PDF，文件链接均可生效。指向其他文件（如 EPUB、网页快照、Zotero 未收录的 PDF）的链接仍会像以前一样在系统默认应用中打开。
+
+如果想在系统应用中打开某个链接，请右键点击该链接并选择 **Open in default browser**。此时标注链接将在 Zotero 中打开。若要彻底关闭此行为，请在**设置 > ZotLit > 阅读器**（Settings > ZotLit > Reader）中取消勾选 <UiLabel name={m.settings_reader_open_file_links_name()} />。
+
+若只想将标注链接发送到 Zotero 打开，请关闭 <SettingsPath page={m.settings_page_reader()} setting={m.settings_reader_open_annotation_links_name()} />。悬停在标注链接上时仍会显示标注预览。
+
+这两项设置同样适用于标注卡片和查询视图行上的页码链接。当任一设置关闭时，该页码链接将在 Zotero 中打开标注。
+
+在实时预览、源码模式或阅读视图中悬停在标注链接上，会弹出浮层预览。浮层中显示引用文本、你的评论、页码和高亮颜色。对于图片或手绘标注，它会显示对应的视觉摘录。在标注下方，浮层会显示该标注所属条目的参考文献条目，并带有与引文浮层相同的操作选项。独立 PDF 上的标注没有所属条目，因此其浮层仅显示标注本身。无论引文悬停设置如何配置，悬停在标注链接上都会显示此预览。
+
+![一篇学位论文章节插入了两条标注，每条都包含引文文本、后随文献引用以及作为链接的页码；悬停在第二个链接上弹出了浮层，显示引文文本、评论、第 1 页以及该文献的参考文献按钮和参考文献条目上方的一条绿色高亮条](/img/how-to/annotation-link-popover.webp)
+
+## 预期结果 [#what-you-get]
+
+当条目只有一个 PDF 时，会直接打开。当条目有多个 PDF 时，ZotLit 会询问打开哪一个；选择器会按文件名列出它们，其搜索框提示为 <UiLabel name={m.modal_select_pdf_placeholder()} />。
+
+当条目没有 PDF 时，ZotLit 会显示 <UiLabel name={m.notice_no_pdf_attachment()} />。当磁盘上找不到该文件时，会显示 <UiLabel name={m.notice_pdf_file_missing()} />。这两种情况下，ZotLit 都不会转到 Zotero 中打开文件。
+
+打开 PDF 时，标注视图会在侧边栏中置顶显示，以便在 PDF 旁边展示该条目的高亮。当该视图处于 <UiLabel name={m.annot_view_mode_active_tab()} /> 模式时，它会跟随 PDF 标签页切换。
+
+若想保持侧边栏现状，请关闭 <SettingsPath page={m.settings_page_reader()} setting={m.settings_reader_focus_annot_view_name()} />。详见[设置](/docs/reference/settings#reader)。
+
+## 在 Zotero 中记录阅读时间 [#recently-read]
+
+如果你已通过 <UiLabel name={m.capability_enable_editing()} /> 并选择 **Always Allow** 授予了写入授权，在 Obsidian 中阅读“我的文库”中的 PDF 将同步更新其在 Zotero 中的上次阅读时间。该文献随后会出现在 Zotero 的“最近阅读”列表中，阅读时间也会通过 Zotero 进行同步。
+
+阅读时，ZotLit 不会主动索取写入授权。在没有授权、Zotero 已关闭或更新失败的情况下，阅读记录仍会计入当前设备，且不会弹出提示。在 Obsidian 中阅读群组文库的 PDF 也仅在当前设备上生效。
+
+## 另请参阅 [#see-also]
+
+<Cards>
+  <Card
+    title="如何在 Obsidian 中编辑 PDF 标注"
+    description="在 Obsidian 中阅读时创建或修改 Zotero 标注。"
+    href="/docs/how-to/edit-pdf-annotations"
+  />
+  <Card
+    title="使用标注视图"
+    description="在 PDF 旁浏览条目的高亮批注，并将其拖入笔记中。"
+    href="/docs/how-to/use-annotation-view"
+  />
+  <Card
+    title="创建与打开文献笔记"
+    description="从快速切换器、引文或 Zotero 中打开或创建文献笔记。"
+    href="/docs/how-to/create-and-open-notes"
+  />
+  <Card
+    title="命令"
+    description="ZotLit 的所有命令及触发入口。"
+    href="/docs/reference/commands#literature-note-actions"
+  />
+</Cards>

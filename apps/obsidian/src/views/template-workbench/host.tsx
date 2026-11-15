@@ -41,7 +41,7 @@ import type {
 
 import { Toggle } from "@/components/obsidian/toggle";
 import { citationStyleLabel } from "@/lib/citation-style";
-import { DOCS_SITE_URL } from "@/lib/constants";
+import { docsUrl } from "@/lib/docs-url";
 import { awaitModal, openModalIn } from "@/lib/effect-modal";
 import { obsidianPopupKeys } from "@/lib/field-popup";
 import * as m from "@/lib/i18n/generated/messages";
@@ -60,7 +60,7 @@ import {
   appendTrailingFlair,
   FLAIR_ROW_CLASS,
 } from "@/services/item-lookup/render-hit";
-import { COMMUNITY } from "@/views/welcome/links";
+import { communityUrl } from "@/views/welcome/links";
 
 import { extractPartialMenu } from "./extract-partial";
 import type { ExtractPartial } from "./extract-partial";
@@ -501,8 +501,8 @@ export function createTemplateWorkbenchHost(
       new BaseNotice(text);
     },
     copy: copyToClipboard,
-    communityUrl: COMMUNITY,
-    docsUrl: DOCS_SITE_URL,
+    communityUrl: communityUrl(),
+    docsUrl: docsUrl(""),
     persistence: {
       read(scope, key) {
         const value: unknown = app.loadLocalStorage(

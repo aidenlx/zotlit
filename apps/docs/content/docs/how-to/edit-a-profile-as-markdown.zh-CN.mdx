@@ -1,0 +1,89 @@
+---
+title: "以 Markdown 编辑配置方案"
+description: "以 Markdown 打开配置方案文档，遵循 ZotLit 要求的结构，并查看“问题”区域报告的错误。"
+---
+
+import { Steps, Step } from "fumadocs-ui/components/steps";
+import { Card, Cards } from "fumadocs-ui/components/card";
+import { UiLabel } from "@/components/ui-label";
+import { m } from "@/paraglide/messages.js";
+
+如果你更喜欢直接编写 Markdown 而不是使用工作台的各个标签页，可以直接编辑配置方案文档本身。配置方案是仓库中的一篇普通笔记，即使报告错误，ZotLit 也会保持其可编辑状态。
+
+## 以 Markdown 打开文档 [#open]
+
+<Steps>
+  <Step>
+    ### 在 Obsidian 的 Markdown 编辑器中打开文档 [#open-the-document-in-obsidians-markdown-editor]
+
+    在文件列表中，像打开其他笔记一样打开配置方案文档。在工作台中，选择 <UiLabel name={m.workbench_advanced()} /> 即可在一个编辑器中编辑完整文档；或者打开面板菜单并选择 <UiLabel name={m.template_workbench_open_markdown()} />，该操作会先保存文档，然后将该面板切换到 Obsidian 的 Markdown 编辑器。
+
+  </Step>
+  <Step>
+    ### 编辑文档并保存 [#edit-the-document-and-save]
+
+    输入更改并保存文件。ZotLit 始终保持文档可编辑，因此出现错误绝不会导致文本丢失。
+
+  </Step>
+  <Step>
+    ### 返回工作台 [#return-to-the-workbench]
+
+    视图标题栏包含 <UiLabel name={m.template_workbench_open_layout()} />，可在工作台中重新打开同一文档，并显示其预览与问题。在工作台窗口中，面板会切换回工作台。在主窗口中，ZotLit 会打开工作台窗口并保持 Markdown 编辑器处于打开状态。
+
+  </Step>
+</Steps>
+
+## ZotLit 要求的结构 [#shape]
+
+配置方案文档按顺序包含四个部分：清单（manifest）、笔记源码、可选的托管块（managed block）以及标注分节。[配置方案文档](/docs/reference/templates/profile-document#document-structure)详细介绍了各部分、其分界线以及示例文件。
+
+保存之前，必须满足以下所有条件：
+
+- 文件的第一行必须严格为 `---`，且后续有一行 `---` 用于闭合清单。
+- `id` 为 12 位字母或数字，且该文件夹中没有其他配置方案文档使用相同的 ID。共享同一 ID 的配置方案都会被 ZotLit 排除。
+- 笔记源码最多包含一个托管块，以 `{% managed %}` 开头，以 `{% endmanaged %}` 结尾。更新笔记时，ZotLit 仅重新渲染该块，并保留源码的其余部分不变。有关更新会重写哪些内容，请参见[文献笔记与托管区域](/docs/reference/literature-notes)。
+- 笔记源码之后必须且只能出现一行 `--- zotlit:annotation ---`。
+- `id: default` 的文档既不能包含匹配条件，也不能包含绑定。
+- ZotLit 写入的属性应位于清单中，而不是笔记正文中。有关条目形式、合并策略和保留键，请参见[属性](/docs/reference/templates/frontmatter)。
+
+## “问题”区域报告的内容 [#problems]
+
+违反上述规则的文档绝不会被拒收。直接在输入处进行修复：ZotLit 保持文档可编辑，并在工作台面板底部的 <UiLabel name={m.workbench_problems_heading()} /> 区域列出每个错误及其建议的恢复方法。逐项处理并保存；该区域会在编辑时重新计算，一旦文档不再违反规则，相应条目就会自动消失。
+
+| 违反的规则                              | “问题”区域报告的内容                                                  |
+| --------------------------------------- | --------------------------------------------------------------------- |
+| 文件未以清单开头                        | <UiLabel name={m.workbench_problem_invalid_document()} />             |
+| 清单不是有效的 YAML，或某个键未通过验证 | <UiLabel name={m.workbench_problem_invalid_manifest()} />             |
+| 清单片段被命名为 `annotation`           | <UiLabel name={m.workbench_problem_reserved_annotation_partial()} />  |
+| 笔记源码包含多个托管块                  | <UiLabel name={m.workbench_problem_duplicate_managed_block()} />      |
+| 托管块未正确开启或闭合                  | <UiLabel name={m.workbench_problem_invalid_managed_block()} />        |
+| 出现了除标注行之外的其他分节标题        | <UiLabel name={m.workbench_problem_unknown_section_header()} />       |
+| 缺少标注分节                            | <UiLabel name={m.workbench_problem_missing_annotation_section()} />   |
+| 标注分节出现多次                        | <UiLabel name={m.workbench_problem_duplicate_annotation_section()} /> |
+
+“问题”区域还提供 <UiLabel name={m.workbench_problems_copy()} />，以便将完整报告粘贴到错误报告中。有关报告其余部分的信息，请参见[收集调试日志](/docs/how-to/collect-debug-logs)。
+
+## 另请参阅 [#see-also]
+
+<Cards>
+  <Card
+    title="配置方案文档"
+    description="清单、笔记源码、托管块与标注分节。"
+    href="/docs/reference/templates/profile-document"
+  />
+  <Card
+    title="属性"
+    description="配置方案写入笔记的属性及其合并方式。"
+    href="/docs/reference/templates/frontmatter"
+  />
+  <Card
+    title="模板工作台视图"
+    description="编辑配置方案的标签页、预览及各种模式。"
+    href="/docs/reference/template-workbench-view"
+  />
+  <Card
+    title="配置方案"
+    description="什么是配置方案，以及笔记如何保留生成它的配置方案。"
+    href="/docs/reference/templates/how-templates-work#profiles"
+  />
+</Cards>

@@ -11,6 +11,9 @@ export default defineConfig({
     ".scratch/**",
     "tests/fixture-vault-*/**",
     "packages/scripts/lib/fixture/vault-plugins/**",
+    // Fixture Vault notes are test input that e2e cases read as written.
+    "packages/scripts/lib/fixture/vault-pages/**",
+    "packages/scripts/lib/fixture/graph-pages/**",
     "packages/pdfjs-dist/**",
     "packages/pdf-structure/src/vendor/*.js",
     "packages/zotero-types/zotero-schema/**",

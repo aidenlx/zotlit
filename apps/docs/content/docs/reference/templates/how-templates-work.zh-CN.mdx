@@ -1,0 +1,238 @@
+---
+title: "模板工作原理"
+description: "三种模板文档类型、ZotLit 如何在模板文件夹中查找它们，以及 Liquid 和 Eta 语言。"
+---
+
+import { Card, Cards } from "fumadocs-ui/components/card";
+import { Callout } from "@/components/callout";
+import { SettingsPath } from "@/components/settings-path";
+import { UiLabel } from "@/components/ui-label";
+import { m } from "@/paraglide/messages.js";
+
+模板是包含嵌入表达式的 Markdown 文件，用于控制文献笔记和引用的外观。ZotLit 将它们作为**模板文档**保存在仓库的一个文件夹中，并通过文件名来决定各个文档的作用。
+
+<Callout type="info" title="智能体辅助模板编写">
+  [模板工作台 CLI](/docs/reference/template-workbench-cli) 允许智能体针对你的
+  Zotero 文库编辑和测试模板。你只需描述想要的效果，无需亲自编写 Liquid 或 Eta。
+</Callout>
+
+## 三种模板文档 [#kinds]
+
+每份模板文档都属于以下三种类型之一。文件名前缀指明了其类型。
+
+| 类型             | 文件名                     | 包含内容                                                                                 |
+| ---------------- | -------------------------- | ---------------------------------------------------------------------------------------- |
+| 文献笔记配置方案 | `zotlit-profile.<slug>.md` | 单个配置方案：笔记名称、文件夹、属性、正文以及标注格式。例如 `zotlit-profile.books.md`。 |
+| 引文文本         | `zotlit-citation.md`       | ZotLit 渲染的每条文内引用的文本。每个仓库仅一份，使用此固定文件名。                      |
+| 片段             | `zotlit-partial.<name>.md` | 可供任何其他模板按名称渲染的模板文本片段。例如 `zotlit-partial.authors.md`。             |
+
+配置方案文档是文献笔记的唯一编写对象：笔记的名称、属性、正文以及单条标注的格式都保存在这一个文件中。关于 ZotLit 如何更新已写入的笔记，请参见[文献笔记与托管区域](/docs/reference/literature-notes)。
+
+引文文本是所有文内引用的唯一来源：包括从引文建议器或命令面板插入的引用、标注自带的引用，以及导入的 Zotero 笔记中的每条引用。它接收 [`zt.variant`](/docs/reference/templates/data#citation-variant)（字符串 `main` 或 `alt`，指明触发引用的操作方式），并由模板决定各自渲染的内容。`alt` 来自 `Shift+Enter` 或建议器查询中的尾随 `/`；标注和导入的笔记始终为 `main`。请参见[各项操作插入的内容](/docs/how-to/insert-citations#citation-text)。
+
+片段用于在多个模板之间共享文本。多个配置方案以及引文文本都可以按名称渲染同一个片段。具体操作步骤请参见[自定义模板](/docs/how-to/customize-a-template#share-a-partial)。
+
+## ZotLit 如何查找模板 [#discovery]
+
+ZotLit 会扫描模板文件夹中名称以 `zotlit-` 开头的文件。此扫描为扁平扫描：仅读取文件夹内的直接子文件，不会递归进入子文件夹。
+
+没有 `zotlit-` 前缀的文件会被忽略，因此你自己的 Obsidian 模板可以放在同一个文件夹中。
+
+若 `zotlit-` 文件既不属于这三种类型之一，也不是 [2.1 模板文件](#convert-legacy)，则不会渲染任何内容。它会在 <SettingsPath page={m.settings_page_advanced()} setting={m.settings_advanced_template_engine_heading()} /> 显示一行 <UiLabel name={m.settings_template_unrecognized_name()} />，列出文件名和三种有效名称。`zotlit-citation.liquid.md` 就是这类文件之一：引文文本的文件名中不包含语言后缀。
+
+### 模板文件夹 [#template-folder]
+
+模板文档保存在 <SettingsPath page={m.settings_page_advanced()} setting={m.settings_template_folder_name()} /> 设置的文件夹中，默认为 `templates`。加载和文件监视均使用该文件夹。ZotLit 会在文档更改时立即重新编译，因此无需重载插件即可使编辑生效。
+
+## 清单与语言 [#manifest]
+
+引文文本或片段文档由可选的 YAML 清单和模板源码组成：
+
+```text
+---
+language: eta
+---
+<template source>
+```
+
+`language` 是清单接受的唯一键，其值只能是 `liquid` 或 `eta`。任何其他键都会报错。
+
+没有属性（frontmatter）的文档默认为 Liquid。Liquid 片段或引文文本不需要清单，首次打开引文文本时 ZotLit 自动创建的文件也不包含清单。
+
+要在引文文本或片段中更改语言，请使用[模板工作台视图](/docs/reference/template-workbench-view)中的切换开关。它仅会重写清单中的键：模板源码绝不会在两种语法之间自动转换。
+
+配置方案文档始终包含清单，因为清单中还保存了配置方案的名称、文件夹和引文样式。
+
+## 两种模板语言 [#languages]
+
+ZotLit 支持两种模板语言：**Liquid** 和 **Eta**。
+
+**Liquid** 是默认语言。它始终处于启用状态，无需额外确认。Liquid 模板只能将数据组合为文本：无法读取文件、发起网络请求或运行系统命令。这使得从社区分享、同步和安装 Liquid 模板非常安全。
+
+**Eta** 是基于 JavaScript 的引擎。Eta 模板可以运行任意 JavaScript 代码，且拥有与 ZotLit 相同的访问权限。由于涉及更广泛的安全风险，Eta 默认处于禁用状态，并需要在每台设备上单独开启 <UiLabel name={m.settings_template_js_enable_name()} /> 开关。完整说明请参见 [JavaScript 模板](#javascript-templates)。
+
+在开关关闭期间，Eta 文档处于闲置状态。它不会被编译，也不会回退到内置默认值。ZotLit 会列出跳过的文件并说明原因。
+
+## 内置默认值 [#defaults]
+
+即使仓库中没有任何文件，引文文本也能正常工作：ZotLit 会渲染内置的 Liquid 默认值。在创建文档之前，对应的设置行会显示 <UiLabel name={m.settings_template_using_default()} />。打开该行会基于内置文本创建文档，而重置它会将文档移入 Obsidian 配置的回收站，从而恢复使用内置文本。
+
+文献笔记也是以同样的方式通过内置的默认配置方案工作的，你可以将其自定义为你自己的文档。
+
+## 转换 2.1 模板文件 [#convert-legacy]
+
+ZotLit 2.1 的模板文件仍可加载和渲染，因此无需转换也能继续工作。这涵盖 `zotlit-note.liquid.md`、`zotlit-content.liquid.md`、`zotlit-annotation.liquid.md`、`zotlit-filename.liquid.md`、两个引文文件，以及用作片段的任何其他 `zotlit-<name>.(liquid|eta).md`。
+
+ZotLit 会在文库视图上方的设置横幅中提供转换提示（显示为 <UiLabel name={m.welcome_template_conversion_title()} />），并在设置顶部作为提醒行显示，带有 <UiLabel name={m.settings_template_conversion_reminder_action()} /> 操作。只需一次转换，即可将笔记、内容、文件名和标注文件合并为一个配置方案文档，将两个引文文件合并为一个引文文本，并为每个剩余文件生成独立的片段文档。
+
+在写入任何内容之前，ZotLit 会渲染两种引文变体以及笔记、更新、文件名和标注输出，并将其与旧文件生成的内容逐字节对比。一旦存在不匹配，则不会转换任何内容。随后旧文件会移至 Obsidian 配置的回收站，方便你随时恢复。
+
+有关步骤以及 v1 模板所需的字段映射，请参见[迁移 v1 Eta 模板](/docs/how-to/migrate-v1-eta-templates)。
+
+### 两个 2.1 文件同名时 [#liquid-wins-shadowing]
+
+一个 2.1 名称可能同时存在 `.liquid.md` 和 `.eta.md` 文件。当两者同时存在时，无论是否启用了 JavaScript 模板，均以 Liquid 文件为准，Eta 文件会被忽略。执行转换时会将两者均移入回收站。
+
+## 配置方案 [#profiles]
+
+配置方案决定了 ZotLit 由其生成的文献笔记的一切：包括笔记名称、文件夹、属性、正文以及标注格式。
+
+### 什么是配置方案 [#document]
+
+配置方案是一个 Markdown 文件，命名为 `zotlit-profile.<slug>.md`，保存在由 <UiLabel name={m.settings_template_folder_name()} /> 指定的文件夹中。ZotLit 会读取该文件夹下名称以 `zotlit-profile.` 开头的所有直接子文件，每个文件都会成为一个配置方案。无需专门注册、安装或指向配置方案，只需将文件放入该文件夹即可添加。
+
+文件名并非配置方案的标识，重命名文件不会产生任何影响。每份文档都在其清单中携带一个 `id`，笔记记录的正是该 ID。外观、属性和标注格式全部保存在这一个文件中。具体包含的内容请参见[配置方案文档](/docs/reference/templates/profile-document)参考，其与其他两种模板文档的关系请参见[模板工作原理](#kinds)。
+
+### 默认配置方案 [#default]
+
+每个仓库都拥有一个默认配置方案，且不需要实体文档。在你对其进行自定义之前，ZotLit 会使用其内置模板并将仓库范围的默认值作为设置保存。自定义操作会在模板文件夹中写入 `zotlit-profile.default.md`，此后默认配置方案就和其他文档一样成为独立文档。
+
+默认配置方案也是兜底方案。未指定自身配置方案的笔记属于默认配置方案，新增配置方案中留空的内容也会从默认配置方案继承。因此，配置方案只需声明其独特之处：专门存放图书的文件夹、为某个期刊设置的引文样式、不同的标注呼出盒（callout），仅此而已。
+
+### ZotLit 如何选择配置方案 [#selection]
+
+每篇笔记由且仅由一个配置方案写入。ZotLit 在写入时按以下顺序解析所使用的配置方案：
+
+1. 你针对该操作选择的配置方案。
+2. 命令或 Companion 链接指定的配置方案。
+3. 匹配条件（Match conditions）接受该条目的配置方案。
+4. 默认配置方案。
+
+第 1 步和第 2 步来自你的明确选择，仅作用于单次操作。第 3 步是自动匹配：匹配条件是配置方案文档的一部分，未包含匹配条件的配置方案绝不会被自动选中。当恰好有一个配置方案匹配时，ZotLit 会直接使用而无需询问。当有多个配置方案匹配时，ZotLit 会暂停并询问你的意图。第 4 步是兜底方案，用于上述步骤均未指定的笔记。
+
+条件语法请参见[配置方案匹配](/docs/reference/templates/profile-match)，[为不同笔记使用不同模板](/docs/how-to/use-different-templates)介绍了如何添加配置方案并检查其匹配的条目。
+
+### 一篇笔记对应一个配置方案 [#stamp]
+
+文献笔记会在其 `zotlit-profile` 属性中记录创建它的配置方案。该属性值包含配置方案名称并附带其 ID，例如 `Books (V1StGXR8Z5jd)`。ID 是 ZotLit 比对的唯一依据。旁边的名称仅供你参考，会在 ZotLit 下次写入笔记时刷新，因此重命名配置方案标签或文件名不会破坏关联。
+
+由默认配置方案写入的笔记不包含此属性。缺少该属性意味着属于默认配置方案，绝不意味着“去询问其他笔记”。导入的笔记同样带有标记，取自创建它们的操作或文献笔记。
+
+由于标识基于 ID，两个声明相同 ID 的配置方案文档都会被排除在注册表之外，而不会自动修复。在其中一个文档获得唯一的 ID 之前，该配置方案将不再出现在任何候选列表中。
+
+### 笔记更改配置方案时 [#update]
+
+更新笔记不会重新运行匹配条件。ZotLit 会读取笔记中的标记，使用该标记指定的配置方案渲染笔记，而不改动任何其他笔记。因此，编辑配置方案的条件或添加配置方案只会改变未来笔记的外观，不会影响现有笔记。如果命令指定的配置方案与笔记携带的标记不符，该命令会被拒绝执行：<UiLabel name={m.notice_literature_note_profile_conflict()} />。
+
+将某篇笔记转移到其他配置方案是一项独立且明确的操作，绝不是编辑条件的副作用。它会首先要求确认，并保留托管区域之外的文本；下次更新时将根据新指定的配置方案渲染笔记。[为不同笔记使用不同模板](/docs/how-to/use-different-templates)中提供了该操作的说明。
+
+### 笔记没有独立的模板副本 [#customize]
+
+配置方案写入的所有笔记均由该配置方案的文档渲染。笔记不会保留自己的模板副本，因此编辑文档会影响由其生成的所有笔记，每篇笔记在下次更新时都会呈现此更改。属于默认配置方案的笔记遵循默认配置方案文档，该文档仅在默认配置方案被自定义后才会存在；在此之前，笔记均由内置模板渲染。
+
+因此，编辑笔记的模板就等于编辑该笔记所指定的配置方案。[自定义模板](/docs/how-to/customize-a-template)介绍了该编辑过程，以及引文文本和片段的编辑。
+
+## JavaScript 模板 [#javascript-templates]
+
+<UiLabel name={m.settings_template_js_enable_name()} />
+是一个按设备独立的开关，用于控制是否编译和执行 Eta
+模板。该设置默认处于禁用状态。
+
+### 该开关启用哪些功能 [#what-the-gate-enables]
+
+模板文档在其文本内部声明语言，而不是在文件名中声明。引文文本或片段包含带有单一键值 `language: eta` 的清单；配置方案文档则在 <UiLabel name={m.workbench_tab_name_and_folder()} /> 选项卡中设置其语言。清单和属性条目结构请参见[配置方案文档](/docs/reference/templates/profile-document)。
+
+当开启 <UiLabel name={m.settings_template_js_enable_name()} /> 时：
+
+- Eta 模板文档使用 Eta 引擎（完整 JavaScript）编译并执行。
+- 包含 `js` 成员的托管属性条目将计算其表达式。
+
+当禁用时（默认情况）：
+
+- Eta 文档处于闲置状态：既不编译，也不执行。
+- 仅 Liquid 文档以及 `expr` 或 `value` 属性条目保持激活。`expr` 条目保存 Liquid 表达式，`value` 条目保存 JSON-e 模板。
+
+确切的失败处理模式请参见[禁用时的表现](#behavior-when-disabled)。
+
+### 为什么存在该开关 [#why-it-exists]
+
+Liquid 模板用于渲染文本。Liquid 模板无法打开未显式提供给它的文件、发起网络请求或运行系统命令。它只能将接收到的数据组合为输出。
+
+Eta 模板是完整的 JavaScript。Eta 文档中的代码在运行时拥有与 ZotLit 相同的访问权限：它可以读取和修改你的仓库、连接互联网，在桌面端还可以访问你的系统。从论坛帖子、共享仓库或其他设备复制而来的模板文档一旦运行，就具备这些完整的访问权限。
+
+该开关明确了这层安全边界。Liquid 默认保持安全；而 JavaScript 的执行则必须经过你的明确授权。
+
+### 开启的风险 [#risks-of-opting-in]
+
+<Callout type="warn" title="安全影响">
+  仅当信任仓库中的所有 Eta 模板文档时才开启此项。ZotLit 不会对 Eta
+  模板进行安全审计或沙盒隔离。
+</Callout>
+
+一旦开启：
+
+- 模板文件夹中的所有 Eta 模板文档都将直接执行，不再出现进一步提示。
+- 来自不受信任来源的模板可能会读取文件、发起网络请求或修改你的仓库。
+- 此授权在每台设备上只需确认一次，覆盖当前以及未来的所有 Eta 模板。
+
+### 按设备独立授权 [#per-device-scope]
+
+该授权仅保存在本地设备上，不属于同步的插件设置。在一台设备上启用不会在另一台设备上自动启用。希望运行 Eta 模板的每台设备都需要单独授权。
+
+如果你在多台设备之间同步仓库，只有设备所有者明确开启了该设置的设备才会运行 JavaScript 模板。
+
+<Callout type="info" title="无需重新加载插件">
+  切换此开关会立即生效。ZotLit 会就地重新构建模板文件夹，无需重新加载。
+</Callout>
+
+### 禁用时的表现 [#behavior-when-disabled]
+
+当该开关关闭而 Eta 模板文档需要渲染时，ZotLit 会将其视为**闲置**：
+
+- 需要该模板的操作（创建笔记、更新笔记、插入引用）将失败并报错，指明具体原因。系统不会静默回退到内置默认值。
+- <SettingsPath /> 会显示警告：
+  <UiLabel name={m.settings_template_inert_eta({ path: "…" })} />
+- 文档仍完好保留在仓库中，但绝不会被编译。
+
+同样规则适用于声明了 `js` 成员的托管属性条目。使用此类条目的笔记写入操作将失败，并且错误信息中会指出未激活的字段。ZotLit 绝不会写入不完整的字段集，因此现有笔记将保持不变。
+
+### 与 Liquid 共存 [#coexistence-with-liquid]
+
+每份模板文档只声明一种语言，因此 Liquid 文档和 Eta 文档绝不会产生同名冲突。
+
+ZotLit 2.1 的同名文件可能同时存在 `.liquid.md` 和 `.eta.md`。当两者同时存在时，无论开关是否开启，均以 Liquid 文件为准，Eta 文件会被忽略。请参见[两个 2.1 文件同名时](#liquid-wins-shadowing)。
+
+## 另请参阅 [#see-also]
+
+<Cards>
+  <Card
+    title="模板工作台视图"
+    description="在 Obsidian 中编辑和预览任何模板文档。"
+    href="/docs/reference/template-workbench-view"
+  />
+  <Card
+    title="自定义模板"
+    description="逐步编辑配置方案、引文文本或片段。"
+    href="/docs/how-to/customize-a-template"
+  />
+  <Card
+    title="探索模板数据"
+    description="使用模板数据浏览器查找可用字段。"
+    href="/docs/how-to/explore-template-data"
+  />
+  <Card
+    title="定制标注"
+    description="教程课程 2：修改标注在笔记中的渲染样式。"
+    href="/docs/how-to/customize-template"
+  />
+</Cards>

@@ -57,25 +57,32 @@ Owned layout slots:
   (`min-height`), so the strip wraps instead of overflowing on narrow
   viewports, and a resize-synced `--fd-banner-height` keeps sticky offsets
   tracking the wrapped height. Consumed by
-  `src/components/locale-fallback-notice.tsx`: on a `/zh-CN` page with no
-  Chinese file, the strip says English is shown and links to the English page.
-  It has no close button, since it belongs to that page.
+  `src/components/language-banner.tsx`, one strip with two states:
+  - On a `/zh-CN` page with no Chinese file, the strip says English is shown
+    and links to the English page. It has no close button, since it belongs
+    to that page.
+  - On an English page with a Chinese edition, the strip offers that edition,
+    in Chinese, to a reader whose browser puts Chinese first. The strip is in
+    the prerendered HTML, and a `<head>` script (`src/lib/language-choice.ts`)
+    shows it before the first paint, so it never moves the page. Closing it,
+    or choosing English in the language menu, stops it. The Workbench app
+    shell has no strip.
 
 ## Tokens
 
-| Role | Light | Dark | Maps to |
-| --- | --- | --- | --- |
-| Ground (page) | `#f7f5f0` | `#121418` | `--color-fd-background` |
-| Surface (cards, windows, popovers) | `#ffffff` | `#1b1e24` | `--color-fd-card`, `--color-fd-popover` |
-| Ink (text) | `#1b2029` | `#e9e6df` | `--color-fd-foreground`, `--color-fd-card-foreground`, `--color-fd-popover-foreground`, `--color-fd-secondary-foreground`, `--color-fd-accent-foreground` |
-| Muted (secondary text) | `#5f6672` | `#9b978f` | `--color-fd-muted-foreground` |
-| Line (hairlines) | `#e3dfd6` | `#2d3037` | `--color-fd-border` |
-| Accent text tone (accent text, accent fills that carry text) | `#b9461a` | `#f0793f` | `--color-fd-primary` |
-| Text on the accent fill | `#ffffff` | `#121418` | `--color-fd-primary-foreground` |
-| Accent (rings, dots, rules, large numerals) | `#e8622c` | `#f0793f` | `--color-fd-ring` |
-| Quiet fill (hover rows, code, chips)¹ | `#f0ede6` | `#23262d` | `--color-fd-muted`, `--color-fd-secondary` |
-| Warm tint (accent hover, notices)¹ | `#fbf1e6` | `#2a221d` | `--color-fd-accent` |
-| Highlighter | Zotero yellow `#ffd400` at 48% | at 30% | one marked phrase per page |
+| Role                                                         | Light                          | Dark      | Maps to                                                                                                                                                   |
+| ------------------------------------------------------------ | ------------------------------ | --------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Ground (page)                                                | `#f7f5f0`                      | `#121418` | `--color-fd-background`                                                                                                                                   |
+| Surface (cards, windows, popovers)                           | `#ffffff`                      | `#1b1e24` | `--color-fd-card`, `--color-fd-popover`                                                                                                                   |
+| Ink (text)                                                   | `#1b2029`                      | `#e9e6df` | `--color-fd-foreground`, `--color-fd-card-foreground`, `--color-fd-popover-foreground`, `--color-fd-secondary-foreground`, `--color-fd-accent-foreground` |
+| Muted (secondary text)                                       | `#5f6672`                      | `#9b978f` | `--color-fd-muted-foreground`                                                                                                                             |
+| Line (hairlines)                                             | `#e3dfd6`                      | `#2d3037` | `--color-fd-border`                                                                                                                                       |
+| Accent text tone (accent text, accent fills that carry text) | `#b9461a`                      | `#f0793f` | `--color-fd-primary`                                                                                                                                      |
+| Text on the accent fill                                      | `#ffffff`                      | `#121418` | `--color-fd-primary-foreground`                                                                                                                           |
+| Accent (rings, dots, rules, large numerals)                  | `#e8622c`                      | `#f0793f` | `--color-fd-ring`                                                                                                                                         |
+| Quiet fill (hover rows, code, chips)¹                        | `#f0ede6`                      | `#23262d` | `--color-fd-muted`, `--color-fd-secondary`                                                                                                                |
+| Warm tint (accent hover, notices)¹                           | `#fbf1e6`                      | `#2a221d` | `--color-fd-accent`                                                                                                                                       |
+| Highlighter                                                  | Zotero yellow `#ffd400` at 48% | at 30%    | one marked phrase per page                                                                                                                                |
 
 ¹ Derived for the Fumadocs token set: the light values come from the lesson
 prototype's chip and fix-panel fills; the dark values are set to sit between
@@ -89,20 +96,20 @@ large numerals, through `--color-fd-ring`. In dark the two are one colour.
 
 Measured contrast (WCAG 2.x):
 
-| Pair | Light | Dark |
-| --- | --- | --- |
-| Ink on ground | 15.0:1 | 14.8:1 |
-| Ink on surface | 16.3:1 | 13.4:1 |
-| Ink on quiet fill | 14.0:1 | 12.2:1 |
-| Muted on ground | 5.3:1 | 6.3:1 |
-| Muted on surface | 5.8:1 | 5.7:1 |
-| Muted on quiet fill | 4.9:1 | 5.2:1 |
-| Accent text on ground | 4.9:1 | 6.6:1 |
-| Accent text on surface | 5.3:1 | 6.0:1 |
-| Accent text on quiet fill | 4.5:1 (4.54) | 5.4:1 |
-| Accent text on warm tint | 4.8:1 | 5.6:1 |
-| Text on the accent fill | 5.3:1 (white) | 6.6:1 (ground) |
-| Accent (ring) on ground | 3.1:1 | 6.6:1 |
+| Pair                      | Light         | Dark           |
+| ------------------------- | ------------- | -------------- |
+| Ink on ground             | 15.0:1        | 14.8:1         |
+| Ink on surface            | 16.3:1        | 13.4:1         |
+| Ink on quiet fill         | 14.0:1        | 12.2:1         |
+| Muted on ground           | 5.3:1         | 6.3:1          |
+| Muted on surface          | 5.8:1         | 5.7:1          |
+| Muted on quiet fill       | 4.9:1         | 5.2:1          |
+| Accent text on ground     | 4.9:1         | 6.6:1          |
+| Accent text on surface    | 5.3:1         | 6.0:1          |
+| Accent text on quiet fill | 4.5:1 (4.54)  | 5.4:1          |
+| Accent text on warm tint  | 4.8:1         | 5.6:1          |
+| Text on the accent fill   | 5.3:1 (white) | 6.6:1 (ground) |
+| Accent (ring) on ground   | 3.1:1         | 6.6:1          |
 
 The Zotero annotation colours (`--z-yellow`, `--z-red`, …) appear only where
 they mean Zotero highlights: in recordings and inside the app windows on the
@@ -116,12 +123,12 @@ alone.
 
 Four faces, four roles:
 
-| Face | Role |
-| --- | --- |
-| **Gelasio** (serif) | Content & display: headings, titles, descriptions/ledes/standfirsts, feature descriptions, editorial annotations |
-| **Inter** (sans, unpreloaded) | Prose body & chrome: markdown running text, sidebar, TOC, buttons, search |
+| Face                                                 | Role                                                                                                                                                                                                  |
+| ---------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Gelasio** (serif)                                  | Content & display: headings, titles, descriptions/ledes/standfirsts, feature descriptions, editorial annotations                                                                                      |
+| **Inter** (sans, unpreloaded)                        | Prose body & chrome: markdown running text, sidebar, TOC, buttons, search                                                                                                                             |
 | **IBM Plex Mono** (weights 400/500/600, unpreloaded) | The **"Machine" voice**: code, version chips, numerals that count or order, meta lines, and every UPPERCASE apparatus label (home nav, landing labels, blog & changelog dates). Drives `--font-mono`. |
-| **Archivo** (subset woff2) | Wordmark only — subset to exactly the "ZotLit" glyphs |
+| **Archivo** (subset woff2)                           | Wordmark only — subset to exactly the "ZotLit" glyphs                                                                                                                                                 |
 
 The Journal prototypes set Newsreader and Source Sans 3 in the serif and sans
 roles; whether the site moves to those faces is an open owner decision.
@@ -147,6 +154,59 @@ codepoints stay out: Apple platforms serve them from Apple Color Emoji through
 font fallback, so a mark set in accent orange paints as a color emoji in Safari.
 Lucide strokes track the text beside them: 1.5px beside regular text, 2.25px
 beside semibold button text.
+
+### Simplified Chinese
+
+A page whose content is Chinese (`<html lang="zh-CN">`) gives each role a
+Chinese face in the same voice. The Latin face stays first in every stack, so
+Latin words, numerals and code inside Chinese text keep Gelasio, Inter and Plex
+Mono; the Chinese face sets the Chinese characters.
+
+| Role                           | Chinese face                                                                                                                |
+| ------------------------------ | --------------------------------------------------------------------------------------------------------------------------- |
+| Serif (display, ledes, quotes) | **LXGW WenKai GB Screen** (霞鹜文楷 GB Screen: Kai style, mainland GB glyph forms, the screen cut, one weight 400, webfont) |
+| Sans (prose body, chrome)      | **Noto Sans SC** (思源黑体, variable 100–900, webfont); an installed Source Han Sans SC or Noto Sans CJK SC takes its place |
+| Mono (Machine voice)           | IBM Plex Mono for Latin, then Noto Sans SC                                                                                  |
+| Wordmark                       | Archivo, unchanged                                                                                                          |
+
+Chinese text follows these rules:
+
+- **Weights.** Display headings stay at 500 and ledes at 400; the variable
+  serif carries every weight the serif surfaces set.
+- **No slant.** Chinese has no italic. An italic run (a lede, a caption, a
+  quote) sets upright as a whole, its Latin words included, so no slanted
+  Latin word sits inside upright Chinese (`:lang(zh) :is(.italic, figcaption,
+  blockquote)` in `src/styles.css`). The run keeps its voice through face,
+  size and color. `<i>` in bibliographic data, such as a journal title in a
+  reference list, keeps its italic.
+- **Emphasis.** `<em>` takes emphasis dots under the text, the Chinese
+  convention; `<strong>` takes the bold weight.
+- **Leading.** Body paragraphs and list items sit at 1.75, blockquotes at
+  1.8, the docs title at 1.3 and the prose h1 at 1.35 (`zh:` modifiers in
+  `src/lib/prose.ts` and `src/components/docs-page.tsx`).
+- **Tracking.** Chinese text in content sets at zero tracking; the prose h4
+  label, the changelog category h2 and the TOC title drop their tracking
+  under `zh:`.
+- **Labels.** Han has no case, so the label voice's uppercase and wide
+  tracking carry no meaning in Chinese: a Chinese label (nav link, washi tape,
+  sheet label) sets at zero tracking under `zh:tracking-normal`, a sheet label
+  in the Chinese sans, and a tape at 12px (`zh:text-xs`) so its strokes stay
+  legible on the scaled desk.
+- **Display headings.** Landing headings, the blog post title and the
+  course and lesson titles set at 1.3 leading and zero tracking,
+  and break only between words (`zh:leading-[1.3] zh:tracking-normal
+  zh:break-keep zh:wrap-anywhere`), so `text-balance` never splits a word or a
+  highlighted term. Chinese headings and short leads end without a full stop.
+- **Landing body.** The landing root sets the text-base and text-lg leading to
+  1.75 and text-xl to 1.7 under `zh:`.
+- **Punctuation.** Double quotation marks, the dash and the ellipsis take the
+  Chinese face's glyphs: a punctuation-only face leads each Chinese stack,
+  because the Latin faces also cover these code points; it reuses the slices
+  of WenKai (serif) or Noto Sans SC (sans) that hold them. Single quotation marks stay Latin,
+  because U+2019 is also the apostrophe in a Latin word. Line breaks follow strict kinsoku
+  (`line-break: strict`); `text-autospace` spaces Chinese from Latin and
+  digits, and `text-spacing-trim` closes adjacent full-width punctuation where
+  the engine supports them.
 
 ## The label voice
 
@@ -336,6 +396,17 @@ and every `var(--font-mono)` reference onto it in one lever.
 The Archivo wordmark subset needs no preload — it sits under Vite's
 `assetsInlineLimit`, so the build inlines it into the stylesheet.
 
+The Chinese faces live in their own stylesheet, `src/fonts-zh-cn.css`, which
+`src/routes/__root.tsx` links only when the page's content locale is
+`zh-CN`; an English page downloads nothing for them. Both faces load as
+unicode-range slices with `font-display: swap` and no preload: WenKai from the
+`lxgw-wenkai-screen-web` package (259 slices), Noto Sans SC from Fontsource
+(about 100). A page fetches only the slices that hold its characters, and the
+slices of the most common characters are shared, so the next page reuses most
+of them. While a WenKai slice loads, `LXGW WenKai Fallback` sets a local Kai
+face on WenKai's vertical metrics, so the line boxes do not move at the swap.
+The OG cards read the same WenKai slices from disk.
+
 ## Per-surface
 
 ### Template Workbench (`/workbench`)
@@ -375,24 +446,37 @@ closing call. Sections run 1152px wide (`max-w-6xl`) with 32px side gutters
   Reproducibility.zotquery table ("Compare your papers") lead at the
   top; the PDF page with the reader's marks ("Read and highlight"), the
   literature-note index card ("Take literature notes"), the draft with its
-  citation picker ("Cite as you write") and the Word reference page
+  citation picker and short reference list ("Cite as you write") and the Word reference page
   ("Export and submit") lie below. Two blank sheets under the leads give
-  depth. Each group (left, right, below) is drawn at 0.84 towards its own
-  outer edge, so every object keeps at least 72px clear of the text at every
+  depth. Each side group (left, right) is drawn at 0.84 towards its own
+  outer edge, so each of its objects keeps at least 72px clear of the text at every
   width while the text keeps its size; a soft clearing of the ground colour
-  sits behind the headline. The
+  sits behind the headline. The note card and the Word page lie at full size
+  above the clearing, hung from the hero's middle so they stay about 80px
+  under the requirements line at every hero height. The
   stage scales in steps with the window — 0.88 from 1280px, 0.94 from
   1360px, 1 from 1440px, 1.08 from 1800px — and the text zooms with it.
   Each object casts `--desk-shadow`. The desk is `aria-hidden`: the
   headline and the sections below carry its meaning.
-- **Below 1280px.** The text, then the library sheet, the table and the PDF
+- **From 1024px to 1280px.** The text, then a two-column spread (960px wide
+  at most), arranged for its own grid: the library sheet over the draft on
+  the left, the table over the PDF on the right. Every card is 420px wide,
+  the tops of the first row align, each column keeps 56px between its cards,
+  and the cards turn at most 1.2°, the columns in opposite directions.
+  Nothing is cut off, and the draft plays its citation loop here too.
+- **Below 1024px.** The text, then the library sheet, the table and the PDF
   in a short fanned stack (460px wide at most).
-- **Hero motion, once.** The objects drop onto the desk in order (library,
+- **Hero motion.** Once on load, the objects drop onto the desk in order (library,
   table, PDF, note card, draft, references; 100–1100 ms delays): a 38px
   fall with a 5° turn and a 7% shrink over 780 ms. Then the ratings fill in,
-  the table's cell focus lands, the citation picker opens, the draft's caret
-  blinks three times and the highlighter sweeps across "research desk" (at
-  2.3 s). From 1280px the
+  the table's cell focus lands and the highlighter sweeps across "research desk" (at
+  2.3 s). From the moment the draft lands, it cites a paper in an 11 s
+  loop, slow enough to follow from across the desk: a caret shows, `[@ten`
+  types at 250 ms per character, the citation picker opens and holds, its
+  first row is picked, and the picker closes as "(Rougier et al., 2014)."
+  takes the key's place, marked in the accent tint for 4 s, while its entry opens in the card's short reference list above Sandve (2013), marked the same way; then the
+  sentence clears and the loop starts again. Without motion the citation
+  stands in place. From 1280px the
   objects drift with a fine pointer, each by its depth, up to 8px. All of it
   is CSS under `motion-safe:`, except the drift, which writes `translate` on
   each object in one animation frame. The prerendered page and reduced
@@ -466,9 +550,11 @@ closing call. Sections run 1152px wide (`max-w-6xl`) with 32px side gutters
   site tokens; the Zotero annotation colours and Obsidian's purple
   (`--desk-purple`, with `--desk-selected` and `--desk-own` for the
   selected row and the note-property column) appear only there. Sample
-  research data — titles, authors, citation keys, the chapter text, the
+  research data — titles, authors, citation keys, the citations, the
   references — stays as data in `papers.ts` and the components, not as
-  messages.
+  messages. The draft sheet's own writing (its chapter label, heading and
+  sentences) is a message, so a Chinese reader sees a Chinese draft that
+  cites English sources; each citation is a named slot in that message.
 - **Actions.** **Start the tutorial** (to Lesson 1,
   `/learn/connect-zotero-to-obsidian`, whose first step installs ZotLit)
   comes first, fills with the accent text tone and carries the
@@ -502,20 +588,21 @@ explains, and each fact appears once (see The label voice).
   unitless line-height, from the role classes in
   `src/components/learn/lesson-mdx.tsx`:
 
-  | Role | Size | Line-height | Carries |
-  | --- | --- | --- | --- |
-  | Label | 11px (0.6875rem), mono uppercase | 1.25 | "You end with", the shell's "Learn", the player's time |
-  | Meta | 15px (0.9375rem) | 1.45 | the minutes, the needs and note, the progress count, buttons, card meta |
-  | Body | 17px (1.0625rem) | 1.55 | the lede and every step text: action, check line, fix, figure table |
-  | Title | 20px (1.25rem) | 1.25 | step titles, the panel title, the outcome, card titles, the wordmark |
-  | Section | 28px (1.75rem) | 1.2 | the course page's section heading only |
-  | Display | 38px (2.375rem), 34px below 561px | 1.12 | the H1 |
+  | Role    | Size                              | Line-height | Carries                                                                 |
+  | ------- | --------------------------------- | ----------- | ----------------------------------------------------------------------- |
+  | Label   | 11px (0.6875rem), mono uppercase  | 1.25        | "You end with", the shell's "Learn", the player's time                  |
+  | Meta    | 15px (0.9375rem)                  | 1.45        | the minutes, the needs and note, the progress count, buttons, card meta |
+  | Body    | 17px (1.0625rem)                  | 1.55        | the lede and every step text: action, check line, fix, figure table     |
+  | Title   | 20px (1.25rem)                    | 1.25        | step titles, the panel title, the outcome, card titles, the wordmark    |
+  | Section | 28px (1.75rem)                    | 1.2         | the course page's section heading only                                  |
+  | Display | 38px (2.375rem), 34px below 561px | 1.12        | the H1                                                                  |
 
   A lesson page sets five sizes (label, meta, body, title, display) and the
   course page six. Inline code in step text is mono 15px; a UI label is
   semibold at the text's own size. In a step, an `ActionLink`
   takes the meta size, an inline `Command` the text's size, and a block
   `Command` its name at the title size. Step titles carry the lesson's only H2 style.
+
 - **Shell.** The course sits outside the docs layout: a top bar (the
   wordmark, a mono "Learn" label, then "All lessons" and "Docs" as muted
   links, over a hairline) and one centred column, 720px at most, with 20px
@@ -735,7 +822,13 @@ Structural chrome overrides live in the owned layout slots. CSS in
 `src/styles.css` is reduced to what CSS alone must do:
 
 - **Tokens** — the `--color-fd-*` palette, the brand inks, the shadow ring,
-  and the `@theme inline` font wiring.
+  and the `@theme inline` font wiring. The font roles read the `--zt-font-*`
+  stacks, which `:root:lang(zh)` swaps for the Chinese stacks.
+- **Chinese text** — one `:lang(zh)` rule for the inherited Chinese settings
+  (no synthetic slant, strict line breaks, autospace, punctuation trim) and the
+  `:lang(zh) em` emphasis dots. `src/fonts-zh-cn.css` holds the Chinese
+  `@font-face` rules alone. Element-level Chinese adjustments use the `zh:`
+  variant inline, like any other modifier.
 - **`#toc-title`** — the one accepted Fumadocs-shipped anchor (ships with this
   exact id, no className hook). Re-check on bumps.
 

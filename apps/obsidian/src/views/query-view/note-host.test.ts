@@ -60,6 +60,38 @@ const EMPTY: QueryViewOutcome = {
     rows: [],
   },
 };
+/** A run that cannot read Zotero's data. */
+const FAILED: QueryViewOutcome = {
+  kind: "failed",
+  diagnostic: {
+    code: "source-unavailable",
+    message: "The Zotero database cannot be read.",
+    hint: "Check the Zotero data directory.",
+    severity: "error",
+    report: ["The Zotero database cannot be read."],
+    found: "",
+    expected: [],
+    suggestions: [],
+  },
+};
+/** A Table of Items, a Layout that draws records. */
+const TABLE = `views:
+  - type: table
+    name: Papers
+    from: items
+`;
+const ITEMS: QueryViewOutcome = {
+  kind: "result",
+  result: {
+    libraries: [{ type: "personal" }],
+    query: { filter: null, fields: [], sort: [], limit: null },
+    returnedCount: 1,
+    matchedCount: 1,
+    truncated: false,
+    warnings: [],
+    rows: [{ indexedKey: "ITEMAAAA", values: { title: "Ten simple rules" } }],
+  },
+};
 
 let cleanup = new AsyncDisposableStack();
 afterEach(async () => {
@@ -77,11 +109,11 @@ interface Held {
 
 type HostKind = "embed" | "block";
 
-async function setup(kind: HostKind) {
+async function setup(kind: HostKind, file = FILE) {
   setMockPlatform({ isMacOS: true });
   cleanup.defer(resetMockPlatform);
   const host = createObsidianHost({
-    [FILE_PATH]: FILE,
+    [FILE_PATH]: file,
     "notes/Lab.md": NOTE("RUGIER24"),
     "notes/Plain.md": "No properties\n",
   });
@@ -107,6 +139,17 @@ async function setup(kind: HostKind) {
     Promise.resolve(EMPTY),
   );
   const runtime = testRuntime();
+  /**
+   * Where each view stands: on screen as it loads, or `far` from it until
+   * `come` brings it near.
+   */
+  const screen = {
+    far: false,
+    waiting: new Map<HTMLElement, () => void>(),
+    come(el: HTMLElement) {
+      screen.waiting.get(el)?.();
+    },
+  };
   const deps = stubService<QueryViewDeps & QueryHostDeps>("QueryViewDeps", {
     runtime,
     registry: testAnnotHost().registry,
@@ -126,6 +169,14 @@ async function setup(kind: HostKind) {
     }),
     query: fakeQuery(run),
     cardFocus,
+    nearScreen: (el, near) => {
+      if (!screen.far) {
+        near();
+        return () => {};
+      }
+      screen.waiting.set(el, near);
+      return () => screen.waiting.delete(el);
+    },
     opener: stubService<QueryViewDeps["opener"]>("TargetOpener", {}),
     literatureNotes: noLiteratureNotes(),
   });
@@ -152,9 +203,13 @@ async function setup(kind: HostKind) {
   /**
    * Show the Query File in the note at `sourcePath`, under `parent`, as
    * Obsidian does. It settles as Export to PDF waits for the host: the
-   * embed's `loadFile`, the block's processor.
+   * embed's `loadFile`, the block's processor. Its element and its unload
+   * are there at once.
    */
-  function show(sourcePath: string, parent: HTMLElement): Promise<Held> {
+  function show(
+    sourcePath: string,
+    parent: HTMLElement,
+  ): Promise<Held> & Omit<Held, "view"> {
     const el = parent.createDiv();
     if (kind === "embed") {
       const context: EmbedContext = {
@@ -172,9 +227,10 @@ async function setup(kind: HostKind) {
       component.load();
       const unload = () => component.unload();
       cleanup.defer(() => act(unload));
-      return component
-        .loadFile()
-        .then(() => ({ el, view: viewOf(el), unload }));
+      return Object.assign(
+        component.loadFile().then(() => ({ el, view: viewOf(el), unload })),
+        { el, unload },
+      );
     }
     let child: MarkdownRenderChild | undefined;
     // The block has no section to save to, as in a print.
@@ -189,14 +245,13 @@ async function setup(kind: HostKind) {
         },
       },
     );
-    const shown = processor!(FILE, el, ctx);
+    const shown = processor!(file, el, ctx);
     const unload = () => child?.unload();
     cleanup.defer(() => act(unload));
-    return Promise.resolve(shown).then(() => ({
-      el,
-      view: viewOf(el),
-      unload,
-    }));
+    return Object.assign(
+      Promise.resolve(shown).then(() => ({ el, view: viewOf(el), unload })),
+      { el, unload },
+    );
   }
 
   /** Show it in a note on the page, and wait until its rows show. */
@@ -236,7 +291,7 @@ async function setup(kind: HostKind) {
     cleanup.defer(() => act(unload));
     return { el, view: viewOf(el), unload };
   }
-  return { host, run, show, hold, block, scopes, cardFocus };
+  return { host, run, show, hold, block, scopes, cardFocus, screen, viewOf };
 }
 
 describe.each<HostKind>(["embed", "block"])("a %s", (kind) => {
@@ -272,8 +327,64 @@ describe.each<HostKind>(["embed", "block"])("a %s", (kind) => {
     expect(run.mock.calls.at(-1)![0].context).toBeUndefined();
   });
 
-  it("settles once the first rows show, as Export to PDF waits for it", async () => {
+  it("runs nothing until it comes near the screen, and runs then with the note's last Item", async () => {
+    const { show, run, host, screen } = await setup(kind);
+    screen.far = true;
+    let held: Held | undefined;
+    await act(async () => {
+      held = await show("notes/Lab.md", document.body);
+    });
+    const { el, view } = held!;
+    let settled = false;
+    void view.settled.then(() => {
+      settled = true;
+    });
+    // The note's Item changes while the view waits, which asks for a run.
+    await act(async () => {
+      host.vault.modifyFile("notes/Lab.md", NOTE("SMITHJ25"));
+      await delay(50);
+    });
+    expect(run).not.toHaveBeenCalled();
+    expect(view.state.getState().phase).toBe("waiting");
+    expect(settled).toBe(false);
+    // It holds the room its rows take for when they come.
+    expect(el.hasAttribute("data-query-waiting")).toBe(true);
+
+    await act(async () => {
+      screen.come(el);
+      await view.settled;
+    });
+    expect(run).toHaveBeenCalledTimes(1);
+    expect(run.mock.calls[0]![0].context).toEqual({ item: "SMITHJ25" });
+    expect(view.state.getState().phase).toBe("ready");
+    // It lets the room go once the Layout draws the rows, not before.
+    await act(() => view.drawn());
+    expect(el.hasAttribute("data-query-waiting")).toBe(false);
+  });
+
+  it("settles with its first rows when it comes near the screen before it reads its text", async () => {
     const { show, run } = await setup(kind);
+    const answer = Promise.withResolvers<QueryViewOutcome>();
+    run.mockReturnValueOnce(answer.promise);
+    void delay(50).then(() => answer.resolve(EMPTY));
+    let shown: Promise<Held> | undefined;
+    let phase: string | undefined;
+    await act(async () => {
+      shown = show("notes/Lab.md", document.body);
+      // The view, as it loads: on screen, and the embed's text still to come.
+      const el = document.body.lastElementChild as HTMLElement;
+      const view = (el as HTMLElement & { zotlitQueryView: QueryView })
+        .zotlitQueryView;
+      await view.settled;
+      phase = view.state.getState().phase;
+      await shown;
+    });
+    expect(phase).toBe("ready");
+  });
+
+  it("settles once the first rows show, as Export to PDF waits for it, though it stands far from the screen", async () => {
+    const { show, run, screen } = await setup(kind);
+    screen.far = true;
     const answer = Promise.withResolvers<QueryViewOutcome>();
     run.mockReturnValueOnce(answer.promise);
     const print = document.body.createDiv({ cls: "print" });
@@ -298,6 +409,60 @@ describe.each<HostKind>(["embed", "block"])("a %s", (kind) => {
     expect(printed).toBe(true);
     const { el } = await held!;
     expect(el.querySelector("[data-query-empty]")).not.toBeNull();
+  });
+
+  describe("settles in a print where it draws no rows", () => {
+    /** Whether `shown` settles, as Export to PDF waits for it, in a short wait. */
+    async function printed(shown: () => Promise<unknown>): Promise<boolean> {
+      let done = false;
+      await act(async () => {
+        void shown().then(() => {
+          done = true;
+        });
+        await delay(50);
+      });
+      await delay(0);
+      return done;
+    }
+
+    it.each([
+      ["holds no view", "views: []\n"],
+      ["names a problem in its view", FILE.replace("    name: Mine\n", "")],
+    ])("as the file %s", async (_what, file) => {
+      const { show } = await setup(kind, file);
+      const print = document.body.createDiv({ cls: "print" });
+      expect(await printed(() => show("notes/Lab.md", print))).toBe(true);
+    });
+
+    it("as its first run fails", async () => {
+      const { show, run } = await setup(kind);
+      run.mockResolvedValueOnce(FAILED);
+      const print = document.body.createDiv({ cls: "print" });
+      expect(await printed(() => show("notes/Lab.md", print))).toBe(true);
+    });
+
+    it("as it unloads once its rows land, before its Layout draws them", async () => {
+      const { show, run, viewOf } = await setup(kind, TABLE);
+      const answer = Promise.withResolvers<QueryViewOutcome>();
+      run.mockReturnValueOnce(answer.promise);
+      const print = document.body.createDiv({ cls: "print" });
+      let el: HTMLElement | undefined;
+      const done = await printed(async () => {
+        const shown = show("notes/Lab.md", print);
+        el = shown.el;
+        // The note leaves the page in the moment the rows land, within one
+        // render, which the rows would draw in.
+        const stop = viewOf(el).state.subscribe((state) => {
+          if (state.phase === "ready") shown.unload();
+        });
+        await delay(10);
+        answer.resolve(ITEMS);
+        await shown;
+        stop();
+      });
+      expect(done).toBe(true);
+      expect(el!.querySelector("[data-query-table-row]")).toBeNull();
+    });
   });
 
   it("keeps a click inside it from selecting it in Live Preview", async () => {

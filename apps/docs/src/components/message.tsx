@@ -11,8 +11,7 @@ export function Message({
 }) {
   let parts: ReactNode[] = [text];
   for (const [name, node] of Object.entries(slots)) {
-    let occurrence = 0;
-    parts = parts.flatMap<ReactNode>((part) => {
+    parts = parts.flatMap<ReactNode>((part, partIndex) => {
       if (typeof part !== "string") return [part];
       return part
         .split(`{${name}}`)
@@ -20,7 +19,9 @@ export function Message({
           index === 0
             ? [segment]
             : [
-                <Fragment key={`${name}-${occurrence++}`}>{node}</Fragment>,
+                <Fragment key={`${name}-${partIndex}-${index}`}>
+                  {node}
+                </Fragment>,
                 segment,
               ],
         );

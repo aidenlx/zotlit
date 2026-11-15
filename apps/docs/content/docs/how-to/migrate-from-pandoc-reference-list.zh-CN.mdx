@@ -1,0 +1,97 @@
+---
+title: "从 Pandoc Reference List 迁移"
+searchTitle: "替换 Obsidian 的 Pandoc Reference List 插件"
+description: "在 Obsidian 中从 Pandoc Reference List 迁移到 ZotLit，保留 [@key] 引用、元数据和原生 Pandoc 导出。"
+---
+
+import { Accordion, Accordions } from "fumadocs-ui/components/accordion";
+import { Command } from "@/components/command";
+import { SettingsPath } from "@/components/settings-path";
+import { UiLabel } from "@/components/ui-label";
+import { m } from "@/paraglide/messages.js";
+
+1. 形如 `@doe2024`、`[@doe2024]` 和 `[@doe2024, p. 33]` 的引用原样保持有效。无需修改。
+2. 将 ZotLit 指向相同的 Zotero 文库，并选择相同的引文样式。
+3. 逐个手动修改每个 `[[@citekey]]` 链接。
+4. 关闭 Pandoc Reference List 并检查一篇笔记。
+
+## 迁移工作流 [#migrate-the-workflow]
+
+现有的引用均原样有效：除了 `[[@citekey]]` 链接和部分笔记属性外，笔记中的内容无需更改。在最后检查笔记确认无误前，请保留原始笔记或备份副本。
+
+1. 在 Zotero 中，检查所引用的每篇文献在 **Citation Key** 字段中是否都有文献引用标识。被引用的文献均需显示标识。在迁移笔记前确定标识格式，并在迁移后保持现有标识不变。
+2. 打开 <SettingsPath page={m.settings_page_zotero()} />。检查 <UiLabel name={m.settings_db_file_name()} /> 是否指向包含被引文献的 Zotero 配置文件。数据库路径即包含文库的路径。
+3. 在同一页面中，在 <UiLabel name={m.settings_zotero_libraries_heading()} /> 下，将 <UiLabel name={m.settings_library_scope_name()} /> 设置为 <UiLabel name={m.settings_library_scope_all()} />，或选择 <UiLabel name={m.settings_library_scope_selected()} /> 并添加此前使用的个人文库和群组文库。ZotLit 会同时在所有这些文库中进行搜索。
+4. 打开 <SettingsPath page={m.settings_page_citations()} />。保持 <UiLabel name={m.settings_citation_pandoc_citations_name()} /> 和 <UiLabel name={m.settings_citation_show_formatted_name()} /> 处于开启状态。在 <UiLabel name={m.settings_citation_references_heading()} /> 下，安装 <UiLabel name={m.settings_citation_engine_name()} />。安装完成后引擎即可用。
+5. 在 Zotero 中安装你之前使用的 CSL 样式。然后打开 <SettingsPath />，在 <UiLabel name={m.settings_citation_references_style_name()} /> 下选择该样式。实时预览（Live Preview）中的引用将采用该样式。
+6. 返回 <SettingsPath page={m.settings_page_citations()} />，在 <UiLabel name={m.settings_citation_references_heading()} /> 下，将 <UiLabel name={m.settings_citation_locale_name()} /> 设置为你所需的语言，或留空以保持 <UiLabel name={m.settings_citation_locale_default()} />。引文术语和日期将遵循所选语言。
+7. 如果你之前使用过文献引用标识的悬停提示，请将 <UiLabel name={m.settings_citation_hover_action_name()} /> 设置为 <UiLabel name={m.settings_citation_hover_action_popover()} />。悬停在引用上时会显示其参考文献条目。
+8. 在仓库中搜索 `[[@`。逐个手动修改，确保没有遗留非预期的 `[[@` 链接。
+9. 在**设置 > 第三方插件**（Settings > Community plugins）中，关闭 Pandoc Reference List。请先记录其设置。关闭后将仅由 ZotLit 控制引用的显示外观。
+10. 打开一篇包含引用和笔记属性的笔记。检查其实时预览中的引用是否已格式化显示。运行 <Command inline name={m.command_open_references_view_name()} />，然后在 <UiLabel name={m.references_view_name()} /> 侧边栏中选择 <UiLabel name={m.references_copy_bibliography()} />。侧边栏会列出每篇被引文献，参考文献列表已复制到剪贴板。
+
+<Accordions multiple>
+<Accordion title="功能对应关系" id="what-moves-where">
+
+| 现存内容                                                                           | 在 ZotLit 中                                                                                             |
+| ---------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
+| 引用 `@doe2024`、`[@doe2024]`、`[@doe2024, p. 33]`                                 | 保持不变即可正常工作。保持 <UiLabel name={m.settings_citation_pandoc_citations_name()} /> 处于开启状态。 |
+| 文库选择、实时渲染、建议、提示框、CSL 样式、引用语言、`[[@citekey]]` 链接          | 按照上述步骤在 ZotLit 中重新设置。                                                                       |
+| `bibliography` 文件、多个参考文献输入源、`csl` 或 `citation-style` 路径及 URL      | 保留用于原生 Pandoc；参见[使用原生 Pandoc 导出](/docs/how-to/export-with-native-pandoc)。                |
+| 以参考文献文件作为应用内数据源、提示框延迟、隐藏参考文献中的链接、点击单个条目复制 | ZotLit 无直接对应功能（参见下一折叠栏）。                                                                |
+
+ZotLit 直接读取 Zotero 来在 Obsidian 中呈现引用。参考文献文件仍然可用于原生 Pandoc，但不会填充 <UiLabel name={m.references_view_name()} /> 侧边栏。
+
+</Accordion>
+<Accordion title="无直接对应功能" id="no-direct-equivalent">
+
+| Pandoc Reference List            | ZotLit                                                                                                                                                                                                                                                                             |
+| -------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 用于应用内参考文献的参考文献文件 | 将 ZotLit 连接到对应的 Zotero 数据库。                                                                                                                                                                                                                                             |
+| Obsidian 中的 CSL 路径或 URL     | 在 Zotero 中安装该样式。如有需要，可保留路径或 URL 用于原生 Pandoc。                                                                                                                                                                                                               |
+| 提示框延迟                       | 选择 <UiLabel name={m.settings_citation_hover_action_popover()} />、<UiLabel name={m.settings_citation_hover_action_page_preview()} /> 或 <UiLabel name={m.settings_citation_hover_action_off()} />；按编辑模式设置 <UiLabel name={m.settings_citation_hover_mod_page_name()} />。 |
+| 隐藏参考文献中的链接             | 无对应设置。                                                                                                                                                                                                                                                                       |
+| 点击单个参考文献以复制           | 选中条目文本并使用日常快捷键复制。                                                                                                                                                                                                                                                 |
+
+如需了解所有引用设置及其默认值，请参见[引用设置](/docs/reference/settings#citations)。
+
+</Accordion>
+<Accordion title="文献引用标识链接（[[@citekey]]）" id="citation-key-links">
+
+Pandoc Reference List 可以将 `[[@doe2024]]` 视为引用。而 ZotLit 仅在 `[[...]]` 链接指向该文献的文献笔记时，才将其视为引用。
+
+对于每个链接，请选择：
+
+- 若仅作为引用：替换为 `[@doe2024]`。
+- 若作为引用的同时还需打开该文献的文献笔记：替换为指向该笔记且不带别名的链接，例如 `[[Doe 2020]]`（前提是 `Doe 2020.md` 为该文献的文献笔记）。若需添加页码定位符，请使用 `[[Doe 2020#cite:locator=33]]`。
+
+更新链接后，在 <SettingsPath page={m.settings_page_citations()} /> 中开启 <UiLabel name={m.settings_citation_wikilink_citations_name()} />。请逐个进行处理：每个链接的意图和笔记名称各不相同，全库查找替换容易出错。
+
+</Accordion>
+<Accordion title="笔记属性（bibliography、csl、lang）" id="note-properties">
+
+| 属性                      | 处理方式                                                                                                                                |
+| ------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| `bibliography`            | 仅保留用于原生 Pandoc。ZotLit 直接从 Zotero 获取参考文献数据。                                                                          |
+| `csl` 或 `citation-style` | 针对 Pandoc 自带或指定的样式保留其一。不要在同一笔记中添加 `zotlit-csl`。                                                               |
+| `zotlit-csl`              | 当需要 ZotLit 使用安装在 Zotero 中的样式时使用该属性。请先移除 `csl` 和 `citation-style`。                                              |
+| `lang`                    | 若值为有效的文档语言（如 `en-US`、`de` 或 `zh-CN`），请予以保留。ZotLit 也会将其用于该笔记的引用。                                      |
+| `citation-language`       | 仅当该值代表整篇文档的语言时才将其更改为 `lang`。否则请在设置中配置 <UiLabel name={m.settings_citation_locale_name()} /> 并移除该属性。 |
+
+若要同时设置 Zotero 样式和文档语言，请运行 <Command inline name={m.command_set_citation_presentation_name()} />；该命令也可在笔记的**更多选项**（More options）菜单中找到。其中的 <UiLabel name={m.citation_presentation_language_name()} /> 会作为导出文档的 Pandoc `lang` 属性。每篇笔记请只保留一种样式配置方式：当笔记中同时存在 `csl` 和 `zotlit-csl` 时，ZotLit 过滤器会报错 `csl-ambiguous`。详情请参见[单篇笔记的引文呈现方式](/docs/reference/settings#citation-style)。
+
+</Accordion>
+</Accordions>
+
+## 常见问题与排查 [#if-you-see-something-else]
+
+- **参考文献侧边栏显示引用错误** → 继续操作前请修复所有引用错误；参见[查看、复制与排查参考文献](/docs/how-to/review-copy-troubleshoot-references)。
+- **侧边栏提示“@\{citekey\} 在 Zotero 文库中对应多个条目。”** → 在同一个文库或选定范围内的两个文库中，有两篇文献共用了该标识。ZotLit 不会按文库顺序自动选取。请在 Zotero 中为其中一篇文献分配不同的标识，或缩小 <UiLabel name={m.settings_library_scope_name()} /> 的范围；参见[冲突的文献引用标识](/docs/reference/citation-links#ambiguous-key)。
+- **两个插件同时影响引用的外观** → Pandoc Reference List 仍处于启用状态。请在**设置 > 第三方插件**中将其关闭，并仅用 ZotLit 进行测试。
+- **ZotLit 过滤器报错 `csl-ambiguous`** → 笔记中同时存在 `csl` 和 `zotlit-csl`。请仅保留其中一个。
+
+## 下一步 [#next]
+
+- [导出带引文的笔记](/docs/how-to/export-note-with-citations) — 使用 ZotLit 的 <Command inline name={m.command_pandoc_export_name()} /> 将笔记导出为 Word。
+- [使用原生 Pandoc 导出](/docs/how-to/export-with-native-pandoc) — 保留参考文献文件、多个输入源、CSL 路径或 URL 以及其他 Pandoc 选项。
+- [Pandoc 引文工作流教程](/docs/how-to/pandoc-citation-workflow) — 通过单篇笔记对比内置导出与原生导出。

@@ -22,13 +22,13 @@ The cost is one additional worker and one read-only connection, plus a prepared 
 
 The 100,000-Item experiment temporarily removed the page upper bound and kept the small group Libraries that produce long scans. Six direct page reads exceeded 32 ms in each final run. CPU profiles then proved that query-reader work in `zotlit-zotero-reads` ran during `getCitekeyPage` work in `zotlit-citation-reads`.
 
-| Measure | Shared worker | Dedicated worker | Limit |
-| --- | ---: | ---: | ---: |
-| Query slice p99 | 11.5 ms | 10.1 ms | 16 ms |
-| Query slice maximum | 84.1 ms | 15.1 ms | 32 ms |
-| Cancel maximum | 9.8 ms | 4.7 ms | 50 ms |
-| Serving connections | 1 | 2 | recorded |
-| Dedicated citation-worker heap, before / sampled peak / after | — | 17.8 / 19.2 / 17.7 MiB | recorded |
+| Measure                                                       | Shared worker |       Dedicated worker |    Limit |
+| ------------------------------------------------------------- | ------------: | ---------------------: | -------: |
+| Query slice p99                                               |       11.5 ms |                10.1 ms |    16 ms |
+| Query slice maximum                                           |       84.1 ms |                15.1 ms |    32 ms |
+| Cancel maximum                                                |        9.8 ms |                 4.7 ms |    50 ms |
+| Serving connections                                           |             1 |                      2 | recorded |
+| Dedicated citation-worker heap, before / sampled peak / after |             — | 17.8 / 19.2 / 17.7 MiB | recorded |
 
 The split adds one active read-only connection. The dedicated worker's JavaScript heap cost was about 18 MiB in this run. Renderer working-set samples include both workers, SQLite/native memory, and shared renderer state, so they do not isolate the native connection cost.
 

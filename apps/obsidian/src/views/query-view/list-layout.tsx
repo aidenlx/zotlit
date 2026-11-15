@@ -2,7 +2,7 @@
 // properties in the view's order, as the List layout of Bases draws a note.
 // Its options are those of Bases 1.14.4: `markers`, `indentProperties` and
 // `separator`.
-import { Fragment } from "react";
+import { useMemo, useState } from "react";
 
 import { useUniqueId } from "@zotlit/ui";
 
@@ -12,11 +12,20 @@ import { Toggle } from "@/components/obsidian/toggle";
 import * as m from "@/lib/i18n/generated/messages";
 import { cn } from "@/lib/utils";
 
+import { ItemsWindow } from "./items-window";
+import type { DrawnEntry, WindowEntry } from "./items-window";
 import type { QueryLayout } from "./layouts";
+import { drawListRow, useListRowHeights } from "./list-row";
 import { useQueryViewState } from "./model";
 import type { QueryFileView } from "./query-file";
-import { RecordCell, RecordGroupHeading, useRecordGroups } from "./record-rows";
+import {
+  HEADING_ESTIMATE,
+  RecordGroupHeading,
+  groupEntries,
+  useRecordGroups,
+} from "./record-rows";
 import type { QueryView } from "./view";
+import { LIST_GHOST } from "./virtual-spacers";
 
 export const LIST_LAYOUT: QueryLayout = {
   type: "list",
@@ -130,87 +139,97 @@ export function ListLayoutFields({
   );
 }
 
-/** The rows of the shown view, one line each, under their group headings. */
+/** The height of a List entry of each kind, before it is measured. */
+const ESTIMATES = { heading: HEADING_ESTIMATE, row: 28 };
+
+/**
+ * The rows of the shown view under their group headings, each wrapping to
+ * the lines its text takes. The groups share one list: numbers count each
+ * group's rows from one.
+ */
 export function ListLayout({ view }: { view: QueryView }) {
   const { properties, groups } = useRecordGroups(view);
   const options = listLayoutOptions(useQueryViewState(view, (s) => s.view));
-  // Numbers count the rows of a list; bullets and none mark no order.
-  const List = options.markers === "number" ? "ol" : "ul";
+  const { markers, indentProperties, separator } = options;
+  const entries = useMemo(() => groupEntries(groups), [groups]);
+
+  // A row's height before it is drawn, from its text, at the font and width
+  // its drawn rows show.
+  const [box, setBox] = useState<HTMLElement | null>(null);
+  const { heights, metrics, read } = useListRowHeights(box, entries, {
+    properties,
+    options,
+  });
+
+  const windowEntries = useMemo(
+    () =>
+      entries.map((entry, index): WindowEntry => {
+        if (entry.kind === "heading")
+          return { key: entry.key, kind: "heading", item: null };
+        const height = heights?.[index] ?? null;
+        return {
+          key: entry.key,
+          kind: "row",
+          item: entry.record.row.indexedKey,
+          ...(height !== null && { height }),
+        };
+      }),
+    [entries, heights],
+  );
+  const draw = (index: number): DrawnEntry => {
+    const entry = entries[index]!;
+    if (entry.kind === "heading")
+      return {
+        // The heading stands at the list's start edge, out of the indent
+        // the markers take.
+        props: {
+          className: cn(
+            "zt:list-none",
+            markers !== "none" && "zt:-ml-(--list-indent)",
+            index > 0 && "zt:pt-2",
+          ),
+        },
+        children: <RecordGroupHeading group={entry.group} />,
+      };
+    return drawListRow(entry.record, entry.at, { properties, options });
+  };
   return (
-    <div
-      className="zt:min-h-0 zt:flex-1 zt:overflow-auto zt:px-3 zt:pt-2 zt:pb-11 zt:in-[.zt-query-note]:pb-2"
-      data-query-layout="list"
-    >
-      {groups.map((group, groupIndex) => (
-        <section key={`${groupIndex}\n${group.key ?? ""}`}>
-          <RecordGroupHeading group={group} />
-          {!group.collapsed && (
-            <List
-              className={cn(
-                "zt:my-0 zt:py-1 zt:text-(length:--font-smaller) zt:marker:text-(--list-marker-color)",
-                options.markers === "bullet" &&
-                  "zt:list-disc zt:pl-(--list-indent)",
-                options.markers === "number" &&
-                  "zt:list-decimal zt:pl-(--list-indent)",
-                options.markers === "none" && "zt:list-none zt:pl-0",
-              )}
-              data-query-markers={options.markers}
-            >
-              {group.rows.map((record, index) => {
-                const { row, cells, vault } = record;
-                // An empty property takes no place on the line; an Item with
-                // no note to read a vault property from shows that it has none.
-                const filled = cells.flatMap((text, at) =>
-                  text === "" && vault[at]?.note !== false
-                    ? []
-                    : [
-                        <RecordCell
-                          key={properties[at]!.path}
-                          record={record}
-                          properties={properties}
-                          at={at}
-                        />,
-                      ],
-                );
-                const [first = "", ...rest] = filled;
-                return (
-                  <li
-                    key={`${row.indexedKey}\n${index}`}
-                    className="zt:py-(--list-spacing)"
-                    data-query-row={row.indexedKey}
-                  >
-                    {options.indentProperties ? (
-                      <>
-                        <span>{first}</span>
-                        {rest.length > 0 && (
-                          <span className="zt:block zt:pl-(--list-indent) zt:text-muted-foreground">
-                            {rest.map((content, at) => (
-                              <span key={at} className="zt:block">
-                                {content}
-                              </span>
-                            ))}
-                          </span>
-                        )}
-                      </>
-                    ) : (
-                      filled.map((content, at) => (
-                        <Fragment key={at}>
-                          {at > 0 && (
-                            <span className="zt:text-muted-foreground">
-                              {options.separator}
-                            </span>
-                          )}
-                          {content}
-                        </Fragment>
-                      ))
-                    )}
-                  </li>
-                );
-              })}
-            </List>
-          )}
-        </section>
-      ))}
-    </div>
+    <ItemsWindow
+      view={view}
+      entries={windowEntries}
+      estimates={ESTIMATES}
+      // A row's lines follow the options, the properties it shows, and the
+      // width and font it wraps at.
+      shape={JSON.stringify([
+        [markers, indentProperties, separator],
+        properties.map(({ path }) => path),
+        metrics && [Math.round(metrics.width), metrics.font],
+      ])}
+      box={{
+        className: "zt:px-3 zt:pt-2 zt:pb-11 zt:in-[.zt-query-note]:pb-2",
+        "data-query-layout": "list",
+      }}
+      boxRef={setBox}
+      flow={{
+        kind: "list",
+        // Numbers count the rows of a list; bullets and none mark no order.
+        as: markers === "number" ? "ol" : "ul",
+        // A word too long for the line breaks, as `list-heights.ts` lays it
+        // out.
+        props: {
+          className: cn(
+            "zt:my-0 zt:py-1 zt:text-(length:--font-smaller) zt:wrap-break-word zt:marker:text-(--list-marker-color)",
+            markers === "bullet" && "zt:list-disc zt:pl-(--list-indent)",
+            markers === "number" && "zt:list-decimal zt:pl-(--list-indent)",
+            markers === "none" && "zt:list-none zt:pl-0",
+          ),
+          "data-query-markers": markers,
+        },
+        ghost: LIST_GHOST,
+      }}
+      draw={draw}
+      // Read the drawn rows after each draw of the window.
+      drew={read}
+    />
   );
 }

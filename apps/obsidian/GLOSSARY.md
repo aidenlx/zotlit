@@ -76,7 +76,7 @@ The single authoring object controlling what Literature Notes look like: one doc
 _Avoid_: note template (names only the retired `note` half), unified template (vague), literature note (that is the vault file, not its template)
 
 **Literature Note Profile**:
-A named configuration under which ZotLit-written notes are created and updated. A Profile *is* its Literature Note Template document: the document's manifest carries the Profile ID, the label, and the Profile's bindings — the Literature Note target folder and citation style, and the Imported Note bindings: import folder, colored highlights, and annotations-as-template. A Profile that leaves a binding unset inherits it from the default Profile, whose bindings record is total; no vault-global copies of these values exist. Every Profile document in the template folder is a Profile — nothing else registers, points at, or installs one. Each Literature Note and each Imported Note belongs to exactly one Profile, recorded by an explicit `zotlit-profile` system frontmatter stamp; a note without a stamp belongs to the default Profile, and writes follow the stamp — membership is never inferred from another note. Profiles never multiply notes: one Zotero Item maps to at most one Literature Note vault-wide.
+A named configuration under which ZotLit-written notes are created and updated. A Profile _is_ its Literature Note Template document: the document's manifest carries the Profile ID, the label, and the Profile's bindings — the Literature Note target folder and citation style, and the Imported Note bindings: import folder, colored highlights, and annotations-as-template. A Profile that leaves a binding unset inherits it from the default Profile, whose bindings record is total; no vault-global copies of these values exist. Every Profile document in the template folder is a Profile — nothing else registers, points at, or installs one. Each Literature Note and each Imported Note belongs to exactly one Profile, recorded by an explicit `zotlit-profile` system frontmatter stamp; a note without a stamp belongs to the default Profile, and writes follow the stamp — membership is never inferred from another note. Profiles never multiply notes: one Zotero Item maps to at most one Literature Note vault-wide.
 _Avoid_: profile (bare — collides with the Zotero application profile), preset (OZI's model, deliberately reshaped), import format
 
 **Profile document**:
@@ -487,6 +487,10 @@ _Avoid_: tab, page, saved search
 **Layout**:
 How a Query View draws its rows: Annotations (Annotation Cards), Table (Item rows that expand into Attachments, Annotations and notes, as in Zotero's item list), Papers (two-line Item rows, expanding as the Table does), List, or Cards. A host may offer only some of them; the Library View offers Papers alone, so it shows no Layout switch.
 _Avoid_: view type, mode
+
+**Items Window**:
+The entries of a Papers, Table or List Layout that are mounted: the group headings and Item rows near the screen, with spacers for the rest, once a list holds more than 100 entries. The selected row, the first row and the row with the focus stay mounted, so the host's keys and the Tab stop find them. Export to PDF mounts every entry.
+_Avoid_: viewport, virtual list, page
 
 **Grouping**:
 How a Query View gathers its rows under group headings: by one group path its Query Dataset offers, such as the Item, the colour or a tag, in an ascending, descending or manual order. A row with two values of a list path, such as two tags, stands under both headings; a row with no value stands under "No value".

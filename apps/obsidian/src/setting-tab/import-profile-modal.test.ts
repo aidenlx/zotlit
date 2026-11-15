@@ -279,11 +279,7 @@ it("keeps a partial the reader leaves alone and replaces the one they approve", 
 it("previews a conflicting partial with the reader's keep-or-replace choice", async () => {
   const f = fixture();
   Object.assign(f.plan, {
-    previewSource: ({
-      replacePartials = [],
-    }: {
-      replacePartials?: string[];
-    }) =>
+    previewSource: ({ replacePartials = [] }: { replacePartials?: string[] }) =>
       replacePartials.includes("authors")
         ? "Bundled authors preview"
         : "Local authors preview",

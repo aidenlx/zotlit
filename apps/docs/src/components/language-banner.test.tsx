@@ -16,7 +16,7 @@ import { zotlitLegacyUrl } from "@/lib/shared";
 import * as m from "@/paraglide/messages.js";
 import { deLocalizeUrl, localizeUrl } from "@/paraglide/runtime.js";
 
-import { LocaleFallbackNotice } from "./locale-fallback-notice";
+import { LanguageBanner } from "./language-banner";
 import { RedirectNotice } from "./redirect-notice";
 
 const nativeChinesePages = new Set(["/docs/native"]);
@@ -69,7 +69,7 @@ function mount(
   document.body.appendChild(container);
   const tree = (
     <RouterContextProvider router={router}>
-      <LocaleFallbackNotice
+      <LanguageBanner
         state={getPageLocaleState(router.state.location.pathname, locale, {
           nativeChinesePages,
         })}
@@ -100,7 +100,7 @@ function mount(
 // Failure modes: missing pages have no action; the outgoing locale rewrite
 // returns a reader to Chinese; query/hash context is lost; a stale V1 locale
 // hint adds a second or contradictory translation notice.
-describe("LocaleFallbackNotice", () => {
+describe("LanguageBanner: missing Chinese content", () => {
   it.each(["pending", "missing"])(
     "offers the English page for %s Chinese content",
     (slug) => {

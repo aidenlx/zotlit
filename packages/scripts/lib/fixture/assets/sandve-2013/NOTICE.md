@@ -5,9 +5,9 @@ of the [Creative Commons Attribution License](https://creativecommons.org/licens
 (CC BY), as its copyright line states. It is outside ZotLit's
 AGPL-3.0-or-later license grant.
 
-- Title: *Ten Simple Rules for Reproducible Computational Research*
+- Title: _Ten Simple Rules for Reproducible Computational Research_
 - Authors: Geir Kjetil Sandve, Anton Nekrutenko, James Taylor, Eivind Hovig
-- Journal: *PLOS Computational Biology* 9(10): e1003285
+- Journal: _PLOS Computational Biology_ 9(10): e1003285
 - Published: 2013-10-24
 - DOI: [10.1371/journal.pcbi.1003285](https://doi.org/10.1371/journal.pcbi.1003285)
 - Article source: [PLOS Computational Biology](https://journals.plos.org/ploscompbiol/article?id=10.1371/journal.pcbi.1003285)

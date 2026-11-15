@@ -1,0 +1,356 @@
+---
+title: 查询 Zotero 文库
+searchTitle: 从 Obsidian 搜索 Zotero 文库
+description: 使用 ZotLit Query 从 Obsidian CLI 查找文献、检查文件、按标签或年份统计，并导出阅读标记。
+---
+
+import { Steps, Step } from "fumadocs-ui/components/steps";
+import { Card, Cards } from "fumadocs-ui/components/card";
+
+ZotLit Query 用于解答关于 Zotero 文库中文献、文件和阅读标记的问题。可以用它来生成列表、进行统计或执行导出，而这些操作在 Zotero 本身的搜索中往往需要多个步骤。
+
+## 开始之前 [#before-you-start]
+
+你需要已加载 ZotLit 的 Obsidian 桌面版，并启用 [Obsidian CLI](https://obsidian.md/help/cli)。所有命令均在终端中运行。
+
+当打开了多个仓库时，请在 `obsidian` 后添加 `vault=<vault-name>`，例如 `obsidian vault=Research zotlit:query`。
+
+[ZotLit Query 工作原理](/docs/reference/how-queries-work#zotlit-query)解释了这些步骤背后的记录、筛选器和分组。
+
+## 运行查询 [#run-a-query]
+
+<Steps>
+  <Step>
+    ### 选择要统计的记录类型 [#choose-the-record-that-you-count]
+
+    将 `from` 设置为每个结果行所代表的记录类型：
+
+    - 使用 `from=items` 查询文献、图书和其他著作。这是默认值。
+    - 使用 `from=attachments` 查询文件和链接，例如 PDF 和保存的网页。
+    - 使用 `from=annotations` 查询阅读标记：高亮、笔记、图片和手绘。
+
+    要查找没有 PDF 的文献，统计文献即可：使用 `from=items` 并查看其文件。要查找损坏的文件，统计文件即可：使用 `from=attachments`。
+
+  </Step>
+  <Step>
+    ### 运行查询问题 [#run-the-question]
+
+    此命令列出带有 `to-read` 标签的文献及其年份和第一作者：
+
+    ```bash
+    obsidian zotlit:query filter='tags.contains("to-read")' fields='title,date.year,creators[0].fullName' limit=20
+    ```
+
+    将 `filter` 的值放在单引号中，其内部的文本放在双引号中。当 `fields` 和 `group` 包含 `[` 和 `]` 时，将其放在单引号中。
+
+  </Step>
+  <Step>
+    ### 查看返回结果 [#read-the-answer]
+
+    成功的返回结果包含 `ok: true` 以及 `rows`（对于分组查询则是 `groups`）。在接受空结果之前，请先阅读 `warnings`。
+
+    `truncated: true` 表示匹配的记录多于当前显示的条数。默认限制为 100 行。添加 `limit=all` 可返回所有匹配项。
+
+    失败的结果包含 `ok: false`。请阅读 `diagnostic.report`，按照最后一行提示进行操作，然后运行修正后的命令。
+
+  </Step>
+</Steps>
+
+## 按分类或标签筛选 [#exact-names]
+
+筛选器对分类路径和标签名称进行完全匹配，包括大小写。先使用 `zotlit:query-values` 列出确切名称，然后在筛选器中使用它们。
+
+例如，你想要查找学位论文分类中尚未添加任何高亮的文献。
+
+<Steps>
+  <Step>
+    ### 列出匹配的分类 [#list-the-matching-collections]
+
+    ```bash
+    obsidian zotlit:query-values kind=collections match=thesis
+    ```
+
+    `match` 会保留包含该文本的名称（不区分大小写）。返回结果会列出各个文库的路径（此处已缩略）：
+
+    ```json
+    {
+      "ok": true,
+      "values": [
+        {
+          "library": "personal",
+          "name": "My Library",
+          "totalCount": 2,
+          "values": ["Query thesis", "Query thesis/Chapter 1"]
+        }
+      ]
+    }
+    ```
+
+    路径用 `/` 连接各级分类，因此 `Query thesis/Chapter 1` 是 `Query thesis` 的子分类。
+
+  </Step>
+  <Step>
+    ### 在查询中使用确切路径 [#use-the-exact-path-in-the-query]
+
+    ```bash
+    obsidian zotlit:query filter='collections.within("Query thesis") && annotations.filter(value.type == "highlight").isEmpty()' fields=title,citationKey
+    ```
+
+    `collections.within` 匹配该分类及其下方的所有子分类。若只需匹配单个分类，请使用 `collections.contains`。
+
+  </Step>
+</Steps>
+
+如果没有任何文库包含该路径，则不会返回任何行，并会给出 `unknown-collection` 警告。例如，`collections.within("query thesis")` 的大小写不正确。返回结果会建议确切的路径（此处已缩略）：
+
+```json
+{
+  "ok": true,
+  "returnedCount": 0,
+  "rows": [],
+  "warnings": [
+    {
+      "code": "unknown-collection",
+      "message": "Collection path \"query thesis\" was not found in the selected Libraries. List the Collection paths with zotlit:query-values kind=collections.",
+      "suggestions": ["Query thesis"]
+    }
+  ]
+}
+```
+
+当其他文库包含该路径时，建议中还会包含一个 `library` 值，例如 `library=group:4815`。将其添加到查询中即可读取该文库。
+
+标签的使用方式相同。使用 `kind=tags` 列出标签，添加 `library=all` 可列出所有文库的标签：
+
+```bash
+obsidian zotlit:query-values kind=tags match=method
+```
+
+每个标签值包含一个 `name` 和一个 `type`：自己添加的标签对应 `manual`，Zotero 自动添加的标签对应 `auto`。在筛选器中使用 `name`，例如 `tags.contains("methods")`。
+
+## 统计文献、文件或标记 [#count]
+
+添加 `group` 可按某个值对记录进行统计。返回结果中每个值对应一个分组。每个分组都有其 `value`、`count` 以及上限为 `limit` 的前几行记录。`totalCount` 是匹配记录的总数。
+
+统计每年的文献数量，并在每个分组中保留一篇示例文献：
+
+```bash
+obsidian zotlit:query group=date.year limit=1 fields=title,date.year
+```
+
+`count` 在应用 limit 之前计算，因此始终精确， `limit=1` 可以保持输出简短。若要统计许多分组（例如文库中的每个标签），还可以添加 `fields='[]'`。这样每行仅包含记录的标识符：
+
+```bash
+obsidian zotlit:query group='tags[].name' fields='[]' limit=1
+```
+
+返回结果如下所示（此处已缩略，省略了行）：
+
+```json
+{
+  "ok": true,
+  "totalCount": 3,
+  "groups": [
+    { "value": "methods", "count": 2 },
+    { "value": "review", "count": 1 },
+    { "value": null, "count": 1 }
+  ]
+}
+```
+
+`[]` 表示按列表中的每个元素进行分组。同时带有 `methods` 和 `review` 标签的文献会在两个分组中分别计数，因此各组计数的总和可能会大于 `totalCount`。没有标签的文献归入 `null` 分组。
+
+其他列表也是同样的工作方式：
+
+| 查询问题                              | 命令                                                                                                          |
+| ------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
+| "Query thesis" 分类中各分类的文献数量 | `obsidian zotlit:query group='collections[]' filter='collections.within("Query thesis")' fields='[]' limit=1` |
+| 每种文件类型的文献数量                | `obsidian zotlit:query group='attachments[].fileType' fields='[]' limit=1`                                    |
+| 每种文件类型的文件数量                | `obsidian zotlit:query from=attachments group=fileType`                                                       |
+| 每个文库的文献数量                    | `obsidian zotlit:query group=library library=all limit=3`                                                     |
+
+拥有两个 PDF 文件的文献在 `pdf` 分组中只计一次。
+
+要统计标记，从标注（Annotations）开始。此命令返回每篇文献上最新的三条标记：
+
+```bash
+obsidian zotlit:query from=annotations group=item.indexedKey sort=-dateModified limit=3 fields=text,item.title
+```
+
+`limit` 应用于每个分组内部。该分组的 `count` 给出了该文献上的标记总数。
+
+## 检查文件及其位置 [#files]
+
+`fileType` 将文件分为四类：`pdf`、`epub`、用于网页快照和链接的 `web`，以及 `other`。
+
+从附件（Attachments）开始，查找本台计算机上缺失的链接文件：
+
+```bash
+obsidian zotlit:query from=attachments filter='linkMode == "linked_file" && !exists' fields=item.title,path
+```
+
+查找在本台计算机上没有 ZotLit 可打开的 PDF 的文献：
+
+```bash
+obsidian zotlit:query filter='attachments.filter(value.fileType == "pdf" && value.exists).isEmpty()' fields=title,citationKey
+```
+
+列出每篇文献及其各个文件的类型和位置：
+
+```bash
+obsidian zotlit:query filter='tags.contains("to-read")' fields='title,library,attachments[].fileType,attachments[].path'
+```
+
+`attachments[].path` 返回该文献每个文件的一个位置，其顺序与 `attachments[].fileType` 相同。指向网页的链接在本台计算机上没有位置，因此其 `path` 为 `null`。
+
+以下字段用于标识记录及其所属文库：
+
+| 字段         | 值                                                                                            |
+| ------------ | --------------------------------------------------------------------------------------------- |
+| `key`        | 记录的 Zotero 标识符，例如 `ABCD2345`。两个文库可能包含相同的标识符。                         |
+| `indexedKey` | 跨所有文库唯一定位一条记录的标识符：我的文库中为 `ABCD2345`，群组 4815 中为 `ABCD2345g4815`。 |
+| `library`    | 我的文库为 `personal`，群组文库为 `group:<groupID>`。                                         |
+
+使用 `indexedKey` 选择单篇文献的文件：
+
+```bash
+obsidian zotlit:query from=attachments filter='item.indexedKey == "ABCD2345"' fields=title,fileType,path
+```
+
+将 `ABCD2345` 替换为该文献的 Indexed Key。[探索模板数据](/docs/how-to/explore-template-data#indexed-key)介绍了如何复制该值。
+
+## 使用公式计算值 [#formulas]
+
+公式可以为每条记录计算一个值，使用的语言与 `filter` 相同。在 `formulas` 中以 JSON 对象形式传入公式：每个键为一个名称，每个值为一个表达式。在 `fields`、`filter` 或其他公式中以 `formula.<name>` 的形式读取公式。
+
+此命令列出 2020 年及以后的文献，以及每篇文献的年份和创作者数量：
+
+```bash
+obsidian zotlit:query formulas='{"year":"date.year","authors":"creators.length"}' filter='formula.year >= 2020' fields='title,formula.year,formula.authors' limit=3
+```
+
+每行会在对应路径下保存公式的值（此处已缩略）：
+
+```json
+{
+  "ok": true,
+  "returnedCount": 3,
+  "truncated": true,
+  "warnings": [],
+  "rows": [
+    {
+      "indexedKey": "AAAAAAAA",
+      "values": {
+        "title": "Alpha of the personal library",
+        "formula.year": 2024,
+        "formula.authors": 3
+      }
+    },
+    {
+      "indexedKey": "BBBB2222",
+      "values": {
+        "title": "Within-library duplicate, first item",
+        "formula.year": 2020,
+        "formula.authors": 1
+      }
+    },
+    {
+      "indexedKey": "CCCC3333",
+      "values": {
+        "title": "Within-library duplicate, second item",
+        "formula.year": 2020,
+        "formula.authors": 1
+      }
+    }
+  ]
+}
+```
+
+公式名称由字母、数字和 `_` 组成，且必须以字母或 `_` 开头。区分大小写。
+
+未被任何字段、筛选器或其他公式使用的公式不会运行。此时返回结果中会包含一个提及该公式的 `unused-formula` 警告。
+
+公式中的错误会导致查询失败。`diagnostic.location.path` 会指出出错的公式，`diagnostic.report` 会标出错误所在。例如，`formula.yaer + 1` 引用了请求中未定义的公式（此处已缩略）：
+
+```json
+{
+  "ok": false,
+  "diagnostic": {
+    "code": "unknown-formula",
+    "report": [
+      "In formula.next: formula.yaer reads the Formula \"yaer\", which the request does not define.",
+      "formula.yaer + 1",
+      "^^^^^^^^^^^^",
+      "Read a Formula of the request: formula.year, formula.next."
+    ]
+  }
+}
+```
+
+对大多数记录有效的公式可能会在某一记录上失败，例如对文本格式的卷号执行 `number(volume)`。该值将是一个包含 `code` 和 `message` 的错误对象。[错误值](/docs/reference/how-queries-work#error-values)对其进行了详细说明。
+
+## 导出大型结果 [#export]
+
+终端中的返回结果最多容纳 1 MB。若要完整导出，请添加 `output` 并指定现有文件夹中新文件的绝对路径：
+
+```bash
+obsidian zotlit:query limit=all fields='title,citationKey,date.year,creators[0].fullName' output="$HOME/Documents/zotlit-export.json"
+```
+
+ZotLit 会将完整结果写入该文件。终端中将显示统计数据和 `file.path`，代替具体的行内容。ZotLit 会保留已有文件完好无损，因此每次导出请选择一个新文件名。
+
+若要在 Excel 等电子表格中打开结果，请添加 `format=csv`，或添加 `format=tsv` 导出以制表符分隔的文本：
+
+```bash
+obsidian zotlit:query limit=all fields='title,citationKey,date.year,creators' format=csv output="$HOME/Documents/zotlit-export.csv"
+```
+
+生成的文件包含一行表头，随后每行对应一条结果：首先是其 Indexed Key，然后是按 `fields` 顺序排列的各个字段。分组查询会在最前面添加一个 `group` 列。每个单元格以文本形式保存值，因此创作者列表显示为 `Ada Lovelace, Alan Turing`。表头和单元格保留查询中使用的名称：列名以字段命名（例如 `date.year`），条目类型则显示为其 Zotero 内部名称（例如 `journalArticle`）。CSV 和 TSV 必须指定 `output`，因为终端的返回结果始终为 JSON。
+
+## 取消耗时较长的查询 [#cancel]
+
+在启动耗时较长的查询时，可以使用 `id` 为其指定一个名称：
+
+```bash
+obsidian zotlit:query id=export-1 limit=all fields='[]' output="$HOME/Documents/zotlit-keys.json"
+```
+
+要停止该查询，请在第二个终端中运行此命令：
+
+```bash
+obsidian zotlit:query-cancel id=export-1
+```
+
+如果查询正在运行，返回结果中会包含 `cancelRequested: true`。随后第一个终端将显示 `Error: The query 'export-1' was cancelled by zotlit:query-cancel.`，并且 ZotLit 会删除未完成的导出文件。`cancelRequested: false` 表示该查询已经完成。
+
+`id` 可包含 1 到 128 个字符，允许使用字母、数字、`.`、`_` 或 `-`。
+
+## 向 AI Agent 提问 [#agent]
+
+`zotlit-query` agent skill 允许 Claude Code 或 Codex 等 AI Agent 为你运行这些命令。按照[安装 ZotLit Skills](/docs/install-skill) 中的说明将其与其他 ZotLit skills 一同安装。然后直接用自然语言提问：
+
+> 使用 ZotLit 查询技能，按标签统计我学位论文分类中的文献。
+
+Agent 会从 ZotLit 读取最新的指南和模式结构，列出确切的分类名称，运行查询，并汇报统计结果及其范围。
+
+若要自行阅读完整指南，请运行 `obsidian zotlit:query-guide`。添加主题参数（例如 `topic=group`）可打印特定小节。
+
+## 另请参阅 [#see-also]
+
+<Cards>
+  <Card
+    title="ZotLit Query 工作原理"
+    description="三种记录类型、筛选器、分组以及完全匹配名称。"
+    href="/docs/reference/how-queries-work#zotlit-query"
+  />
+  <Card
+    title="命令"
+    description="ZotLit Query 的所有命令与参数。"
+    href="/docs/reference/commands#query-cli"
+  />
+  <Card
+    title="探索模板数据"
+    description="从 Obsidian 或 Zotero 复制条目或标注的 Indexed Key。"
+    href="/docs/how-to/explore-template-data#indexed-key"
+  />
+</Cards>

@@ -82,43 +82,48 @@ export const Route = createFileRoute("/_home/blog/$slug")({
     await blogs.get(post.path)?.preload();
     return post;
   },
-  head: ({ loaderData: post }) =>
-    post === undefined
-      ? {}
-      : pageHead({
-          // A title that names the site needs no " | ZotLit" after it.
-          ...(post.title.includes(appName)
-            ? { fullTitle: post.title }
-            : { title: post.title }),
+  head: ({ loaderData: post }) => {
+    if (post === undefined) return {};
+    const localeState = getPageLocaleState(post.url, getLocale());
+    return pageHead({
+      // A title that names the site needs no " | ZotLit" after it.
+      ...(post.title.includes(appName)
+        ? { fullTitle: post.title }
+        : { title: post.title }),
+      description: post.description,
+      path: post.url,
+      card: {
+        type: "blog",
+        slugs: post.slugs,
+        alt: m.docs_blog_post_og_alt({ title: post.title }),
+      },
+      article: {
+        publishedTime: post.date,
+        modifiedTime: post.modified,
+        authors: [post.author],
+      },
+      schemas: [
+        blogPostingSchema({
+          title: post.title,
           description: post.description,
-          path: post.url,
-          card: {
-            type: "blog",
+          author: post.author,
+          date: post.date,
+          modified: post.modified,
+          url: localeState.canonicalPath,
+          inLanguage: localeState.contentLocale,
+          image: ogImageUrl("blog", {
             slugs: post.slugs,
-            alt: m.docs_blog_post_og_alt({ title: post.title }),
-          },
-          article: {
-            publishedTime: post.date,
-            modifiedTime: post.modified,
-            authors: [post.author],
-          },
-          schemas: [
-            blogPostingSchema({
-              title: post.title,
-              description: post.description,
-              author: post.author,
-              date: post.date,
-              modified: post.modified,
-              url: getPageLocaleState(post.url, getLocale()).canonicalPath,
-              image: ogImageUrl("blog", post.slugs),
-            }),
-            breadcrumbListSchema([
-              { name: appName, url: "/" },
-              { name: m.docs_nav_blog(), url: blogRoute },
-              { name: post.title, url: post.url },
-            ]),
-          ],
+            locale: localeState.contentLocale,
+          }),
         }),
+        breadcrumbListSchema([
+          { name: appName, url: "/" },
+          { name: m.docs_nav_blog(), url: blogRoute },
+          { name: post.title, url: post.url },
+        ]),
+      ],
+    });
+  },
 });
 
 function BlogPost() {
@@ -129,7 +134,7 @@ function BlogPost() {
       <article className="pb-14">
         <BackCrumb to="/blog" label={m.docs_nav_blog()} />
         <header className="pt-4.5 pb-2">
-          <h1 className="mb-2.5 text-4xl leading-[1.16] font-medium text-balance">
+          <h1 className="mb-2.5 text-4xl leading-[1.16] font-medium text-balance zh:leading-[1.3] zh:tracking-normal zh:wrap-anywhere zh:break-keep">
             {post.title}
           </h1>
           {post.description && (
@@ -137,7 +142,7 @@ function BlogPost() {
               {post.description}
             </p>
           )}
-          <p className="mb-1.5 font-mono text-xs font-medium tracking-widest text-fd-muted-foreground uppercase">
+          <p className="mb-1.5 font-mono text-xs font-medium tracking-widest text-fd-muted-foreground uppercase zh:tracking-normal">
             {m.docs_blog_post_byline({
               date: formatReleaseDate(post.date, { locale: getLocale() }),
               author: post.author,

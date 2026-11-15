@@ -30,7 +30,7 @@ function Trust() {
       <ul className="mx-auto grid max-w-6xl gap-8 px-4 sm:grid-cols-3 sm:px-8">
         {TRUST.map(([lead, line]) => (
           <li key={lead()}>
-            <p className="font-serif text-xl font-medium text-balance">
+            <p className="font-serif text-xl font-medium text-balance zh:leading-[1.3] zh:tracking-normal zh:wrap-anywhere zh:break-keep">
               {lead()}
             </p>
             <p className="mt-2 text-base text-pretty text-fd-muted-foreground">
@@ -52,7 +52,7 @@ function Closing() {
       <div className="mx-auto flex max-w-3xl flex-col items-center px-4 sm:px-8">
         <h2
           id="landing-close-title"
-          className="font-serif text-3xl leading-[1.2] font-medium text-balance sm:text-5xl sm:leading-[1.15]"
+          className="font-serif text-3xl leading-[1.2] font-medium text-balance sm:text-5xl sm:leading-[1.15] zh:leading-[1.3] zh:tracking-normal zh:wrap-anywhere zh:break-keep"
         >
           {m.docs_home_close_title()}
         </h2>
@@ -99,7 +99,8 @@ function AnswerLink({ path, children }: { path: string; children: string }) {
 
 export function LandingPage({ footer }: { footer: ReactNode }) {
   return (
-    <div className="flex w-full flex-1 flex-col overflow-x-clip">
+    // Chinese body copy takes the open leading DESIGN.md sets for zh prose.
+    <div className="flex w-full flex-1 flex-col overflow-x-clip zh:[--text-base--line-height:1.75] zh:[--text-lg--line-height:1.75] zh:[--text-xl--line-height:1.7]">
       <Hero />
       <Workflow />
       <TableDemo />

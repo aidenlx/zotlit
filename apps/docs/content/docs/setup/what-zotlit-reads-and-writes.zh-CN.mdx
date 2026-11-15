@@ -1,0 +1,46 @@
+---
+title: "ZotLit 读取、写入与绝不触碰的内容"
+description: "ZotLit 是否会修改 Zotero 文库、是否需要打开 Zotero、是否会上传数据？详细说明其读取与写入的数据范围。"
+---
+
+import { Command } from "@/components/command";
+import { m } from "@/paraglide/messages.js";
+
+ZotLit 不会损坏你的 Zotero 文库，不会影响你在笔记中写下的内容，也绝不会将你的文献发送到外部服务器。它直接读取你的本地数据库，仅在你主动编辑标注或更新笔记时才会执行写入操作。
+
+| 内容                                                   | ZotLit 是否读取                                           | ZotLit 是否写入                                                                                                                                                     |
+| ------------------------------------------------------ | --------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 你的 Zotero 文库（数据库）                             | 读取，用于显示文献、高亮和笔记。Zotero 可以处于关闭状态。 | 从不。数据库连接仅执行只读操作。                                                                                                                                    |
+| 你的 PDF 及其他附件文件                                | 读取，用于在 Obsidian 中打开它们。                        | 从不。它直接在 Zotero 保存文件的位置打开，不会将其复制到仓库中。                                                                                                    |
+| Zotero 标注（高亮、评论）                              | 读取。                                                    | 仅当你在 Obsidian 中编辑或新建标注时。Zotero 会像在其自带阅读器中修改一样保存该更改，并同步到你的 Zotero 文库。需要 Zotero 10 且 Zotero 处于运行状态。              |
+| 你在文献笔记中撰写的内容                               | 读取，用于查找其中的引用。                                | 仅当你运行 <Command inline name={m.command_overwrite_note_name()} /> 时，且会先提示你确认。在带有 `%%zt-managed%%` 标记的笔记中，更新只会替换这两个标记之间的内容。 |
+| 文献笔记的属性（frontmatter）                          | 读取。                                                    | 当你更新笔记时：ZotLit 会刷新来自 Zotero 的属性；你自行添加的属性会保留。                                                                                           |
+| 使用默认模板创建的笔记中的 **标注**（Annotations）分节 | —                                                         | 无需写入：它是 Zotero 高亮的实时视图，会自动保持最新状态。                                                                                                          |
+
+## 常见疑问 [#questions]
+
+### Zotero 需要保持打开吗？ [#does-zotero-need-to-be-open]
+
+不需要，在浏览、搜索或阅读时无需打开。在 Zotero 关闭的情况下，文库视图、搜索以及在 Obsidian 中打开 PDF 均可正常工作。仅当你想要将标注的修改保存回文库时，Zotero 才必须保持运行。
+
+### 我的数据会被发送到其他地方吗？ [#is-my-data-sent-anywhere]
+
+不会。ZotLit 在你的电脑本地读取文库，且仅通过同一台机器上的本地连接与 Zotero 通信。它从互联网下载的唯一文件是你主动选择安装的选配组件，例如 Pandoc 导出引擎、语言包或中文分词器组件。
+
+### 我需要安装 ZotLit Companion 吗？ [#do-i-need-zotlit-companion]
+
+不需要。浏览和阅读文献笔记不需要在 Zotero 中安装任何内容。Companion 插件只是帮助 Zotero 中的最新更改更快同步到 Obsidian，并在 Zotero 内添加右键快捷方式以在 Obsidian 中打开笔记。参见[保持 Zotero 与 Obsidian 同步](/docs/how-to/keep-zotero-and-obsidian-in-sync)。
+
+### 在 Obsidian 中编辑标注会改变什么？ [#what-does-editing-an-annotation-in-obsidian-change]
+
+它会直接更新 Zotero 文库中的标注，效果与在 Zotero 自带的 PDF 阅读器中编辑完全一致。在首次编辑之前，请确保已在 Zotero 的**设置 > 高级**（Settings > Advanced）中开启**允许此计算机上的其他应用程序与 Zotero 通信**（Allow other applications on this computer to communicate with Zotero），并在出现提示时选择**总是允许**（Always Allow）。参见[如何在 Obsidian 中编辑 PDF 标注](/docs/how-to/edit-pdf-annotations)。
+
+### 更新笔记会抹掉我写的内容吗？ [#can-an-update-wipe-what-i-wrote-in-a-note]
+
+对于使用默认模板创建的笔记，不会发生这种情况。运行 <Command inline name={m.command_update_note_name()} /> 只会刷新笔记顶部的文献属性，其余笔记内容完全不受影响。唯一会替换整个文件的命令是 <Command inline name={m.command_overwrite_note_name()} />，并且它会先要求你确认。参见[保持笔记最新](/docs/how-to/keep-notes-updated)。
+
+## 下一步 [#next]
+
+- [保持 Zotero 与 Obsidian 同步](/docs/how-to/keep-zotero-and-obsidian-in-sync)：确保两款应用之间能快速反映更新。
+- [ZotLit 如何连接到 Zotero](/docs/reference/zotero-connection)：读取模式与本地协议的技术细节。
+- [解决常见问题](/docs/setup/fix-common-problems)：排查本地连接和数据库问题。

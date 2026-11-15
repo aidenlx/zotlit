@@ -14,7 +14,7 @@ when a release is being cut.
 
 Release-scoped is a deliberate scope, not a performance concession. These rules
 move with Obsidian's review process rather than with our code, so a violation
-appears when *they* change, not when *we* commit — which makes per-PR runs
+appears when _they_ change, not when _we_ commit — which makes per-PR runs
 mostly noise, and makes the moment before submission the moment that matters.
 `release.ts` gates locally before the release branch exists, and
 `plugin-review.yml` re-runs it on `release/**` PRs as the backstop that cannot

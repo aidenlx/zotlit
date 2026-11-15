@@ -1,0 +1,86 @@
+---
+title: "探索模板数据"
+searchTitle: "查找用于 Obsidian 模板的 Zotero 字段"
+description: "浏览模板接收的文献、标注、笔记名称或引文的 Zotero 字段，复制字段路径及现成的模板代码片段。"
+---
+
+import { Accordion, Accordions } from "fumadocs-ui/components/accordion";
+import { Command } from "@/components/command";
+import { UiLabel } from "@/components/ui-label";
+import { m } from "@/paraglide/messages.js";
+
+1. 打开文献笔记，从命令面板（Command palette）运行 <Command inline name={m.command_open_template_data_explorer_name()} />。
+2. 在搜索框中输入部分字段名称，例如 `title`。
+3. 右键点击该字段所在行，并选择 <UiLabel name={m.workbench_explorer_menu_copy_output()} />。
+4. 将代码片段（例如 `{{ zt.title }}`）粘贴到你的模板中。
+
+模板通过变量名 `zt` 读取文献的全部信息：`zt.title` 代表标题，`zt.authors` 代表作者。在此处复制的内容可粘贴到你的**配置方案**中——即负责生成文献笔记的文档，可在模板工作台视图中进行编辑（参见[模板工作原理](/docs/reference/templates/how-templates-work)）。
+
+## 查找并复制字段 [#find-a-field-and-copy-it]
+
+1. 打开文献笔记，打开命令面板，并运行 <Command inline name={m.command_open_template_data_explorer_name()} />。此时会打开一个面板，在各个分类标题下列出该笔记对应文献的字段，面板标题以 <UiLabel name={m.workbench_view_fields()} /> 结尾。若未打开任何文献笔记，面板则会显示可供选择的文献列表。
+2. 若系统提示，请在 <UiLabel name={m.workbench_recently_updated()} /> 下选择一篇文献，或选择 <UiLabel name={m.workbench_search_zotero()} />（也可以选择内置示例之一：期刊文章、会议论文、图书或学位论文）。列表将替换为该文献的字段，首先显示的是 <UiLabel name={m.workbench_explorer_section_common()} />。
+3. 在 <UiLabel name={m.workbench_fields_search_note()} /> 框中输入内容以匹配字段名称、键或值。匹配到的行及其所属的分组将一同展开显示。
+4. 右键点击该行，或打开其 <UiLabel name={m.workbench_explorer_row_actions()} /> 菜单，然后选择 <UiLabel name={m.workbench_explorer_menu_copy_output()} />。屏幕上会显示提示信息 <UiLabel name={m.workbench_field_copy_done()} />，代码片段（例如 `{{ zt.title }}`）便已复制到剪贴板中。
+
+在此处浏览不会修改任何模板，也不会改动 Zotero 文库中的任何内容；你复制的只是纯文本。如需在编辑模板时直接在光标处插入字段，请改用模板工作台视图内部的 <UiLabel name={m.workbench_view_fields()} />。有关所有可用字段的完整列表，请参见[数据参考](/docs/reference/templates/data)。
+
+<Accordions multiple>
+<Accordion title="选择哪种复制操作" id="copy-actions">
+
+| 菜单项                                                         | 复制内容                                               |
+| -------------------------------------------------------------- | ------------------------------------------------------ |
+| <UiLabel name={m.workbench_explorer_menu_copy_output()} />     | 字段值，例如 `{{ zt.title }}`                          |
+| <UiLabel name={m.workbench_explorer_menu_copy_if_present()} /> | 带有条件判断的代码块，仅当文献包含该字段时才输出字段值 |
+| <UiLabel name={m.workbench_explorer_menu_copy_loop()} />       | 列表中的每一项独占一行 Markdown 列表（仅限列表）       |
+| <UiLabel name={m.workbench_explorer_menu_copy_joined()} />     | 列表中的所有项合并在一行，以逗号分隔（仅限列表）       |
+| <UiLabel name={m.workbench_explorer_menu_copy_path()} />       | 仅复制路径，例如 `zt.creators[0].family`               |
+| <UiLabel name={m.workbench_explorer_menu_copy_value()} />      | 当前文献的实际值；列表和对象将以 JSON 格式复制         |
+
+若在设置中启用了 <UiLabel name={m.settings_template_js_enable_name()} />，代码片段操作将出现在“Liquid”和“Eta”两个子菜单中；请选择模板所使用的语言。若未启用该选项，Liquid 操作项将直接显示在菜单中。
+
+</Accordion>
+<Accordion title="其他打开方式" id="other-ways-to-open">
+
+| 位置                                                                                  | 选择的操作                                                                               |
+| ------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------- |
+| 文献笔记的文件菜单（在文件列表或标签页上右键点击）                                    | <UiLabel name={m.template_data_explorer_menu_explore()} />。将打开该笔记对应文献的字段。 |
+| 标注侧边栏中某条标注的“更多选项”菜单                                                  | <UiLabel name={m.template_data_explorer_menu_explore()} />。将打开该标注的字段。         |
+| Zotero 中右键点击某个条目，子菜单 <UiLabel name={m["zotero.menu_submenu.label"]()} /> | <UiLabel name={m["zotero.menu_item_explore.label"]()} />。需要安装 ZotLit Companion。    |
+| Zotero 的 PDF 阅读器中右键点击某个标注                                                | <UiLabel name={m["zotero.menu_reader_annot_explore"]()} />。需要安装 ZotLit Companion。  |
+
+</Accordion>
+<Accordion title="复制 Zotero 标识符" id="indexed-key">
+
+Zotero 标识符用于唯一标识某个条目、附件、标注或笔记。当工具询问需要处理哪个条目时，可以复制该标识符：
+
+- 在 Obsidian 中，当前打开的文献笔记：运行 <Command inline name={m.command_copy_item_key_name()} />，或从文件菜单中选择该项。文献笔记的 `zotero-key` 属性中也记录了此标识符。
+- 在标注行上：打开更多选项菜单并选择 <UiLabel name={m.indexed_key_menu_copy_annotation()} />。
+- 在模板数据浏览器的面板菜单中：选择 <UiLabel name={m.command_copy_item_key_name()} /> 或 <UiLabel name={m.indexed_key_menu_copy_annotation()} />。
+- 在 Zotero 中（需要 ZotLit Companion）：右键点击条目并选择 <UiLabel name={m["zotero.menu_submenu.label"]()} /> > <UiLabel name={m["zotero.menu_item_copy_key.label"]({ count: 1, kind: "item" })} /> 或 <UiLabel name={m["zotero.menu_item_copy_key.label"]({ count: 1, kind: "attachment" })} />（选中多行时将按每行一个标识符进行复制）。在 PDF 阅读器中，右键点击标注并选择 <UiLabel name={m["zotero.menu_reader_annot_copy_key"]()} />。
+
+</Accordion>
+<Accordion title="单个高亮的字段" id="annotation-fields">
+
+标注模板读取的字段属于单个高亮标注，而非整篇文献。选择 <UiLabel name={m.workbench_choose_annotation()} /> 可从文献的标注或六种内置示例（高亮、下划线、笔记、文本、图片、手绘）中进行选择。或者，在 `zt.annotations` 下打开某行的更多选项菜单，选择 <UiLabel name={m.workbench_explorer_menu_explore_annotation()} />。此时会显示名为 <UiLabel name={m.template_data_explorer_note_root()} /> 的面包屑导航；点击其返回按钮（<UiLabel name={m.template_data_explorer_back_to_note_root()} />）即可返回文献字段列表。
+
+</Accordion>
+</Accordions>
+
+## 如果遇到其他情况 [#if-you-see-something-else]
+
+- **显示的是文献列表而非字段** —— 运行命令时未处于文献笔记活动标签页。从列表中选择一篇文献，或打开一篇文献笔记后重新运行命令。
+- <UiLabel name={m.workbench_fields_no_matches()} /> ——
+  缩短或清空搜索框中的文本。
+- <UiLabel name={m.workbench_field_copy_failed()} /> ——
+  选中屏幕上显示的代码片段文本并手动复制。
+- **代码片段操作显示在 Liquid 和 Eta 两个子菜单中** —— 选择你的模板所使用的语言。如果是全新开始，请选择 Liquid。
+- **Zotero 每次打开 Obsidian 时都弹出确认提示** —— 请参考[关闭 Zotero 安全提示](/docs/how-to/suppress-zotero-security-prompt)。
+- **字段值看起来不是最新的** —— 数据会自动更新，但你也可以从面板菜单中选择 <UiLabel name={m.workbench_refresh_item()} /> 立即刷新。
+- **模板渲染结果有误且你想提交反馈** —— 请参考收集调试日志中的[模板数据](/docs/how-to/collect-debug-logs#template-data)。
+
+## 下一步 [#next]
+
+- [自定义模板](/docs/how-to/customize-a-template) — 将代码片段粘贴到配置方案中并预览效果。
+- [配置属性](/docs/how-to/configure-frontmatter-properties) — 将字段用作笔记属性。
+- [数据参考](/docs/reference/templates/data) — 按模板分类查看所有字段。

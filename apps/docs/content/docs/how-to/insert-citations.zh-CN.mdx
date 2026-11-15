@@ -1,0 +1,93 @@
+---
+title: "插入引用"
+searchTitle: "在 Obsidian 中插入 Zotero 引用"
+description: "在 Obsidian 中边输入边插入 Zotero 引用（如 [@smith2024]），或从命令面板插入。文献引用标识由 Zotero 的 Better BibTeX 提供。"
+---
+
+import { Accordion, Accordions } from "fumadocs-ui/components/accordion";
+import { Command } from "@/components/command";
+import { LessonLink } from "@/components/lesson-link";
+import { SettingsPath } from "@/components/settings-path";
+import { UiLabel } from "@/components/ui-label";
+import { m } from "@/paraglide/messages.js";
+
+如果你从未在 Obsidian 中引用过文献，请先阅读 <LessonLink slug="cite-in-obsidian-with-zotero" />。
+
+1. 在笔记中输入 `[@`。此时会打开一个来自 Zotero 文库的文献列表。
+2. 输入标题或作者中的几个词，选中该文献并按 `Enter`。ZotLit 会插入 `[@citationKey]` 和一个空格，以便你继续输入。
+3. 如需正文作者形式 `@citationKey`，改按 `Shift+Enter`。
+
+## 边输入边插入 [#insert-while-typing]
+
+1. 在笔记中输入 `[@`（输入 `【@` 也同样有效）。光标下方会打开一个来自 Zotero 文库的文献列表。在输入搜索词之前，此笔记中已引用的文献会优先列出，每篇均带有 <UiLabel name={m.citation_suggester_cited_in_note()} /> 标记。
+
+   ![一篇学位论文章节段落末尾输入了 `[@`，下方的引文建议器列出了该章节已引用的两篇文献，每篇均标记为“已在本笔记中引用”](/img/how-to/citation-suggester-cited-in-note.webp)
+
+2. <span id="search-and-select" />
+   继续输入标题或作者中的字词以缩小列表范围。列表按匹配程度对文献进行排序，本笔记已引用的文献会保留其
+   <UiLabel name={m.citation_suggester_cited_in_note()} /> 标记。
+3. 选中该文献并按 `Enter`。引用会插入到笔记中（例如 `[@smith2024]`），后跟一个空格，光标位于空格之后。
+4. <span id="insert-the-alternate-citation-optional" />
+   如需正文作者形式，改按 `Shift+Enter` 代替 `Enter`，或者在搜索词末尾输入 `/`
+   并按 `Enter`。笔记中将插入 `@smith2024`。列表底部的提示行显示 `↵`
+   <UiLabel name={m.instruction_insert_citation()} />
+   ，以及 `/ ↵` 和 `⇧↵`
+   <UiLabel name={m.instruction_insert_alternate_citation()} />。
+
+<Accordions multiple>
+<Accordion title="从命令面板" id="command-palette">
+
+打开命令面板（Windows 和 Linux 上按 `Ctrl+P`，macOS 上按 `Cmd+P`）并运行 <Command inline name={m.command_insert_citation_name()} />。此时会打开一个显示 Zotero 文库的选择器。搜索该文献，然后按 `Enter` 插入主引文，或按 `Shift+Enter` 插入替代引文。末尾输入 `/` 在此处不会触发替代形式；请使用 `Shift+Enter`。
+
+</Accordion>
+<Accordion title="为文献添加文献引用标识" id="citation-keys">
+
+引用通过文献引用标识（如 `smith2024`）来指定文献。ZotLit 从 Zotero 自身的 **Citation Key** 字段读取该值。
+
+安装 Zotero 插件 [Better BibTeX](https://retorque.re/zotero-better-bibtex/installation/) 以便在写作时随时引用：它会根据设定规则为每篇文献生成稳定的文献引用标识并填入该字段。该字段为空的文献无法被引用。在没有编辑权限的群组文库中，Better BibTeX 会在本地保留生成的标识；ZotLit 只能读取条目字段中已存在的标识。
+
+</Accordion>
+<Accordion title="各形式的外观效果" id="citation-text">
+
+| 按键方式                                 | 输出结果       | 带有第 62 页            |
+| ---------------------------------------- | -------------- | ----------------------- |
+| `Enter`（主引文）                        | `[@smith2024]` | `[@smith2024, {p. 62}]` |
+| `Shift+Enter` 或末尾加上 `/`（替代引文） | `@smith2024`   | `@smith2024 [{p. 62}]`  |
+
+同一个模板 <UiLabel name={m.settings_citation_text_name()} /> 负责排版这两种输出。要修改它们的外观，请运行 <Command inline name={m.command_customize_citation_text_name()} />（参见[更改引文插入的文本](/docs/how-to/customize-a-template#citation-text)）。完整的渲染对照表请参见[引文文本](/docs/reference/templates/defaults#citation-text)参考。
+
+即使关闭所有显示开关，插入引用功能也同样可用；它不需要开启 <UiLabel name={m.settings_citation_pandoc_citations_name()} /> 或 <UiLabel name={m.settings_citation_show_formatted_name()} />。当两者都启用时（默认设置），如果你配置了 <UiLabel name={m.settings_citation_engine_name()} /> 和样式，这两种形式在实时预览和阅读视图中都可以渲染为格式化文本。
+
+</Accordion>
+<Accordion title="通过文献笔记链接进行引用" id="wikilink-citations">
+
+当引用必须作为指向该文献笔记的 Obsidian 链接时，请使用此格式。
+
+1. 打开 <SettingsPath page={m.settings_page_citations()} /> 并启用 <UiLabel name={m.settings_citation_wikilink_citations_name()} />。
+2. 在文本中输入 `[[`，选择文献笔记，并保持链接不带别名：`This finding follows the earlier analysis [[Doe 2020]].`
+3. 要引用特定页码，请将其添加到链接中：`[[Doe 2020#cite:locator=33]]`。将 `Doe 2020` 替换为文献笔记的准确文件名。
+
+除非某篇文献笔记的名称恰好就是 `@doe2024`，否则 `[[@doe2024]]` 不会被当作引用处理；请写入 `[@doe2024]` 来引用文献引用标识。
+
+</Accordion>
+</Accordions>
+
+## 常见问题与提示 [#if-you-see-something-else]
+
+- <span id="suggester-settings" />
+  **单独输入 `@` 时毫无反应：** 仅当在
+  <SettingsPath page={m.settings_page_citations()} /> 中启用了
+  <UiLabel name={m.settings_citation_at_trigger_name()} />
+  时（默认关闭），单独输入 `@` 才会打开建议器。请改用 `[@`，或开启该设置。
+- **完全没有列表弹出，哪怕输入了 `[@`：** 说明 <UiLabel name={m.settings_citation_suggester_name()} /> 已关闭。打开 <SettingsPath page={m.settings_page_citations()} /> 并将其重新打开。
+- **在 `@` 后的第一个空格处搜索就中断了：** 单独使用 `@` 时，请用 `_` 代替空格（例如 `@machine_learning` 匹配“machine learning”）。在 `[@` 后正常输入空格即可按预期生效。
+- **提示：“所选条目没有文献引用标识（citation key）：\{key\}。”** 该文献在 Zotero 中的 Citation Key 字段为空。在 Zotero 中为该条目添加文献引用标识，然后重新插入。
+- **提示：“文献引用标识（citation key）@\{citekey\} 对应多个 Zotero 条目。请先在 Zotero 中修改，再插入引用。”** 在单个文库或 ZotLit 读取的两个文库中，有两个条目共用了相同的文献引用标识。请在 Zotero 中为其中一篇文献指定不同的标识，或将 <UiLabel name={m.settings_library_scope_name()} /> 缩小到目标文库。详情参见[匹配多个条目的标识](/docs/reference/citation-links#ambiguous-key)。
+- **笔记中已有的引用显示为异常，且参考文献侧边栏提示“@\{citekey\} 在 Zotero 文库中对应多个条目。”：** 说明有两个条目共用了相同的文献引用标识。在 Zotero 中更改其中一个标识，或缩小 <UiLabel name={m.settings_library_scope_name()} />；在问题解决之前，ZotLit 会保留原始标识，且不会将其列入参考文献列表。
+- **列表中的每篇文献都标有文库名称**： ZotLit 当前正在搜索多个文库。该标签标明了条目所属的文库；当文库范围中只有一个文库处于活动状态时，该标签会被略去。
+
+## 下一步 [#next]
+
+- [如何检查、复制和排查参考文献](/docs/how-to/review-copy-troubleshoot-references) —— 查看笔记中引用的所有文献并复制参考文献列表。
+- [导出带引文的笔记](/docs/how-to/export-note-with-citations) —— 将笔记转换为带有格式化引文的 Word 文档。
+- [创建和打开文献笔记](/docs/how-to/create-and-open-notes) —— 从行内引用直接跳转到该文献的文献笔记。
