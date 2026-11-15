@@ -30,7 +30,7 @@ On top of the driver swap, v2 uses Drizzle ORM as a structured data layer. In v1
 
 ZotLit Companion, the Zotero add-on, targets Zotero 9, whose API has settled enough to build against without chasing a moving target.
 
-I wrote v1 while teaching myself to program alongside medical school. Working in tech full-time since has changed how I build software, and the rewrite was a chance to apply that: fewer moving parts, less code to break. The plugin does the same things with a simpler internal structure, which means fixes and new features take less time to ship. Coding agents help too. They work better with straightforward code, which is another reason to keep the internals simple.
+I wrote v1 while teaching myself to program alongside medical school. Working in tech full-time since has changed how I build software, and the rewrite was a chance to apply that: fewer moving parts, less code to break. The plugin does the same things with a simpler internal structure, which means fixes and new features take less time to ship. Coding agents help too. They work better with straightforward code, which is another reason to keep the internals simple. For how I keep agent-written code trustworthy, see [Trusting Agent Commits](https://aidenlx.site/blog/trusting-agent-commits).
 
 That's a foundation I can maintain more reliably. I can't promise that nothing will ever break, but the two biggest sources of trouble are addressed: the native binary that broke on every Electron update, and the untyped schema that drifted silently. With this foundation, routine updates to Obsidian and Zotero should stop being something to dread.
 
