@@ -93,7 +93,14 @@ function htmlPages(
   }));
 
   return [
-    ...(landings ? [{ path: "/" }, { path: "/community" }] : []),
+    ...(landings
+      ? [
+          { path: "/" },
+          { path: "/community" },
+          { path: "/privacy" },
+          { path: "/terms" },
+        ]
+      : []),
     { path: "/workbench" },
     ...docs,
     ...blog,

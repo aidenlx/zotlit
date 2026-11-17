@@ -107,6 +107,8 @@ export async function renderSitemap(): Promise<string> {
     "/blog": [{}],
     "/changelog": [{}],
     "/community": [{}],
+    "/privacy": [{}],
+    "/terms": [{}],
     "/docs": [{}],
     "/workbench": [],
     "/blog/$slug": await blogEntries(),

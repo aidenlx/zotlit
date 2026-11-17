@@ -19,6 +19,8 @@ import { Route as SitemapDotxmlRouteImport } from './routes/sitemap[.]xml'
 import { Route as WorkbenchRouteImport } from './routes/workbench'
 import { Route as HomeIndexRouteImport } from './routes/_home/index'
 import { Route as HomeCommunityRouteImport } from './routes/_home/community'
+import { Route as HomePrivacyRouteImport } from './routes/_home/privacy'
+import { Route as HomeTermsRouteImport } from './routes/_home/terms'
 import { Route as ApiReleaseSnapshotRouteImport } from './routes/api/release-snapshot'
 import { Route as ApiRepoStatsRouteImport } from './routes/api/repo-stats'
 import { Route as ApiSearchRouteImport } from './routes/api/search'
@@ -81,6 +83,16 @@ const HomeIndexRoute = HomeIndexRouteImport.update({
 const HomeCommunityRoute = HomeCommunityRouteImport.update({
   id: '/community',
   path: '/community',
+  getParentRoute: () => HomeRouteRoute,
+} as any)
+const HomePrivacyRoute = HomePrivacyRouteImport.update({
+  id: '/privacy',
+  path: '/privacy',
+  getParentRoute: () => HomeRouteRoute,
+} as any)
+const HomeTermsRoute = HomeTermsRouteImport.update({
+  id: '/terms',
+  path: '/terms',
   getParentRoute: () => HomeRouteRoute,
 } as any)
 const ApiReleaseSnapshotRoute = ApiReleaseSnapshotRouteImport.update({
@@ -164,6 +176,8 @@ export interface FileRoutesByFullPath {
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/workbench': typeof WorkbenchRoute
   '/community': typeof HomeCommunityRoute
+  '/privacy': typeof HomePrivacyRoute
+  '/terms': typeof HomeTermsRoute
   '/api/release-snapshot': typeof ApiReleaseSnapshotRoute
   '/api/repo-stats': typeof ApiRepoStatsRoute
   '/api/search': typeof ApiSearchRoute
@@ -186,6 +200,8 @@ export interface FileRoutesByTo {
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/workbench': typeof WorkbenchRoute
   '/community': typeof HomeCommunityRoute
+  '/privacy': typeof HomePrivacyRoute
+  '/terms': typeof HomeTermsRoute
   '/api/release-snapshot': typeof ApiReleaseSnapshotRoute
   '/api/repo-stats': typeof ApiRepoStatsRoute
   '/api/search': typeof ApiSearchRoute
@@ -213,6 +229,8 @@ export interface FileRoutesById {
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/workbench': typeof WorkbenchRoute
   '/_home/community': typeof HomeCommunityRoute
+  '/_home/privacy': typeof HomePrivacyRoute
+  '/_home/terms': typeof HomeTermsRoute
   '/api/release-snapshot': typeof ApiReleaseSnapshotRoute
   '/api/repo-stats': typeof ApiRepoStatsRoute
   '/api/search': typeof ApiSearchRoute
@@ -241,6 +259,8 @@ export interface FileRouteTypes {
     | '/sitemap.xml'
     | '/workbench'
     | '/community'
+    | '/privacy'
+    | '/terms'
     | '/api/release-snapshot'
     | '/api/repo-stats'
     | '/api/search'
@@ -263,6 +283,8 @@ export interface FileRouteTypes {
     | '/sitemap.xml'
     | '/workbench'
     | '/community'
+    | '/privacy'
+    | '/terms'
     | '/api/release-snapshot'
     | '/api/repo-stats'
     | '/api/search'
@@ -289,6 +311,8 @@ export interface FileRouteTypes {
     | '/sitemap.xml'
     | '/workbench'
     | '/_home/community'
+    | '/_home/privacy'
+    | '/_home/terms'
     | '/api/release-snapshot'
     | '/api/repo-stats'
     | '/api/search'
@@ -395,6 +419,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof HomeCommunityRouteImport
       parentRoute: typeof HomeRouteRoute
     }
+    '/_home/privacy': {
+      id: '/_home/privacy'
+      path: '/privacy'
+      fullPath: '/privacy'
+      preLoaderRoute: typeof HomePrivacyRouteImport
+      parentRoute: typeof HomeRouteRoute
+    }
+    '/_home/terms': {
+      id: '/_home/terms'
+      path: '/terms'
+      fullPath: '/terms'
+      preLoaderRoute: typeof HomeTermsRouteImport
+      parentRoute: typeof HomeRouteRoute
+    }
     '/api/release-snapshot': {
       id: '/api/release-snapshot'
       path: '/api/release-snapshot'
@@ -498,6 +536,8 @@ declare module '@tanstack/react-router' {
 
 interface HomeRouteRouteChildren {
   HomeCommunityRoute: typeof HomeCommunityRoute
+  HomePrivacyRoute: typeof HomePrivacyRoute
+  HomeTermsRoute: typeof HomeTermsRoute
   HomeIndexRoute: typeof HomeIndexRoute
   HomeBlogSlugRoute: typeof HomeBlogSlugRoute
   HomeChangelogVersionRoute: typeof HomeChangelogVersionRoute
@@ -507,6 +547,8 @@ interface HomeRouteRouteChildren {
 
 const HomeRouteRouteChildren: HomeRouteRouteChildren = {
   HomeCommunityRoute: HomeCommunityRoute,
+  HomePrivacyRoute: HomePrivacyRoute,
+  HomeTermsRoute: HomeTermsRoute,
   HomeIndexRoute: HomeIndexRoute,
   HomeBlogSlugRoute: HomeBlogSlugRoute,
   HomeChangelogVersionRoute: HomeChangelogVersionRoute,

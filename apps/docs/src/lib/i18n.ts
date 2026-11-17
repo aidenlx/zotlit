@@ -18,13 +18,15 @@ export function isSiteLocale(value: string): value is SiteLocale {
 
 /**
  * Pages drawn wholly from the locale catalogs, whose Chinese strings are in
- * place: the landing and community pages, the course listing, the changelog
+ * place: the landing, community and policy pages, the course listing, the changelog
  * listing over its Chinese entries, the blog listing over its Chinese posts,
  * and the Workbench. Each has a native `/zh-CN` edition.
  */
 export const chineseCatalogPages = [
   "/",
   "/community",
+  "/privacy",
+  "/terms",
   "/learn",
   "/changelog",
   "/blog",
