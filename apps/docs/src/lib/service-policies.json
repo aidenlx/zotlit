@@ -22,7 +22,7 @@
         {
           "heading": "Website and Technical Information",
           "paragraphs": [
-            "ZotLit uses Cloudflare for website hosting, analytics, and infrastructure security, and OVHcloud for forum hosting. Technical details such as your internet protocol address, browser type, requested pages, visit timestamps, and page performance metrics may be processed to deliver and safeguard the site.",
+            "ZotLit and its service providers may process technical and usage data to operate the website and forum, measure performance, and protect the services from abuse.",
             "Cookies and browser local storage are used to maintain your login session, protect against security threats, and remember preferences.",
             "Selected documentation pages load Giscus, a commenting widget powered by GitHub Discussions. Interacting with Giscus is subject to GitHub privacy practices and terms. Discord, Obsidian, and Zotero are independent third-party services with their own policies."
           ]
@@ -119,7 +119,7 @@
         {
           "heading": "网站与技术信息",
           "paragraphs": [
-            "ZotLit 使用 Cloudflare 提供网站托管、分析与基础设施安全服务，并使用 OVHcloud 托管论坛。系统可能会处理您的 IP 地址、浏览器类型、请求页面、访问时间与页面性能指标等技术信息，以保障站点稳定与安全。",
+            "ZotLit 及其服务提供商可能会处理技术与使用数据，用于运营网站和论坛、评估服务性能及防止滥用。",
             "Cookie 与浏览器本地存储用于维持登录会话、增强安全性并记录您的使用偏好。",
             "部分文档页面嵌入了基于 GitHub Discussions 的 Giscus 讨论模块，其数据处理遵循 GitHub 的隐私规范与服务条款。Discord、Obsidian 与 Zotero 为独立的第三方服务，拥有各自的隐私政策。"
           ]
