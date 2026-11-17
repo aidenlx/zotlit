@@ -1,0 +1,214 @@
+{
+  "en": {
+    "privacy": {
+      "title": "ZotLit Privacy Policy",
+      "description": "Learn how ZotLit handles data across its local tools, website, and community forum, including your rights and third-party sign-in data.",
+      "sections": [
+        {
+          "heading": "Scope of this Policy",
+          "paragraphs": [
+            "This policy applies to all services operated by ZotLit. This includes the Obsidian plugin, the Zotero companion, local tools, the documentation website with its blog and Template Workbench, and the community forum along with its sign-in systems.",
+            "ZotLit is maintained by AidenLx. If you have questions or requests regarding your personal information, you can reach out to the maintainer using the contact link provided in the interface."
+          ]
+        },
+        {
+          "heading": "Local Tools and Your Research Data",
+          "paragraphs": [
+            "ZotLit local tools run directly on your computer. They process your selected Zotero library metadata, annotations, files, templates, and notes locally.",
+            "If you use the optional Local Bridge, it transfers information only between the web-based Template Workbench and your local desktop application on the same machine.",
+            "ZotLit does not operate any cloud synchronization service for your research library. You may choose to submit diagnostic or support information manually when seeking help. Certain linked resources or third-party tools you choose to configure may make independent network requests."
+          ]
+        },
+        {
+          "heading": "Website and Technical Information",
+          "paragraphs": [
+            "ZotLit and its service providers may process technical and usage data to operate the website and forum, measure performance, and protect the services from abuse.",
+            "Cookies and browser local storage are used to maintain your login session, protect against security threats, and remember preferences.",
+            "Selected documentation pages load Giscus, a commenting widget powered by GitHub Discussions. Interacting with Giscus is subject to GitHub privacy practices and terms. Discord, Obsidian, and Zotero are independent third-party services with their own policies."
+          ]
+        },
+        {
+          "heading": "Community Forum and Public Content",
+          "paragraphs": [
+            "When you register or participate in the Discourse community forum, the service stores your account email address, profile details, posts, uploads, support discussions, and connection and security logs to operate the forum, provide support, and manage moderation.",
+            "Visitors can read and copy posts made in public forum categories and any profile details you make public. Selected historical public discussions were migrated from GitHub and remain published with attribution.",
+            "We may send selected public content to third-party translation providers for language detection and translation. Private messages and account sign-in details are strictly excluded from this translation processing."
+          ]
+        },
+        {
+          "heading": "Third-party sign-in",
+          "paragraphs": [
+            "You can use GitHub, Microsoft, or Google to sign in to the forum.",
+            "When signing in with GitHub, ZotLit requests your public profile and the user:email permission. This allows us to receive your account identifier, username, name and avatar if available, as well as account email addresses including verified email addresses. ZotLit does not request access to your private repositories.",
+            "When signing in with Microsoft, ZotLit uses basic identity permissions and Microsoft Graph User.Read to read your signed-in profile. This may include your account identifier, name, and email address when available. ZotLit does not request access to your Microsoft mail or files.",
+            "ZotLit uses the information it receives from sign-in providers to authenticate you and create, link, or secure your forum account. The forum may store linked identifiers, available profile information, or tokens returned by the provider for that purpose, and never receives or stores your provider passwords. You may revoke consent at any time from your provider account settings or contact ZotLit to unlink the account or request deletion."
+          ]
+        },
+        {
+          "heading": "Google sign-in data",
+          "paragraphs": [
+            "For Google sign-in, the forum requests email and profile permissions.",
+            "Through these scopes, ZotLit may receive your Google account identifier, email address, email verification status, display name, and profile photo. ZotLit never receives your Google password and does not request or access your Gmail, Google Drive, Google Calendar, or contacts.",
+            "This Google user data is used solely to authenticate your identity, create or connect your forum account, display your profile details, secure the service, and assist with account support. The forum stores your linked Google account identifier, available profile information, and authorization credentials, such as tokens returned by Google, to operate the sign-in connection.",
+            "Your Google information is never sold and is never used for advertising, marketing, or promotional tracking. It is shared only with hosting and infrastructure providers as necessary to run the sign-in flow and service, or when required by law with appropriate safeguards. All Google user data handling complies with the Google API Services User Data Policy, including its Limited Use requirements."
+          ]
+        },
+        {
+          "heading": "Data Retention and Your Rights",
+          "paragraphs": [
+            "Information is retained only as long as necessary to provide the services, maintain platform security, resolve disputes, and satisfy legal obligations. Deleted information may persist in operational backups until regular backups are replaced or expire, and public posts that have been quoted or shared by others may remain visible.",
+            "Under applicable data protection laws, you may request access to, correction of, or deletion of your personal data, as well as exercise other recognized rights. You can submit requests through the contact link in the service interface."
+          ]
+        }
+      ]
+    },
+    "terms": {
+      "title": "ZotLit Terms of Service",
+      "description": "Read the terms governing the use of ZotLit services, including user content, conduct guidelines, open-source licensing, and service policies.",
+      "sections": [
+        {
+          "heading": "Scope and Acceptance",
+          "paragraphs": [
+            "These terms govern your access to and use of all services operated by ZotLit, including the Obsidian plugin, Zotero companion, documentation website, Template Workbench, and community forum. ZotLit is maintained by AidenLx, who can be reached via the contact link in the interface.",
+            "ZotLit software components are distributed under applicable open-source licenses, including the GNU Affero General Public License version 3 or later. Nothing in these hosted service terms limits or replaces your rights under those open-source licenses.",
+            "When choosing optional Google, GitHub, or Microsoft sign-in, your use is also subject to the respective provider's terms. You remain responsible for maintaining the security of your ZotLit account and should contact ZotLit if you suspect unauthorized access."
+          ]
+        },
+        {
+          "heading": "User Content and Permissions",
+          "paragraphs": [
+            "You retain all ownership rights in the text, files, and materials you submit to ZotLit services. By posting or uploading content to public areas of the services, you grant ZotLit the non-exclusive permission needed to host, display, reproduce, moderate, and translate your submissions as part of operating the services.",
+            "Public posts and their translations are accessible to the public and may be viewed and shared by other users."
+          ]
+        },
+        {
+          "heading": "Acceptable Use and Community Standards",
+          "paragraphs": [
+            "You agree to use ZotLit services respectfully and lawfully. You must respect copyright, intellectual property, and personal confidentiality, and you may only share materials you have the right to distribute.",
+            "You must not engage in harassment, spamming, impersonation, transmission of malware, or unauthorized attempts to probe, disrupt, or access our servers, accounts, or networks."
+          ]
+        },
+        {
+          "heading": "Moderation and Account Management",
+          "paragraphs": [
+            "To safeguard the community and platform stability, the maintainer may edit or remove content, limit forum features, or suspend accounts that violate these terms, compromise security, or disrupt service operations.",
+            "You remain fully responsible for the content you submit and publish. Because ZotLit local tools run on your device without cloud library backups, you are solely responsible for keeping independent backups of your notes, templates, and reference libraries."
+          ]
+        },
+        {
+          "heading": "Service Availability, Changes, and Disclaimers",
+          "paragraphs": [
+            "Hosted services are provided on an as-is and as-available basis to the maximum extent permitted by applicable law. Features may change, and services may be interrupted, modified, or discontinued without advance notice.",
+            "Mandatory statutory rights that cannot be excluded under your local law remain unaffected. If material changes are made to these terms, notice will be provided through the services as appropriate."
+          ]
+        }
+      ]
+    }
+  },
+  "zh-CN": {
+    "privacy": {
+      "title": "ZotLit 隐私政策",
+      "description": "了解 ZotLit 在本地工具、网站和社区论坛中处理数据的方式，包括第三方登录数据与用户权利说明。",
+      "sections": [
+        {
+          "heading": "适用范围",
+          "paragraphs": [
+            "本政策适用于 ZotLit 运营的所有服务，包括 Obsidian 插件、Zotero 联动组件、本地工具、包含博客与模板工作台的文档站点，以及社区论坛与其登录系统。",
+            "ZotLit 由 AidenLx 维护。如对个人信息有任何疑问或请求，您可以通过界面中提供的联系方式与维护者取得联系。"
+          ]
+        },
+        {
+          "heading": "本地工具与文献数据处理",
+          "paragraphs": [
+            "ZotLit 本地工具完全在您的个人计算机上运行。它们在本地处理您选定的 Zotero 文献库元数据、批注、文件、模板与笔记。",
+            "如果您选择启用本地桥接功能，数据仅在同一台设备上的网页版模板工作台与桌面本地应用之间传递。",
+            "ZotLit 不提供任何针对文献库的云端同步服务。您可以在寻求支持时自主选择提交诊断信息。您自行配置的关联资源或第三方工具可能会产生独立网络请求。"
+          ]
+        },
+        {
+          "heading": "网站与技术信息",
+          "paragraphs": [
+            "ZotLit 及其服务提供商可能会处理技术与使用数据，用于运营网站和论坛、评估服务性能及防止滥用。",
+            "Cookie 与浏览器本地存储用于维持登录会话、增强安全性并记录您的使用偏好。",
+            "部分文档页面嵌入了基于 GitHub Discussions 的 Giscus 讨论模块，其数据处理遵循 GitHub 的隐私规范与服务条款。Discord、Obsidian 与 Zotero 为独立的第三方服务，拥有各自的隐私政策。"
+          ]
+        },
+        {
+          "heading": "社区论坛与公开内容",
+          "paragraphs": [
+            "当您注册或使用 Discourse 社区论坛时，系统会保存您的注册邮箱、个人资料、发帖、上传附件、支持交流记录以及网络连接与安全日志，用于论坛运行、身份认证、日常维护与管理支持。",
+            "访客可以查看和复制公开板块中的帖子，以及您选择公开的个人资料。部分历史公开讨论由 GitHub 迁移而来，并已按原样保留署名公开发布。",
+            "我们可能会将部分公开内容发送给第三方翻译服务提供商，以识别语言和提供翻译。私信内容及任何登录凭据严格排除在此类翻译处理之外。"
+          ]
+        },
+        {
+          "heading": "第三方登录",
+          "paragraphs": [
+            "您可以使用 GitHub、Microsoft 或 Google 账号登录论坛。",
+            "使用 GitHub 登录时，ZotLit 会请求您的公开个人资料与 user:email 权限。这使我们能够接收您的账户标识符、用户名、姓名和头像（如有）以及包括已验证邮箱在内的账户邮箱地址。ZotLit 不会请求访问您的私有代码仓库。",
+            "使用 Microsoft 登录时，ZotLit 使用基本身份权限与 Microsoft Graph User.Read 读取您已登录的个人资料，其中可能包含账户标识符、姓名及邮箱地址（若有）。ZotLit 不会请求访问您的 Microsoft 邮件或文件。",
+            "ZotLit 使用登录提供商返回的信息验证您的身份，并创建、关联或保护您的论坛账号。论坛可能会为此存储关联标识符、提供的个人资料信息或由提供商返回的令牌，但绝不会接收或存储您的提供商密码。您可以随时在提供商设置中撤销授权，或联系 ZotLit 解除绑定或申请删除数据。"
+          ]
+        },
+        {
+          "heading": "Google 登录数据",
+          "paragraphs": [
+            "使用 Google 登录时，论坛会请求读取邮箱和个人资料的权限。",
+            "通过上述权限，ZotLit 可能获取您的 Google 账号唯一标识、邮箱地址、邮箱验证状态、显示名称及头像图片。ZotLit 绝不会接收您的 Google 密码，也绝不申请或访问您的 Gmail、Google 云端硬盘、日历或通讯录。",
+            "获取的 Google 数据仅用于验证用户身份、创建或绑定论坛账号、展示公开资料、维护系统安全以及提供账号支持服务。论坛会保存关联的 Google 账号标识、可用的资料信息，以及 Google 返回的令牌等授权凭据，以维持登录连接。",
+            "您的 Google 数据绝不会用于广告投放或商业营销，也绝不出售。数据仅在提供登录与运行服务所必需的前提下与基础设施服务商共享，或在法律法规要求且具备必要保护措施时提供。所有 Google 数据的处理均严格遵守 Google API 服务用户数据政策，包括其中的受限使用要求。"
+          ]
+        },
+        {
+          "heading": "数据保留与您的权利",
+          "paragraphs": [
+            "我们仅在提供服务、维护安全、解决争议及履行法律义务所需的期限内保留相关信息。已删除的数据可能会在定期备份轮换覆盖前暂时保留在备份系统中，已被公开引用或复制的公开内容也可能继续显示。",
+            "依据适用法律，您有权就个人数据提出查阅、更正、删除或其他法定权利请求。您可以通过界面中的联系链接向维护者提交相应请求。"
+          ]
+        }
+      ]
+    },
+    "terms": {
+      "title": "ZotLit 服务条款",
+      "description": "阅读 ZotLit 服务的使用条款，包括用户内容、行为准则、开源许可说明以及服务免责声明。",
+      "sections": [
+        {
+          "heading": "范围与协议接受",
+          "paragraphs": [
+            "本条款适用于您对 ZotLit 运营的所有服务的访问与使用，包括 Obsidian 插件、Zotero 联动组件、文档网站、模板工作台与社区论坛。ZotLit 由 AidenLx 维护，您可通过界面中的联系方式与维护者沟通。",
+            "ZotLit 软件组件在适用的开源许可证下分发，包括 GNU Affero 通用公共许可证第 3 版或更高版本。本在线服务条款中的任何内容均不限制或取代您在这些开源许可证下享有的合法权利。",
+            "选择使用可选的 Google、GitHub 或 Microsoft 登录时，您亦须遵守相应提供商自身的服务条款。您有责任维护自身 ZotLit 账户的安全，若怀疑账号遭到未经授权的访问，请联系 ZotLit。"
+          ]
+        },
+        {
+          "heading": "用户内容与授权",
+          "paragraphs": [
+            "您对自己提交到 ZotLit 服务的文本、文件与资料保留完整的知识产权与所有权。当您向公开区域发布或上传内容时，即视为授予 ZotLit 必要的非独占许可，以用于托管、展示、复制、管理以及翻译该内容，从而维持服务的正常运转。",
+            "公开发布的内容及其译文可供公众查阅，并可供其他用户按照社区规则浏览与分享。"
+          ]
+        },
+        {
+          "heading": "使用规范与社区准则",
+          "paragraphs": [
+            "您同意以合法、友善的方式使用 ZotLit 服务。您必须尊重他人的知识产权、版权与商业机密，仅分享您拥有合法权利分发的内容。",
+            "严禁从事任何形式的骚扰、垃圾信息发布、冒用他人身份、传播恶意软件，或未经授权尝试探测、干扰、破坏服务器、网络与账号安全的操作。"
+          ]
+        },
+        {
+          "heading": "内容管理与账号处理",
+          "paragraphs": [
+            "为维护社区秩序与系统安全，维护者有权对违反本条款、危及安全或干扰运营的内容进行编辑、隐藏或删除，并有权限制或终止违规账号的使用权限。",
+            "您对自身提交与发布的内容承担全部责任。鉴于 ZotLit 本地工具在本地运行且不提供云端文献库同步备份，您有责任自行对个人笔记、模板及文献资料库做好独立备份。"
+          ]
+        },
+        {
+          "heading": "服务变更、免责与责任限制",
+          "paragraphs": [
+            "在适用法律允许的最大范围内，托管服务均按现状及现有基础提供。功能可能随时调整，服务亦可能出现中断、修改或终止，且不作持续可用性保证。",
+            "适用法律赋予您的不可排除的法定消费者权利不受本条款影响。若本服务条款发生重大变更，我们将通过服务界面以适当方式向用户发出通知。"
+          ]
+        }
+      ]
+    }
+  }
+}
