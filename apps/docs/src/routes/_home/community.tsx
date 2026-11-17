@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { MessageSquare } from "lucide-react";
 
 import { DiscordMark } from "@/components/discord-mark";
-import { GithubMark } from "@/components/github-mark";
 import { RepoDatum, loadRepoStats } from "@/components/repo-datum";
 import { SiteFooter } from "@/components/site-footer";
 import { pageHead } from "@/lib/seo";
@@ -22,20 +22,20 @@ export const Route = createFileRoute("/_home/community")({
 
 const destinations = () => [
   {
+    label: m.docs_community_forum(),
+    title: m.docs_community_ideas_title(),
+    description: m.docs_community_ideas_description(),
+    cta: m.docs_community_open_forum(),
+    href: "https://zotlit-forum.aidenlx.site/",
+    Mark: MessageSquare,
+  },
+  {
     label: m.docs_community_discord(),
     title: m.docs_community_chat_title(),
     description: m.docs_community_chat_description(),
     cta: m.docs_community_join(),
     href: "https://discord.gg/CpVTHcReAe",
     Mark: DiscordMark,
-  },
-  {
-    label: m.docs_community_discussions(),
-    title: m.docs_community_ideas_title(),
-    description: m.docs_community_ideas_description(),
-    cta: m.docs_community_open_discussions(),
-    href: `${repoUrl}/discussions`,
-    Mark: GithubMark,
   },
 ];
 
@@ -91,6 +91,13 @@ function Community() {
           ),
         )}
       </section>
+
+      <a
+        href={`${repoUrl}/discussions`}
+        className="mb-10 self-start text-sm text-fd-muted-foreground underline underline-offset-4 hover:text-fd-primary"
+      >
+        {m.docs_community_archive()}
+      </a>
 
       <SiteFooter />
     </main>
