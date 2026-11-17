@@ -94,7 +94,7 @@ New here? Follow the [first-note lesson →](https://zotlit.aidenlx.site/learn/c
 
 ## Support
 
-Questions, help, and bug reports: [Community](https://zotlit.aidenlx.site/community) — Discord for chat, GitHub Discussions for ideas and bugs.
+Ask questions, report bugs, or suggest features on the [ZotLit forum](https://zotlit-forum.aidenlx.site/). For Discord and the GitHub Discussions archive, visit the [Community page](https://zotlit.aidenlx.site/community).
 
 ---
 

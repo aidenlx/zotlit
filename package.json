@@ -38,7 +38,7 @@
     "prepare": "effect-tsgo patch --no-typescript --oxlint; lefthook install || exit 0"
   },
   "dependencies": {
-    "agent-browser": "^0.33.1"
+    "agent-browser": "^0.43.0"
   },
   "devDependencies": {
     "@effect/tsgo": "catalog:",

@@ -307,8 +307,8 @@ importers:
   .:
     dependencies:
       agent-browser:
-        specifier: ^0.33.1
-        version: 0.33.1
+        specifier: ^0.43.0
+        version: 0.43.0
     devDependencies:
       '@effect/tsgo':
         specifier: 'catalog:'
@@ -1682,6 +1682,45 @@ importers:
         version: 7.0.2
 
 packages:
+
+  '@agent-browser/cli-darwin-arm64@0.43.0':
+    resolution: {integrity: sha512-HV6GP59IjNnowlrXR/5rVM8msPWwQDEONt/tWC8STzUfKZQHKZI/Iv9sf2h2ZhwK8xwoqLhxpf+KxcFgJ0sExQ==}
+    cpu: [arm64]
+    os: [darwin]
+
+  '@agent-browser/cli-darwin-x64@0.43.0':
+    resolution: {integrity: sha512-3NKnKFOWLYDYTz4bJxo4jt+GwjM4VtcW5FDrQY35eUrytig65FEDdXmXKuRbZGq9jEEWxh6rmpS4R6xS53XCaw==}
+    cpu: [x64]
+    os: [darwin]
+
+  '@agent-browser/cli-linux-arm64-gnu@0.43.0':
+    resolution: {integrity: sha512-8DC234LGlXCn8A2YXGk6woy1uTjyexvtHd/TOQHLrV2sfUMZD647HTHEJyF+2z1J1oR34LaB5jqHJ9d0REC+Cw==}
+    cpu: [arm64]
+    os: [linux]
+    libc: [glibc]
+
+  '@agent-browser/cli-linux-arm64-musl@0.43.0':
+    resolution: {integrity: sha512-/dYeGX2E1lWZ25q1IZSVs6PaPmr0GmhHU8z/LtCh0anHN4ND50i5fOPbysRBaE8iQCBY74h+1R2kePfEqD7X4Q==}
+    cpu: [arm64]
+    os: [linux]
+    libc: [musl]
+
+  '@agent-browser/cli-linux-x64-gnu@0.43.0':
+    resolution: {integrity: sha512-WY8vy2Saa3oRt6XEmz4Sae1W5qS9TjYcbX6IE+dxb8s2APfL9XyQjMHC6jBZrhwqDBIvUeTMCT/P2cq3XLPSBw==}
+    cpu: [x64]
+    os: [linux]
+    libc: [glibc]
+
+  '@agent-browser/cli-linux-x64-musl@0.43.0':
+    resolution: {integrity: sha512-WpCI0cIaVIVj4trdduDmW90h51BAP5Nhx6lALOqHjUhOOae/TkLL4bK8gJfjPb/nOp2FRjsF1l77f6rVwkpsug==}
+    cpu: [x64]
+    os: [linux]
+    libc: [musl]
+
+  '@agent-browser/cli-win32-x64-msvc@0.43.0':
+    resolution: {integrity: sha512-xhk8wnHk3aiBFSR0pd1Ye3ay2jKjgRardgBJLiB9nXJv0ZkbeP/wh3X7jMiKUfUGE1qqJrKdaM5szQ6iz8/8+w==}
+    cpu: [x64, arm64]
+    os: [win32]
 
   '@ark/util@0.56.0':
     resolution: {integrity: sha512-BghfRC8b9pNs3vBoDJhcta0/c1J1rsoS1+HgVUreMFPdhz/CRAKReAu57YEllNaSy98rWAdY1gE+gFup7OXpgA==}
@@ -5367,9 +5406,9 @@ packages:
     resolution: {integrity: sha512-XleryMhbuksdKtofnWZ9Sk+4CUTbms4Mb/EU32SZwToAyZ5RgVos/ki8n+yr0LWHOGKuakbXTuuYNHLQjhddgg==}
     engines: {node: '>=14.0'}
 
-  agent-browser@0.33.1:
-    resolution: {integrity: sha512-lS0KbU9QdkD0I2n+uzrmNXKNGRjsd6GcB7bR6Wm1eyLcaxTCSf2zuxbWzf76fHCrDA4YoY3TikoOMSA8qA+wFA==}
-    engines: {node: '>=24.0.0', pnpm: '>=11.0.0'}
+  agent-browser@0.43.0:
+    resolution: {integrity: sha512-TExwnZAW39fUBDJhUPrw8KKGmcjzBo7FxNqoP2/usHG1ODsjGI2jAWq3+Q6I5JYyBMjePFEsj8KGB68mALtglA==}
+    engines: {node: '>=22.0.0'}
     hasBin: true
 
   ajv-formats@2.1.1:
@@ -9376,6 +9415,27 @@ packages:
 
 snapshots:
 
+  '@agent-browser/cli-darwin-arm64@0.43.0':
+    optional: true
+
+  '@agent-browser/cli-darwin-x64@0.43.0':
+    optional: true
+
+  '@agent-browser/cli-linux-arm64-gnu@0.43.0':
+    optional: true
+
+  '@agent-browser/cli-linux-arm64-musl@0.43.0':
+    optional: true
+
+  '@agent-browser/cli-linux-x64-gnu@0.43.0':
+    optional: true
+
+  '@agent-browser/cli-linux-x64-musl@0.43.0':
+    optional: true
+
+  '@agent-browser/cli-win32-x64-msvc@0.43.0':
+    optional: true
+
   '@ark/util@0.56.0': {}
 
   '@babel/code-frame@7.27.1':
@@ -12483,7 +12543,15 @@ snapshots:
 
   adm-zip@0.6.0: {}
 
-  agent-browser@0.33.1: {}
+  agent-browser@0.43.0:
+    optionalDependencies:
+      '@agent-browser/cli-darwin-arm64': 0.43.0
+      '@agent-browser/cli-darwin-x64': 0.43.0
+      '@agent-browser/cli-linux-arm64-gnu': 0.43.0
+      '@agent-browser/cli-linux-arm64-musl': 0.43.0
+      '@agent-browser/cli-linux-x64-gnu': 0.43.0
+      '@agent-browser/cli-linux-x64-musl': 0.43.0
+      '@agent-browser/cli-win32-x64-msvc': 0.43.0
 
   ajv-formats@2.1.1(ajv@8.20.0):
     optionalDependencies:
