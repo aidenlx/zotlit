@@ -36,13 +36,21 @@
           ]
         },
         {
-          "heading": "Third-Party Sign-In and Google User Data",
+          "heading": "Third-party sign-in",
           "paragraphs": [
-            "You can choose to sign in using GitHub, Microsoft, or Google where available. If you choose Google sign-in, the forum requests standard scopes for openid, email, and profile.",
+            "You can use GitHub, Microsoft, or Google to sign in to the forum.",
+            "When signing in with GitHub, ZotLit requests your public profile and the user:email permission. This allows us to receive your account identifier, username, name and avatar if available, as well as account email addresses including verified email addresses. ZotLit does not request access to your private repositories.",
+            "When signing in with Microsoft, ZotLit uses basic identity permissions and Microsoft Graph User.Read to read your signed-in profile. This may include your account identifier, name, and email address when available. ZotLit does not request access to your Microsoft mail or files.",
+            "ZotLit uses the information it receives from sign-in providers to authenticate you and create, link, or secure your forum account. The forum may store linked identifiers, available profile information, or tokens returned by the provider for that purpose, and never receives or stores your provider passwords. You may revoke consent at any time from your provider account settings or contact ZotLit to unlink the account or request deletion."
+          ]
+        },
+        {
+          "heading": "Google sign-in data",
+          "paragraphs": [
+            "For Google sign-in, the forum requests email and profile permissions.",
             "Through these scopes, ZotLit may receive your Google account identifier, email address, email verification status, display name, and profile photo. ZotLit never receives your Google password and does not request or access your Gmail, Google Drive, Google Calendar, or contacts.",
             "This Google user data is used solely to authenticate your identity, create or connect your forum account, display your profile details, secure the service, and assist with account support. The forum stores your linked Google account identifier, available profile information, and authorization credentials, such as tokens returned by Google, to operate the sign-in connection.",
-            "Your Google information is never sold and is never used for advertising, marketing, or promotional tracking. It is shared only with hosting and infrastructure providers as necessary to run the sign-in flow and service, or when required by law with appropriate safeguards. All Google user data handling complies with the Google API Services User Data Policy, including its Limited Use requirements.",
-            "You can revoke ZotLit access at any time through your Google account security settings. You can also contact the maintainer to unlink your Google account or delete your forum data."
+            "Your Google information is never sold and is never used for advertising, marketing, or promotional tracking. It is shared only with hosting and infrastructure providers as necessary to run the sign-in flow and service, or when required by law with appropriate safeguards. All Google user data handling complies with the Google API Services User Data Policy, including its Limited Use requirements."
           ]
         },
         {
@@ -62,7 +70,8 @@
           "heading": "Scope and Acceptance",
           "paragraphs": [
             "These terms govern your access to and use of all services operated by ZotLit, including the Obsidian plugin, Zotero companion, documentation website, Template Workbench, and community forum. ZotLit is maintained by AidenLx, who can be reached via the contact link in the interface.",
-            "ZotLit software components are distributed under applicable open-source licenses, including the GNU Affero General Public License version 3 or later. Nothing in these hosted service terms limits or replaces your rights under those open-source licenses."
+            "ZotLit software components are distributed under applicable open-source licenses, including the GNU Affero General Public License version 3 or later. Nothing in these hosted service terms limits or replaces your rights under those open-source licenses.",
+            "When choosing optional Google, GitHub, or Microsoft sign-in, your use is also subject to the respective provider's terms. You remain responsible for maintaining the security of your ZotLit account and should contact ZotLit if you suspect unauthorized access."
           ]
         },
         {
@@ -133,13 +142,21 @@
           ]
         },
         {
-          "heading": "第三方登录与 Google 用户数据",
+          "heading": "第三方登录",
           "paragraphs": [
-            "您可以使用 GitHub、Microsoft 或已开放的 Google 登录方式。若选择 Google 登录，论坛将申请标准的 openid、email 和 profile 权限范围。",
+            "您可以使用 GitHub、Microsoft 或 Google 账号登录论坛。",
+            "使用 GitHub 登录时，ZotLit 会请求您的公开个人资料与 user:email 权限。这使我们能够接收您的账户标识符、用户名、姓名和头像（如有）以及包括已验证邮箱在内的账户邮箱地址。ZotLit 不会请求访问您的私有代码仓库。",
+            "使用 Microsoft 登录时，ZotLit 使用基本身份权限与 Microsoft Graph User.Read 读取您已登录的个人资料，其中可能包含账户标识符、姓名及邮箱地址（若有）。ZotLit 不会请求访问您的 Microsoft 邮件或文件。",
+            "ZotLit 使用登录提供商返回的信息验证您的身份，并创建、关联或保护您的论坛账号。论坛可能会为此存储关联标识符、提供的个人资料信息或由提供商返回的令牌，但绝不会接收或存储您的提供商密码。您可以随时在提供商设置中撤销授权，或联系 ZotLit 解除绑定或申请删除数据。"
+          ]
+        },
+        {
+          "heading": "Google 登录数据",
+          "paragraphs": [
+            "使用 Google 登录时，论坛会请求读取邮箱和个人资料的权限。",
             "通过上述权限，ZotLit 可能获取您的 Google 账号唯一标识、邮箱地址、邮箱验证状态、显示名称及头像图片。ZotLit 绝不会接收您的 Google 密码，也绝不申请或访问您的 Gmail、Google 云端硬盘、日历或通讯录。",
             "获取的 Google 数据仅用于验证用户身份、创建或绑定论坛账号、展示公开资料、维护系统安全以及提供账号支持服务。论坛会保存关联的 Google 账号标识、可用的资料信息，以及 Google 返回的令牌等授权凭据，以维持登录连接。",
-            "您的 Google 数据绝不会用于广告投放或商业营销，也绝不出售。数据仅在提供登录与运行服务所必需的前提下与基础设施服务商共享，或在法律法规要求且具备必要保护措施时提供。所有 Google 数据的处理均严格遵守 Google API 服务用户数据政策，包括其中的受限使用要求。",
-            "您可以随时通过 Google 账号安全设置撤销对 ZotLit 的授权访问，也可以联系维护者解绑账号或请求删除论坛相关数据。"
+            "您的 Google 数据绝不会用于广告投放或商业营销，也绝不出售。数据仅在提供登录与运行服务所必需的前提下与基础设施服务商共享，或在法律法规要求且具备必要保护措施时提供。所有 Google 数据的处理均严格遵守 Google API 服务用户数据政策，包括其中的受限使用要求。"
           ]
         },
         {
@@ -159,7 +176,8 @@
           "heading": "范围与协议接受",
           "paragraphs": [
             "本条款适用于您对 ZotLit 运营的所有服务的访问与使用，包括 Obsidian 插件、Zotero 联动组件、文档网站、模板工作台与社区论坛。ZotLit 由 AidenLx 维护，您可通过界面中的联系方式与维护者沟通。",
-            "ZotLit 软件组件在适用的开源许可证下分发，包括 GNU Affero 通用公共许可证第 3 版或更高版本。本在线服务条款中的任何内容均不限制或取代您在这些开源许可证下享有的合法权利。"
+            "ZotLit 软件组件在适用的开源许可证下分发，包括 GNU Affero 通用公共许可证第 3 版或更高版本。本在线服务条款中的任何内容均不限制或取代您在这些开源许可证下享有的合法权利。",
+            "选择使用可选的 Google、GitHub 或 Microsoft 登录时，您亦须遵守相应提供商自身的服务条款。您有责任维护自身 ZotLit 账户的安全，若怀疑账号遭到未经授权的访问，请联系 ZotLit。"
           ]
         },
         {
