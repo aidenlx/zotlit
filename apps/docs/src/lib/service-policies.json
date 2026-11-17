@@ -32,7 +32,7 @@
           "paragraphs": [
             "When you register or participate in the Discourse community forum, the service stores your account email address, profile details, posts, uploads, support discussions, and connection and security logs to operate the forum, provide support, and manage moderation.",
             "Visitors can read and copy posts made in public forum categories and any profile details you make public. Selected historical public discussions were migrated from GitHub and remain published with attribution.",
-            "Selected public content may be sent to DeepSeek for language detection and automatic translation, or to Gemini to prepare translations that a maintainer publishes. Private messages and account sign-in details are strictly excluded from this translation processing."
+            "We may send selected public content to third-party translation providers for language detection and translation. Private messages and account sign-in details are strictly excluded from this translation processing."
           ]
         },
         {
@@ -129,7 +129,7 @@
           "paragraphs": [
             "当您注册或使用 Discourse 社区论坛时，系统会保存您的注册邮箱、个人资料、发帖、上传附件、支持交流记录以及网络连接与安全日志，用于论坛运行、身份认证、日常维护与管理支持。",
             "访客可以查看和复制公开板块中的帖子，以及您选择公开的个人资料。部分历史公开讨论由 GitHub 迁移而来，并已按原样保留署名公开发布。",
-            "部分公开内容可能会发送给 DeepSeek 进行语言识别和自动翻译，或发送给 Gemini 生成翻译，再由维护者发布。私信内容及任何登录凭据严格排除在此类翻译处理之外。"
+            "我们可能会将部分公开内容发送给第三方翻译服务提供商，以识别语言和提供翻译。私信内容及任何登录凭据严格排除在此类翻译处理之外。"
           ]
         },
         {
