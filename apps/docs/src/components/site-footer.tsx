@@ -2,6 +2,7 @@
 
 import { currentYear, gitConfig } from "@/lib/shared";
 import * as m from "@/paraglide/messages.js";
+import { localizeHref } from "@/paraglide/runtime.js";
 
 export function SiteFooter() {
   return (
@@ -17,6 +18,20 @@ export function SiteFooter() {
           {m.docs_license()}
         </a>
       </span>
+      <div className="flex flex-wrap gap-x-4 gap-y-2">
+        <a
+          href={localizeHref("/privacy")}
+          className="underline underline-offset-4 hover:text-fd-primary"
+        >
+          {m.docs_privacy_policy()}
+        </a>
+        <a
+          href={localizeHref("/terms")}
+          className="underline underline-offset-4 hover:text-fd-primary"
+        >
+          {m.docs_terms_of_service()}
+        </a>
+      </div>
     </footer>
   );
 }
