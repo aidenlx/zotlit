@@ -1,16 +1,16 @@
 blank_issues_enabled: false
 contact_links:
   - name: Bug or issue report
-    url: https://github.com/aidenlx/zotlit/discussions/categories/bug-reports
+    url: https://zotlit-forum.aidenlx.site/c/bug-reports/7
     about: >-
       GitHub Issues are reserved for defects a developer has already
-      confirmed. Report the problem here first using the report template
-      and it will get triaged and moved to Issues once confirmed.
+      confirmed. Use the report template in the ZotLit forum. A maintainer will
+      open a GitHub issue if they confirm the bug.
   - name: Feature request
-    url: https://github.com/aidenlx/zotlit/discussions/categories/ideas
+    url: https://zotlit-forum.aidenlx.site/c/feature-requests/8
     about: Share the use case you're trying to solve using the feature request template.
   - name: Ask a question / get help
-    url: https://github.com/aidenlx/zotlit/discussions/categories/help
+    url: https://zotlit-forum.aidenlx.site/c/help/6
     about: General usage questions and troubleshooting help.
   - name: Chat with the community
     url: https://discord.gg/CpVTHcReAe
