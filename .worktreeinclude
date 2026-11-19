@@ -1,3 +1,0 @@
-# Files copied into new worktrees by `wt step copy-ignored` (see
-# packages/scripts/scripts/init.ts). Must be both gitignored and listed here.
-.env*

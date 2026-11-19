@@ -1,0 +1,130 @@
+name: Plugin release
+
+# Releases the plugin when its version tag is pushed. The tag names the
+# commit whose manifest.json carries that version. The tags of Resource
+# Releases (res-*) and of ZotLit Companion releases (zt-*) start with a
+# letter, so they start no run.
+#
+# The official Obsidian action checks the repository, builds main.js and
+# styles.css from the bundle package, runs the community scanner's lint,
+# attests the build and creates a draft release. The Resource Release of the
+# same version is then created and checked before the draft is published, so
+# no installed plugin can name a version whose resources are missing.
+on:
+  push:
+    tags: ["[0-9]*"]
+
+permissions:
+  contents: write
+  id-token: write
+  attestations: write
+
+concurrency:
+  group: release-${{ github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v7
+
+      # The official action installs with pnpm when it finds pnpm-lock.yaml,
+      # but it does not install pnpm. package.json#packageManager names the
+      # version.
+      - uses: pnpm/action-setup@v6
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+
+      - uses: obsidianmd/obsidian-workflows@8167caed39664214d82c86fdfa32e06d8d55f61d # v1.2.3
+        with:
+          mode: release
+          strict: true
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+
+      - name: Resolve version
+        id: meta
+        run: |
+          version="$(node -p "require('./manifest.json').version")"
+          if [ "$version" != "$GITHUB_REF_NAME" ]; then
+            echo "::error::manifest.json names $version, the tag is $GITHUB_REF_NAME"
+            exit 1
+          fi
+          bundle="$(node -p "Object.keys(require('./package.json').dependencies)[0]")"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "res_tag=res-$version" >> "$GITHUB_OUTPUT"
+          echo "name=$(node -p "require('./manifest.json').name")" >> "$GITHUB_OUTPUT"
+          echo "resources=node_modules/$bundle/resources" >> "$GITHUB_OUTPUT"
+          case "$version" in
+            *-*) echo "prerelease=true" >> "$GITHUB_OUTPUT" ;;
+            *) echo "prerelease=false" >> "$GITHUB_OUTPUT" ;;
+          esac
+
+      # Everything the installed plugin downloads at runtime, from the bundle
+      # package. A retry may upload over a partial earlier run: while the
+      # plugin release is a draft, no installed build names this version.
+      - name: Create Resource Release
+        run: |
+          if ! gh release view "${{ steps.meta.outputs.res_tag }}" >/dev/null 2>&1; then
+            notes=$(printf '%s\n\n%s\n%s' \
+              "Runtime resources for ${{ steps.meta.outputs.name }} v${{ steps.meta.outputs.version }}: Language Packs, template data JSON Schemas, and the Item Query Schema." \
+              "The installed plugin downloads these on its own. There is nothing to install by hand." \
+              "Get the plugin from the ${{ steps.meta.outputs.version }} release.")
+            gh release create "${{ steps.meta.outputs.res_tag }}" \
+              --title "${{ steps.meta.outputs.res_tag }}" \
+              --target "${{ github.sha }}" \
+              --notes "$notes" \
+              ${{ steps.meta.outputs.prerelease == 'true' && '--prerelease' || '' }} \
+              --latest=false
+          fi
+          gh release upload "${{ steps.meta.outputs.res_tag }}" \
+            "${{ steps.meta.outputs.resources }}"/* --clobber
+
+      # Downloads each resource anonymously from the URL the plugin composes,
+      # so a missed or corrupted upload fails the run before the plugin
+      # release is published.
+      - name: Verify resources
+        run: |
+          download_dir="$(mktemp -d)"
+          for resource in "${{ steps.meta.outputs.resources }}"/*; do
+            file_name="${resource##*/}"
+            url="https://github.com/${GITHUB_REPOSITORY}/releases/download/${{ steps.meta.outputs.res_tag }}/$file_name"
+            for attempt in 1 2 3 4 5; do
+              if curl --fail --silent --show-error --location \
+                --header "Cache-Control: no-cache" \
+                --output "$download_dir/$file_name" \
+                "$url" &&
+                cmp --silent "$resource" "$download_dir/$file_name"; then
+                break
+              fi
+              if [ "$attempt" -eq 5 ]; then
+                echo "::error file=$resource::Anonymous download did not match the resource"
+                exit 1
+              fi
+              sleep 2
+            done
+          done
+
+      - name: Attest resources
+        uses: actions/attest@v4
+        with:
+          subject-path: |
+            manifest.json
+            ${{ steps.meta.outputs.resources }}/*
+
+      # A pre-release stays off "Latest"; the default branch keeps the
+      # manifest.json of the last stable release.
+      - name: Publish release
+        run: |
+          notes=$(printf '%s\n\n%s' \
+            "${{ steps.meta.outputs.name }} v${{ steps.meta.outputs.version }}" \
+            "Release notes: https://zotlit.aidenlx.site/changelog/${{ steps.meta.outputs.version }}")
+          gh release edit "${{ steps.meta.outputs.version }}" \
+            --draft=false \
+            --notes "$notes" \
+            ${{ steps.meta.outputs.prerelease == 'true' && '--prerelease --latest=false' || '--latest' }}

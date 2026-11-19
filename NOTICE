@@ -36,10 +36,11 @@ Derived files include (non-exhaustive):
   packages/db/src/lib/zt-lang.ts        — languageToISO6391 algorithm
   packages/db/src/lib/zt-annot-pos.ts   — annotation position schemas
   packages/db/src/lib/zt-color.ts       — annotation color palettes
-  packages/db/src/lib/zt-uri.ts         — URI building and slugify rules
-  packages/db/src/lib/zt-key.ts         — object key validation
+  packages/db/src/lib/zt-uri.ts         — Item URI and slugify rules
   packages/db/src/lib/zt-note-mark.ts   — note markup handling
   packages/item-lookup/src/format-creator.ts — creator name formatting
+  packages/zotero-types/src/keys.ts     — object key validation
+  packages/zotero-types/src/uri.ts      — zotero:// link building
 
 Each file contains @see comments linking to the specific upstream source.
 
@@ -66,6 +67,21 @@ PDF.js, pinned to zotero/pdf.js f57fc80d1c07e4cdc50a767ae0b500b5272123b4
     Copyright 2012 Mozilla Foundation
 
   Each file repeats this notice and its pinned commits in its header.
+
+=========================================================================
+
+This project contains two unmodified upstream copies. Each folder's
+provenance.json records the upstream commit.
+
+  packages/zotero-types/zotero-schema/schema.json
+    from zotero/zotero-schema — https://github.com/zotero/zotero-schema
+    Copyright (C) Corporation for Digital Scholarship
+
+  packages/pdfjs-dist/types/
+    type definitions generated from Zotero's fork of PDF.js, from
+    zotero-plugin-dev/zotero-pdfjs-types —
+    https://github.com/zotero-plugin-dev/zotero-pdfjs-types
+    PDF.js is licensed under the Apache License, Version 2.0.
 
 =========================================================================
 

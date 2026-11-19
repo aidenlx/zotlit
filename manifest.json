@@ -1,7 +1,7 @@
 {
   "id": "zotlit",
   "name": "ZotLit",
-  "version": "2.2.4",
+  "version": "2.3.0-beta.0",
   "minAppVersion": "1.15.1",
   "description": "Your Zotero research desk. Browse and query your library, read and annotate PDFs, take literature notes, cite as you write, and export to Word with a formatted reference list.",
   "author": "AidenLx",

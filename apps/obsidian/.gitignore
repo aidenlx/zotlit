@@ -1,7 +1,0 @@
-dist
-dist-dev
-bundle-stats.html
-*.tsbuildinfo
-
-# Language Pack compiler output
-src/lib/i18n/generated/

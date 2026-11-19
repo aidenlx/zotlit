@@ -1,1 +1,0 @@
-/Users/aidenlx/aidenlx-repo/skills/agents/obsidian-reverse-engineer.md

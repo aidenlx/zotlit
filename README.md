@@ -1,8 +1,8 @@
 <div align="center">
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="assets/logo/zotlit-wordmark-dark.svg">
-  <img alt="ZotLit" src="assets/logo/zotlit-wordmark.svg" width="320">
+  <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/aidenlx/zotlit-repo/main/assets/logo/zotlit-wordmark-dark.svg">
+  <img alt="ZotLit" src="https://raw.githubusercontent.com/aidenlx/zotlit-repo/main/assets/logo/zotlit-wordmark.svg" width="320">
 </picture>
 
 <p><strong>Your Zotero research desk in Obsidian.</strong></p>
@@ -21,8 +21,8 @@
 <p>
   <a href="https://github.com/aidenlx/zotlit/stargazers"><img alt="GitHub stars" src="https://custom-icon-badges.demolab.com/github/stars/aidenlx/zotlit"></a>
   <a href="LICENSE"><img alt="License" src="https://custom-icon-badges.demolab.com/github/license/aidenlx/zotlit?logo=law&logoColor=white"></a>
-  <a href="https://zotlit.aidenlx.site/docs/install-zotlit"><img alt="Obsidian plugin version" src="https://custom-icon-badges.demolab.com/badge/dynamic/json?query=%24.version&url=https%3A%2F%2Fraw.githubusercontent.com%2Faidenlx%2Fzotlit%2Fmain%2Fapps%2Fobsidian%2Fpackage.json&label=obsidian%20plugin&logo=obsidian&logoColor=white&color=8b6cef"></a>
-  <a href="https://zotlit.aidenlx.site/docs/install-companion"><img alt="Zotero companion version" src="https://custom-icon-badges.demolab.com/badge/dynamic/json?query=%24.version&url=https%3A%2F%2Fraw.githubusercontent.com%2Faidenlx%2Fzotlit%2Fmain%2Fapps%2Fzotero%2Fpackage.json&label=zotero%20companion&logo=zotero-32&color=bc3a3c"></a>
+  <a href="https://zotlit.aidenlx.site/docs/install-zotlit"><img alt="Obsidian plugin version" src="https://custom-icon-badges.demolab.com/badge/dynamic/json?query=%24.version&url=https%3A%2F%2Fraw.githubusercontent.com%2Faidenlx%2Fzotlit-repo%2Fmain%2Fapps%2Fobsidian%2Fpackage.json&label=obsidian%20plugin&logo=obsidian&logoColor=white&color=8b6cef"></a>
+  <a href="https://zotlit.aidenlx.site/docs/install-companion"><img alt="Zotero companion version" src="https://custom-icon-badges.demolab.com/badge/dynamic/json?query=%24.version&url=https%3A%2F%2Fraw.githubusercontent.com%2Faidenlx%2Fzotlit-repo%2Fmain%2Fapps%2Fzotero%2Fpackage.json&label=zotero%20companion&logo=zotero-32&color=bc3a3c"></a>
 </p>
 
 <p>
@@ -95,6 +95,17 @@ New here? Follow the [first-note lesson →](https://zotlit.aidenlx.site/learn/c
 ## Support
 
 Ask questions, report bugs, or suggest features on the [ZotLit forum](https://zotlit-forum.aidenlx.site/). For Discord and the GitHub Discussions archive, visit the [Community page](https://zotlit.aidenlx.site/community).
+
+## About this repository
+
+This repository publishes ZotLit: its releases, and the Resource Releases
+(`res-<version>`) that the plugin downloads at runtime. Its tree builds the
+plugin from the npm package
+[`@zotlit/obsidian-plugin`](https://www.npmjs.com/package/@zotlit/obsidian-plugin)
+at the version that `package.json` names: `pnpm install`, then
+`pnpm run build` writes `main.js` and `styles.css`. The source code, the
+issue tracker and the development history are in
+[aidenlx/zotlit-repo](https://github.com/aidenlx/zotlit-repo).
 
 ---
 
